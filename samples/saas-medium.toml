@@ -1,0 +1,6977 @@
+# dbwarp-blueprint legacy schema v1 sample
+# Anonymous database Blueprint. Source object names and row values are excluded.
+# Review under your organization's data-classification policy before sharing.
+# https://github.com/DBWarp/dbwarp-blueprint
+
+schema_version = 1
+generated_at = "2026-04-28T00:00:00Z"
+engine = "mysql"
+engine_version = "8.0.36"
+source_kind = "production"
+
+[totals]
+index_bytes = 5730742272
+row_count = 71010100
+table_bytes = 18870615040
+table_count = 45
+
+[tables.table-001]
+has_clustered_index = false
+index_bytes = 3145728
+rows = 25000
+schema = "schema-F"
+table_bytes = 6291456
+
+[tables.table-001.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-001.cols.col-2]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "text"
+
+[tables.table-001.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "json"
+
+[tables.table-001.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "integer"
+
+[tables.table-001.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "timestamp"
+
+[tables.table-001.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "smallint"
+
+[tables.table-001.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "bigint"
+
+[tables.table-001.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "integer"
+
+[tables.table-001.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "binary"
+
+[tables.table-001.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "integer"
+
+[tables.table-001.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "bigint"
+
+[tables.table-001.cols.col-12]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "text"
+
+[tables.table-001.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "date"
+
+[tables.table-001.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 14
+type = "bigint"
+
+[tables.table-001.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "boolean"
+
+[tables.table-001.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "bigint"
+
+[tables.table-001.cols.col-17]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "text"
+
+[tables.table-001.idxs.idx-1]
+cols = [13]
+type = "btree"
+unique = true
+
+[tables.table-001.idxs.idx-2]
+cols = [10]
+type = "btree"
+unique = true
+
+[tables.table-001.idxs.idx-3]
+cols = [1]
+type = "btree"
+unique = true
+
+[tables.table-001.idxs.idx-4]
+cols = [16]
+type = "btree"
+unique = false
+
+[tables.table-001.idxs.idx-5]
+cols = [3, 14]
+type = "fulltext"
+unique = false
+
+[tables.table-002]
+has_clustered_index = false
+index_bytes = 34816
+rows = 2700
+schema = "schema-D"
+table_bytes = 125952
+
+[tables.table-002.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-002.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "integer"
+
+[tables.table-002.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "integer"
+
+[tables.table-002.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "json"
+
+[tables.table-002.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-002.cols.col-6]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "text"
+
+[tables.table-002.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "integer"
+
+[tables.table-002.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "boolean"
+
+[tables.table-002.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "boolean"
+
+[tables.table-002.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "bigint"
+
+[tables.table-002.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "timestamp"
+
+[tables.table-002.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "integer"
+
+[tables.table-002.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "user-defined"
+
+[tables.table-002.idxs.idx-1]
+cols = [8]
+type = "btree"
+unique = true
+
+[tables.table-002.idxs.idx-2]
+cols = [1, 10]
+type = "btree"
+unique = false
+
+[tables.table-003]
+has_clustered_index = false
+index_bytes = 5120
+rows = 200
+schema = "schema-C"
+table_bytes = 64512
+
+[tables.table-003.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-003.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "numeric(12,2)"
+
+[tables.table-003.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "json"
+
+[tables.table-003.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "json"
+
+[tables.table-003.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-003.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "integer"
+
+[tables.table-003.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "timestamp"
+
+[tables.table-003.cols.col-8]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "text"
+
+[tables.table-003.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "smallint"
+
+[tables.table-003.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "boolean"
+
+[tables.table-003.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "bigint"
+
+[tables.table-003.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "integer"
+
+[tables.table-003.cols.col-13]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "text"
+
+[tables.table-003.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "boolean"
+
+[tables.table-003.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "date"
+
+[tables.table-003.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "integer"
+
+[tables.table-003.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "integer"
+
+[tables.table-003.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 18
+type = "smallint"
+
+[tables.table-003.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 19
+type = "bigint"
+
+[tables.table-003.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 20
+type = "text"
+
+[tables.table-003.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 21
+type = "boolean"
+
+[tables.table-003.idxs.idx-1]
+cols = [6]
+type = "btree"
+unique = true
+
+[tables.table-004]
+has_clustered_index = false
+index_bytes = 105472
+rows = 9000
+schema = "schema-D"
+table_bytes = 724992
+
+[tables.table-004.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-004.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "uuid"
+
+[tables.table-004.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "binary"
+
+[tables.table-004.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-004.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "bigint"
+
+[tables.table-004.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "timestamp"
+
+[tables.table-004.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "integer"
+
+[tables.table-004.idxs.idx-1]
+cols = [2, 3]
+type = "btree"
+unique = true
+
+[tables.table-004.idxs.idx-2]
+cols = [1]
+type = "btree"
+unique = false
+
+[tables.table-004.idxs.idx-3]
+cols = [1, 2, 6]
+type = "btree"
+unique = false
+
+[tables.table-004.idxs.idx-4]
+cols = [1, 4, 7]
+type = "btree"
+unique = false
+
+[tables.table-004.idxs.idx-5]
+cols = [1, 4, 5]
+type = "btree"
+unique = false
+
+[tables.table-004.idxs.idx-6]
+cols = [1, 6, 7]
+type = "btree"
+unique = false
+
+[tables.table-005]
+has_clustered_index = false
+index_bytes = 52428800
+rows = 724000
+schema = "schema-F"
+table_bytes = 175112192
+
+[tables.table-005.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-005.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "smallint"
+
+[tables.table-005.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "date"
+
+[tables.table-005.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "bigint"
+
+[tables.table-005.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "integer"
+
+[tables.table-005.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "date"
+
+[tables.table-005.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "bigint"
+
+[tables.table-005.cols.col-8]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "text"
+
+[tables.table-005.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "numeric(12,2)"
+
+[tables.table-005.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "uuid"
+
+[tables.table-005.cols.col-11]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "text"
+
+[tables.table-005.cols.col-12]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "text"
+
+[tables.table-005.cols.col-13]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "text"
+
+[tables.table-005.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "timestamp"
+
+[tables.table-005.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "integer"
+
+[tables.table-005.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "integer"
+
+[tables.table-005.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "timestamp"
+
+[tables.table-005.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "integer"
+
+[tables.table-005.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 19
+type = "timestamp"
+
+[tables.table-005.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 20
+type = "boolean"
+
+[tables.table-005.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 21
+type = "binary"
+
+[tables.table-005.idxs.idx-1]
+cols = [11, 15, 20]
+type = "btree"
+unique = true
+
+[tables.table-005.idxs.idx-2]
+cols = [2]
+type = "btree"
+unique = false
+
+[tables.table-005.idxs.idx-3]
+cols = [9]
+type = "fulltext"
+unique = false
+
+[tables.table-006]
+has_clustered_index = false
+index_bytes = 57671680
+rows = 1570000
+schema = "schema-E"
+table_bytes = 342884352
+
+[tables.table-006.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-006.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "timestamp"
+
+[tables.table-006.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "integer"
+
+[tables.table-006.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "integer"
+
+[tables.table-006.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "smallint"
+
+[tables.table-006.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "numeric(12,2)"
+
+[tables.table-006.cols.col-7]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "text"
+
+[tables.table-006.cols.col-8]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "text"
+
+[tables.table-006.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "json"
+
+[tables.table-006.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "integer"
+
+[tables.table-006.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "numeric(12,2)"
+
+[tables.table-006.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "binary"
+
+[tables.table-006.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "integer"
+
+[tables.table-006.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "text"
+
+[tables.table-006.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "boolean"
+
+[tables.table-006.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "json"
+
+[tables.table-006.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "bigint"
+
+[tables.table-006.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 18
+type = "date"
+
+[tables.table-006.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 19
+type = "numeric(12,2)"
+
+[tables.table-006.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 20
+type = "text"
+
+[tables.table-006.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 21
+type = "integer"
+
+[tables.table-006.cols.col-22]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 22
+type = "boolean"
+
+[tables.table-006.cols.col-23]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 23
+type = "timestamp"
+
+[tables.table-006.cols.col-24]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 24
+type = "timestamp"
+
+[tables.table-006.cols.col-25]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 25
+type = "bigint"
+
+[tables.table-006.cols.col-26]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 26
+type = "bigint"
+
+[tables.table-006.cols.col-27]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 27
+type = "boolean"
+
+[tables.table-006.cols.col-28]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 28
+type = "date"
+
+[tables.table-006.cols.col-29]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 29
+type = "text"
+
+[tables.table-006.cols.col-30]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 30
+type = "integer"
+
+[tables.table-006.cols.col-31]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 31
+type = "integer"
+
+[tables.table-006.cols.col-32]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 32
+type = "binary"
+
+[tables.table-006.cols.col-33]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 33
+type = "binary"
+
+[tables.table-006.cols.col-34]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 34
+type = "uuid"
+
+[tables.table-006.cols.col-35]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 35
+type = "date"
+
+[tables.table-006.cols.col-36]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 36
+type = "integer"
+
+[tables.table-006.cols.col-37]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 37
+type = "smallint"
+
+[tables.table-006.cols.col-38]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 38
+type = "smallint"
+
+[tables.table-006.cols.col-39]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 39
+type = "binary"
+
+[tables.table-006.cols.col-40]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 40
+type = "smallint"
+
+[tables.table-006.cols.col-41]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 41
+type = "boolean"
+
+[tables.table-006.cols.col-42]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 42
+type = "text"
+
+[tables.table-006.cols.col-43]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 43
+type = "smallint"
+
+[tables.table-006.cols.col-44]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 44
+type = "user-defined"
+
+[tables.table-006.cols.col-45]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 45
+type = "boolean"
+
+[tables.table-006.cols.col-46]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 46
+type = "date"
+
+[tables.table-006.cols.col-47]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 47
+type = "boolean"
+
+[tables.table-006.cols.col-48]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 48
+type = "bigint"
+
+[tables.table-006.idxs.idx-1]
+cols = [32]
+type = "btree"
+unique = true
+
+[tables.table-006.idxs.idx-2]
+cols = [45]
+type = "btree"
+unique = true
+
+[tables.table-006.idxs.idx-3]
+cols = [26, 27, 30]
+type = "btree"
+unique = true
+
+[tables.table-006.idxs.idx-4]
+cols = [9, 22]
+type = "btree"
+unique = false
+
+[tables.table-006.idxs.idx-5]
+cols = [21, 34]
+type = "btree"
+unique = true
+
+[tables.table-007]
+has_clustered_index = false
+index_bytes = 1024
+rows = 100
+schema = "schema-D"
+table_bytes = 5120
+
+[tables.table-007.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-007.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "bigint"
+
+[tables.table-007.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "numeric(12,2)"
+
+[tables.table-007.idxs.idx-1]
+cols = [2]
+type = "btree"
+unique = true
+
+[tables.table-007.idxs.idx-2]
+cols = [1, 2, 3]
+type = "btree"
+unique = false
+
+[tables.table-008]
+has_clustered_index = false
+index_bytes = 10240
+rows = 100
+schema = "schema-E"
+table_bytes = 30720
+
+[tables.table-008.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-008.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "smallint"
+
+[tables.table-008.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "binary"
+
+[tables.table-008.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "smallint"
+
+[tables.table-008.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "integer"
+
+[tables.table-008.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "numeric(12,2)"
+
+[tables.table-008.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "timestamp"
+
+[tables.table-008.cols.col-8]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "text"
+
+[tables.table-008.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "text"
+
+[tables.table-008.cols.col-10]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "text"
+
+[tables.table-008.cols.col-11]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "text"
+
+[tables.table-008.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "boolean"
+
+[tables.table-008.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "integer"
+
+[tables.table-008.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "integer"
+
+[tables.table-008.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "numeric(12,2)"
+
+[tables.table-008.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "numeric(12,2)"
+
+[tables.table-008.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "date"
+
+[tables.table-008.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 18
+type = "numeric(12,2)"
+
+[tables.table-008.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 19
+type = "text"
+
+[tables.table-008.idxs.idx-1]
+cols = [18]
+type = "btree"
+unique = true
+
+[tables.table-009]
+has_clustered_index = false
+index_bytes = 842752
+rows = 54000
+schema = "schema-E"
+table_bytes = 6291456
+
+[tables.table-009.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-009.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "integer"
+
+[tables.table-009.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "timestamp"
+
+[tables.table-009.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-009.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-009.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "json"
+
+[tables.table-009.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "integer"
+
+[tables.table-009.idxs.idx-1]
+cols = [3, 5]
+type = "btree"
+unique = true
+
+[tables.table-009.idxs.idx-2]
+cols = [2, 5]
+type = "btree"
+unique = true
+
+[tables.table-009.idxs.idx-3]
+cols = [1, 2, 6]
+type = "btree"
+unique = false
+
+[tables.table-009.idxs.idx-4]
+cols = [2, 3, 4]
+type = "fulltext"
+unique = true
+
+[tables.table-010]
+has_clustered_index = false
+index_bytes = 254803968
+rows = 1580000
+schema = "schema-E"
+table_bytes = 620756992
+
+[tables.table-010.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-010.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "boolean"
+
+[tables.table-010.cols.col-3]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "text"
+
+[tables.table-010.cols.col-4]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "text"
+
+[tables.table-010.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-010.idxs.idx-1]
+cols = [3]
+type = "btree"
+unique = true
+
+[tables.table-010.idxs.idx-2]
+cols = [1, 3, 4]
+type = "btree"
+unique = true
+
+[tables.table-010.idxs.idx-3]
+cols = [1]
+type = "btree"
+unique = false
+
+[tables.table-010.idxs.idx-4]
+cols = [1]
+type = "btree"
+unique = false
+
+[tables.table-011]
+has_clustered_index = false
+index_bytes = 14336
+rows = 200
+schema = "schema-D"
+table_bytes = 37888
+
+[tables.table-011.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-011.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "user-defined"
+
+[tables.table-011.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "bigint"
+
+[tables.table-011.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "date"
+
+[tables.table-011.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-011.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "user-defined"
+
+[tables.table-011.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "integer"
+
+[tables.table-011.cols.col-8]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "text"
+
+[tables.table-011.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "integer"
+
+[tables.table-011.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "integer"
+
+[tables.table-011.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "timestamp"
+
+[tables.table-011.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "smallint"
+
+[tables.table-011.idxs.idx-1]
+cols = [2, 8, 10]
+type = "btree"
+unique = true
+
+[tables.table-011.idxs.idx-2]
+cols = [2, 9, 10]
+type = "btree"
+unique = false
+
+[tables.table-011.idxs.idx-3]
+cols = [7]
+type = "btree"
+unique = false
+
+[tables.table-011.idxs.idx-4]
+cols = [9, 10]
+type = "fulltext"
+unique = true
+
+[tables.table-012]
+has_clustered_index = false
+index_bytes = 1036288
+rows = 17000
+schema = "schema-A"
+table_bytes = 3145728
+
+[tables.table-012.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-012.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "json"
+
+[tables.table-012.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "smallint"
+
+[tables.table-012.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "timestamp"
+
+[tables.table-012.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "text"
+
+[tables.table-012.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "boolean"
+
+[tables.table-012.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "boolean"
+
+[tables.table-012.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "timestamp"
+
+[tables.table-012.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "bigint"
+
+[tables.table-012.cols.col-10]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "text"
+
+[tables.table-012.cols.col-11]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "text"
+
+[tables.table-012.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "integer"
+
+[tables.table-012.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "json"
+
+[tables.table-012.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "text"
+
+[tables.table-012.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "boolean"
+
+[tables.table-012.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "text"
+
+[tables.table-012.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "integer"
+
+[tables.table-012.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "uuid"
+
+[tables.table-012.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 19
+type = "boolean"
+
+[tables.table-012.cols.col-20]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 20
+type = "text"
+
+[tables.table-012.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 21
+type = "binary"
+
+[tables.table-012.cols.col-22]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 22
+type = "integer"
+
+[tables.table-012.idxs.idx-1]
+cols = [8]
+type = "btree"
+unique = true
+
+[tables.table-012.idxs.idx-2]
+cols = [4, 17]
+type = "btree"
+unique = false
+
+[tables.table-012.idxs.idx-3]
+cols = [9, 12, 20]
+type = "fulltext"
+unique = false
+
+[tables.table-012.idxs.idx-4]
+cols = [21]
+type = "btree"
+unique = false
+
+[tables.table-012.idxs.idx-5]
+cols = [8]
+type = "hash"
+unique = false
+
+[tables.table-012.idxs.idx-6]
+cols = [22]
+type = "btree"
+unique = false
+
+[tables.table-013]
+has_clustered_index = false
+index_bytes = 28672
+rows = 2700
+schema = "schema-E"
+table_bytes = 153600
+
+[tables.table-013.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-013.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "timestamp"
+
+[tables.table-013.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "integer"
+
+[tables.table-013.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "numeric(12,2)"
+
+[tables.table-013.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "numeric(12,2)"
+
+[tables.table-013.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "numeric(12,2)"
+
+[tables.table-013.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "integer"
+
+[tables.table-013.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "integer"
+
+[tables.table-013.cols.col-9]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "text"
+
+[tables.table-013.cols.col-10]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "text"
+
+[tables.table-013.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "numeric(12,2)"
+
+[tables.table-013.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "timestamp"
+
+[tables.table-013.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "integer"
+
+[tables.table-013.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 14
+type = "numeric(12,2)"
+
+[tables.table-013.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "json"
+
+[tables.table-013.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "integer"
+
+[tables.table-013.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "user-defined"
+
+[tables.table-013.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "json"
+
+[tables.table-013.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 19
+type = "integer"
+
+[tables.table-013.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 20
+type = "bigint"
+
+[tables.table-013.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 21
+type = "timestamp"
+
+[tables.table-013.cols.col-22]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 22
+type = "integer"
+
+[tables.table-013.idxs.idx-1]
+cols = [4, 11, 12]
+type = "btree"
+unique = true
+
+[tables.table-013.idxs.idx-2]
+cols = [15, 19]
+type = "fulltext"
+unique = false
+
+[tables.table-013.idxs.idx-3]
+cols = [9, 15, 17]
+type = "btree"
+unique = false
+
+[tables.table-013.idxs.idx-4]
+cols = [13]
+type = "hash"
+unique = true
+
+[tables.table-013.idxs.idx-5]
+cols = [1, 12]
+type = "btree"
+unique = false
+
+[tables.table-013.idxs.idx-6]
+cols = [7, 13, 19]
+type = "btree"
+unique = false
+
+[tables.table-014]
+has_clustered_index = false
+index_bytes = 35840
+rows = 700
+schema = "schema-D"
+table_bytes = 81920
+
+[tables.table-014.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-014.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "timestamp"
+
+[tables.table-014.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "text"
+
+[tables.table-014.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "user-defined"
+
+[tables.table-014.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "bigint"
+
+[tables.table-014.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "smallint"
+
+[tables.table-014.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "smallint"
+
+[tables.table-014.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "bigint"
+
+[tables.table-014.idxs.idx-1]
+cols = [1]
+type = "btree"
+unique = true
+
+[tables.table-014.idxs.idx-2]
+cols = [1, 3, 6]
+type = "btree"
+unique = true
+
+[tables.table-014.idxs.idx-3]
+cols = [8]
+type = "hash"
+unique = false
+
+[tables.table-015]
+has_clustered_index = false
+index_bytes = 1048576
+rows = 12000
+schema = "schema-D"
+table_bytes = 4194304
+
+[tables.table-015.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-015.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "smallint"
+
+[tables.table-015.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "integer"
+
+[tables.table-015.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "numeric(12,2)"
+
+[tables.table-015.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "boolean"
+
+[tables.table-015.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "json"
+
+[tables.table-015.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "bigint"
+
+[tables.table-015.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "integer"
+
+[tables.table-015.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "boolean"
+
+[tables.table-015.cols.col-10]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "text"
+
+[tables.table-015.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "boolean"
+
+[tables.table-015.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "timestamp"
+
+[tables.table-015.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "uuid"
+
+[tables.table-015.idxs.idx-1]
+cols = [8]
+type = "btree"
+unique = true
+
+[tables.table-015.idxs.idx-2]
+cols = [2, 12]
+type = "btree"
+unique = false
+
+[tables.table-015.idxs.idx-3]
+cols = [1]
+type = "btree"
+unique = true
+
+[tables.table-016]
+has_clustered_index = false
+index_bytes = 208666624
+rows = 6600000
+schema = "schema-E"
+table_bytes = 837812224
+
+[tables.table-016.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-016.cols.col-2]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "text"
+
+[tables.table-016.cols.col-3]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "text"
+
+[tables.table-016.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "timestamp"
+
+[tables.table-016.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "timestamp"
+
+[tables.table-016.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "smallint"
+
+[tables.table-016.cols.col-7]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "text"
+
+[tables.table-016.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "numeric(12,2)"
+
+[tables.table-016.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "bigint"
+
+[tables.table-016.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "boolean"
+
+[tables.table-016.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "integer"
+
+[tables.table-016.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "boolean"
+
+[tables.table-016.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "binary"
+
+[tables.table-016.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 14
+type = "integer"
+
+[tables.table-016.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "json"
+
+[tables.table-016.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "uuid"
+
+[tables.table-016.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "boolean"
+
+[tables.table-016.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "integer"
+
+[tables.table-016.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 19
+type = "timestamp"
+
+[tables.table-016.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 20
+type = "binary"
+
+[tables.table-016.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 21
+type = "timestamp"
+
+[tables.table-016.cols.col-22]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 22
+type = "integer"
+
+[tables.table-016.cols.col-23]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 23
+type = "integer"
+
+[tables.table-016.cols.col-24]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 24
+type = "integer"
+
+[tables.table-016.cols.col-25]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 25
+type = "bigint"
+
+[tables.table-016.cols.col-26]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 26
+type = "binary"
+
+[tables.table-016.cols.col-27]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 27
+type = "json"
+
+[tables.table-016.cols.col-28]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 28
+type = "bigint"
+
+[tables.table-016.cols.col-29]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 29
+type = "text"
+
+[tables.table-016.cols.col-30]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 30
+type = "bigint"
+
+[tables.table-016.cols.col-31]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 31
+type = "smallint"
+
+[tables.table-016.cols.col-32]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 32
+type = "date"
+
+[tables.table-016.cols.col-33]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 33
+type = "timestamp"
+
+[tables.table-016.cols.col-34]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 34
+type = "boolean"
+
+[tables.table-016.cols.col-35]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 35
+type = "timestamp"
+
+[tables.table-016.cols.col-36]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 36
+type = "bigint"
+
+[tables.table-016.cols.col-37]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 37
+type = "integer"
+
+[tables.table-016.cols.col-38]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 38
+type = "boolean"
+
+[tables.table-016.cols.col-39]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 39
+type = "integer"
+
+[tables.table-016.cols.col-40]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 40
+type = "bigint"
+
+[tables.table-016.cols.col-41]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 41
+type = "json"
+
+[tables.table-016.cols.col-42]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 42
+type = "user-defined"
+
+[tables.table-016.cols.col-43]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 43
+type = "integer"
+
+[tables.table-016.cols.col-44]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 44
+type = "integer"
+
+[tables.table-016.cols.col-45]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 45
+type = "boolean"
+
+[tables.table-016.cols.col-46]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 46
+type = "timestamp"
+
+[tables.table-016.idxs.idx-1]
+cols = [6, 17, 43]
+type = "btree"
+unique = true
+
+[tables.table-016.idxs.idx-2]
+cols = [13]
+type = "btree"
+unique = false
+
+[tables.table-016.idxs.idx-3]
+cols = [18, 20]
+type = "fulltext"
+unique = false
+
+[tables.table-016.idxs.idx-4]
+cols = [22, 25, 29]
+type = "btree"
+unique = true
+
+[tables.table-017]
+has_clustered_index = false
+index_bytes = 9216
+rows = 300
+schema = "schema-C"
+table_bytes = 35840
+
+[tables.table-017.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-017.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "json"
+
+[tables.table-017.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "integer"
+
+[tables.table-017.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-017.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "uuid"
+
+[tables.table-017.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "bigint"
+
+[tables.table-017.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "uuid"
+
+[tables.table-017.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "integer"
+
+[tables.table-017.idxs.idx-1]
+cols = [3, 4, 7]
+type = "btree"
+unique = true
+
+[tables.table-017.idxs.idx-2]
+cols = [1, 6]
+type = "btree"
+unique = false
+
+[tables.table-018]
+has_clustered_index = false
+index_bytes = 892338176
+rows = 16010000
+schema = "schema-D"
+table_bytes = 4404019200
+
+[tables.table-018.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-018.cols.col-2]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "text"
+
+[tables.table-018.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "uuid"
+
+[tables.table-018.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "boolean"
+
+[tables.table-018.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "numeric(12,2)"
+
+[tables.table-018.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "integer"
+
+[tables.table-018.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "integer"
+
+[tables.table-018.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "smallint"
+
+[tables.table-018.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "smallint"
+
+[tables.table-018.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "date"
+
+[tables.table-018.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "user-defined"
+
+[tables.table-018.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "binary"
+
+[tables.table-018.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "text"
+
+[tables.table-018.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "text"
+
+[tables.table-018.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "json"
+
+[tables.table-018.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "numeric(12,2)"
+
+[tables.table-018.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "numeric(12,2)"
+
+[tables.table-018.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "integer"
+
+[tables.table-018.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 19
+type = "integer"
+
+[tables.table-018.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 20
+type = "user-defined"
+
+[tables.table-018.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 21
+type = "smallint"
+
+[tables.table-018.cols.col-22]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 22
+type = "text"
+
+[tables.table-018.idxs.idx-1]
+cols = [1, 4, 5]
+type = "btree"
+unique = true
+
+[tables.table-018.idxs.idx-2]
+cols = [12, 22]
+type = "btree"
+unique = false
+
+[tables.table-018.idxs.idx-3]
+cols = [6, 20]
+type = "hash"
+unique = false
+
+[tables.table-019]
+has_clustered_index = false
+index_bytes = 7168
+rows = 100
+schema = "schema-D"
+table_bytes = 17408
+
+[tables.table-019.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-019.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "boolean"
+
+[tables.table-019.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "integer"
+
+[tables.table-019.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "json"
+
+[tables.table-019.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "binary"
+
+[tables.table-019.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "user-defined"
+
+[tables.table-019.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "numeric(12,2)"
+
+[tables.table-019.idxs.idx-1]
+cols = [5]
+type = "btree"
+unique = true
+
+[tables.table-019.idxs.idx-2]
+cols = [1, 6]
+type = "btree"
+unique = false
+
+[tables.table-019.idxs.idx-3]
+cols = [4]
+type = "btree"
+unique = false
+
+[tables.table-020]
+has_clustered_index = false
+index_bytes = 908288
+rows = 6800
+schema = "schema-B"
+table_bytes = 2097152
+
+[tables.table-020.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-020.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "date"
+
+[tables.table-020.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "json"
+
+[tables.table-020.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "boolean"
+
+[tables.table-020.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-020.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "binary"
+
+[tables.table-020.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "binary"
+
+[tables.table-020.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "bigint"
+
+[tables.table-020.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "timestamp"
+
+[tables.table-020.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "uuid"
+
+[tables.table-020.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "timestamp"
+
+[tables.table-020.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "timestamp"
+
+[tables.table-020.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "integer"
+
+[tables.table-020.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "uuid"
+
+[tables.table-020.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "boolean"
+
+[tables.table-020.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "json"
+
+[tables.table-020.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "binary"
+
+[tables.table-020.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "smallint"
+
+[tables.table-020.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 19
+type = "boolean"
+
+[tables.table-020.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 20
+type = "bigint"
+
+[tables.table-020.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 21
+type = "boolean"
+
+[tables.table-020.idxs.idx-1]
+cols = [21]
+type = "btree"
+unique = true
+
+[tables.table-020.idxs.idx-2]
+cols = [4, 14, 19]
+type = "btree"
+unique = true
+
+[tables.table-021]
+has_clustered_index = false
+index_bytes = 4096
+rows = 500
+schema = "schema-B"
+table_bytes = 20480
+
+[tables.table-021.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-021.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "timestamp"
+
+[tables.table-021.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "integer"
+
+[tables.table-021.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "uuid"
+
+[tables.table-021.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "boolean"
+
+[tables.table-021.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "text"
+
+[tables.table-021.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "json"
+
+[tables.table-021.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "timestamp"
+
+[tables.table-021.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "integer"
+
+[tables.table-021.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "json"
+
+[tables.table-021.cols.col-11]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "text"
+
+[tables.table-021.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "integer"
+
+[tables.table-021.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "numeric(12,2)"
+
+[tables.table-021.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 14
+type = "integer"
+
+[tables.table-021.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "smallint"
+
+[tables.table-021.cols.col-16]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "text"
+
+[tables.table-021.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "integer"
+
+[tables.table-021.idxs.idx-1]
+cols = [5, 14]
+type = "btree"
+unique = true
+
+[tables.table-021.idxs.idx-2]
+cols = [14, 15]
+type = "btree"
+unique = true
+
+[tables.table-021.idxs.idx-3]
+cols = [4, 7]
+type = "btree"
+unique = true
+
+[tables.table-022]
+has_clustered_index = false
+index_bytes = 4194304
+rows = 45000
+schema = "schema-B"
+table_bytes = 9437184
+
+[tables.table-022.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-022.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "integer"
+
+[tables.table-022.cols.col-3]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "text"
+
+[tables.table-022.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-022.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "timestamp"
+
+[tables.table-022.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "bigint"
+
+[tables.table-022.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "uuid"
+
+[tables.table-022.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "integer"
+
+[tables.table-022.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "timestamp"
+
+[tables.table-022.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "uuid"
+
+[tables.table-022.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "integer"
+
+[tables.table-022.idxs.idx-1]
+cols = [3]
+type = "btree"
+unique = true
+
+[tables.table-022.idxs.idx-2]
+cols = [1, 9]
+type = "btree"
+unique = false
+
+[tables.table-023]
+has_clustered_index = false
+index_bytes = 2726297600
+rows = 17180000
+schema = "schema-B"
+table_bytes = 7654604800
+
+[tables.table-023.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-023.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "bigint"
+
+[tables.table-023.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "bigint"
+
+[tables.table-023.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "json"
+
+[tables.table-023.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "binary"
+
+[tables.table-023.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "binary"
+
+[tables.table-023.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "smallint"
+
+[tables.table-023.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "integer"
+
+[tables.table-023.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "uuid"
+
+[tables.table-023.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "uuid"
+
+[tables.table-023.cols.col-11]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "text"
+
+[tables.table-023.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "smallint"
+
+[tables.table-023.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "date"
+
+[tables.table-023.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 14
+type = "text"
+
+[tables.table-023.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "integer"
+
+[tables.table-023.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "bigint"
+
+[tables.table-023.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "date"
+
+[tables.table-023.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "text"
+
+[tables.table-023.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 19
+type = "integer"
+
+[tables.table-023.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 20
+type = "smallint"
+
+[tables.table-023.cols.col-21]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 21
+type = "text"
+
+[tables.table-023.cols.col-22]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 22
+type = "uuid"
+
+[tables.table-023.cols.col-23]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 23
+type = "timestamp"
+
+[tables.table-023.cols.col-24]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 24
+type = "binary"
+
+[tables.table-023.cols.col-25]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 25
+type = "date"
+
+[tables.table-023.cols.col-26]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 26
+type = "date"
+
+[tables.table-023.cols.col-27]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 27
+type = "text"
+
+[tables.table-023.cols.col-28]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 28
+type = "json"
+
+[tables.table-023.cols.col-29]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 29
+type = "boolean"
+
+[tables.table-023.cols.col-30]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 30
+type = "text"
+
+[tables.table-023.cols.col-31]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 31
+type = "integer"
+
+[tables.table-023.cols.col-32]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 32
+type = "json"
+
+[tables.table-023.cols.col-33]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 33
+type = "integer"
+
+[tables.table-023.cols.col-34]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 34
+type = "binary"
+
+[tables.table-023.cols.col-35]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 35
+type = "boolean"
+
+[tables.table-023.cols.col-36]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 36
+type = "json"
+
+[tables.table-023.cols.col-37]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 37
+type = "integer"
+
+[tables.table-023.cols.col-38]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 38
+type = "text"
+
+[tables.table-023.cols.col-39]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 39
+type = "smallint"
+
+[tables.table-023.cols.col-40]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 40
+type = "boolean"
+
+[tables.table-023.cols.col-41]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 41
+type = "text"
+
+[tables.table-023.cols.col-42]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 42
+type = "text"
+
+[tables.table-023.cols.col-43]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 43
+type = "bigint"
+
+[tables.table-023.cols.col-44]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 44
+type = "integer"
+
+[tables.table-023.cols.col-45]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 45
+type = "boolean"
+
+[tables.table-023.cols.col-46]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 46
+type = "text"
+
+[tables.table-023.cols.col-47]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 47
+type = "integer"
+
+[tables.table-023.cols.col-48]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 48
+type = "text"
+
+[tables.table-023.cols.col-49]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 49
+type = "integer"
+
+[tables.table-023.cols.col-50]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 50
+type = "boolean"
+
+[tables.table-023.cols.col-51]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 51
+type = "json"
+
+[tables.table-023.cols.col-52]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 52
+type = "json"
+
+[tables.table-023.cols.col-53]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 53
+type = "integer"
+
+[tables.table-023.cols.col-54]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 54
+type = "text"
+
+[tables.table-023.cols.col-55]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 55
+type = "bigint"
+
+[tables.table-023.cols.col-56]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 56
+type = "timestamp"
+
+[tables.table-023.cols.col-57]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 57
+type = "binary"
+
+[tables.table-023.cols.col-58]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 58
+type = "text"
+
+[tables.table-023.cols.col-59]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 59
+type = "text"
+
+[tables.table-023.cols.col-60]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 60
+type = "integer"
+
+[tables.table-023.cols.col-61]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 61
+type = "numeric(12,2)"
+
+[tables.table-023.cols.col-62]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 62
+type = "text"
+
+[tables.table-023.cols.col-63]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 63
+type = "timestamp"
+
+[tables.table-023.cols.col-64]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 64
+type = "uuid"
+
+[tables.table-023.cols.col-65]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 65
+type = "boolean"
+
+[tables.table-023.cols.col-66]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 66
+type = "binary"
+
+[tables.table-023.cols.col-67]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 67
+type = "timestamp"
+
+[tables.table-023.cols.col-68]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 68
+type = "text"
+
+[tables.table-023.cols.col-69]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 69
+type = "integer"
+
+[tables.table-023.idxs.idx-1]
+cols = [27]
+type = "btree"
+unique = true
+
+[tables.table-023.idxs.idx-2]
+cols = [53, 55]
+type = "btree"
+unique = false
+
+[tables.table-024]
+has_clustered_index = false
+index_bytes = 7340032
+rows = 55000
+schema = "schema-F"
+table_bytes = 19922944
+
+[tables.table-024.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-024.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "integer"
+
+[tables.table-024.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "timestamp"
+
+[tables.table-024.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "uuid"
+
+[tables.table-024.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "boolean"
+
+[tables.table-024.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "numeric(12,2)"
+
+[tables.table-024.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "timestamp"
+
+[tables.table-024.cols.col-8]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "text"
+
+[tables.table-024.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "bigint"
+
+[tables.table-024.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "timestamp"
+
+[tables.table-024.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "integer"
+
+[tables.table-024.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "numeric(12,2)"
+
+[tables.table-024.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "numeric(12,2)"
+
+[tables.table-024.idxs.idx-1]
+cols = [2, 7]
+type = "btree"
+unique = true
+
+[tables.table-024.idxs.idx-2]
+cols = [7]
+type = "btree"
+unique = true
+
+[tables.table-024.idxs.idx-3]
+cols = [5, 6]
+type = "btree"
+unique = false
+
+[tables.table-024.idxs.idx-4]
+cols = [3]
+type = "btree"
+unique = true
+
+[tables.table-024.idxs.idx-5]
+cols = [6]
+type = "btree"
+unique = false
+
+[tables.table-024.idxs.idx-6]
+cols = [3, 6, 7]
+type = "btree"
+unique = false
+
+[tables.table-025]
+has_clustered_index = false
+index_bytes = 200278016
+rows = 3320000
+schema = "schema-B"
+table_bytes = 1468006400
+
+[tables.table-025.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-025.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "bigint"
+
+[tables.table-025.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "boolean"
+
+[tables.table-025.idxs.idx-1]
+cols = [2, 3]
+type = "btree"
+unique = true
+
+[tables.table-025.idxs.idx-2]
+cols = [1, 3]
+type = "btree"
+unique = false
+
+[tables.table-025.idxs.idx-3]
+cols = [2, 3]
+type = "btree"
+unique = false
+
+[tables.table-026]
+has_clustered_index = false
+index_bytes = 29360128
+rows = 254000
+schema = "schema-F"
+table_bytes = 116391936
+
+[tables.table-026.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-026.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "user-defined"
+
+[tables.table-026.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "text"
+
+[tables.table-026.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "smallint"
+
+[tables.table-026.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "boolean"
+
+[tables.table-026.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "bigint"
+
+[tables.table-026.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "boolean"
+
+[tables.table-026.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "boolean"
+
+[tables.table-026.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "integer"
+
+[tables.table-026.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "timestamp"
+
+[tables.table-026.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "numeric(12,2)"
+
+[tables.table-026.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "integer"
+
+[tables.table-026.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "timestamp"
+
+[tables.table-026.idxs.idx-1]
+cols = [4]
+type = "btree"
+unique = true
+
+[tables.table-026.idxs.idx-2]
+cols = [1, 7, 9]
+type = "btree"
+unique = true
+
+[tables.table-026.idxs.idx-3]
+cols = [9, 11]
+type = "btree"
+unique = false
+
+[tables.table-026.idxs.idx-4]
+cols = [5, 6, 12]
+type = "btree"
+unique = true
+
+[tables.table-026.idxs.idx-5]
+cols = [6]
+type = "btree"
+unique = false
+
+[tables.table-026.idxs.idx-6]
+cols = [3, 4, 13]
+type = "btree"
+unique = false
+
+[tables.table-027]
+has_clustered_index = false
+index_bytes = 2097152
+rows = 40000
+schema = "schema-C"
+table_bytes = 8388608
+
+[tables.table-027.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-027.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "smallint"
+
+[tables.table-027.cols.col-3]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "text"
+
+[tables.table-027.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-027.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-027.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "integer"
+
+[tables.table-027.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "timestamp"
+
+[tables.table-027.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "uuid"
+
+[tables.table-027.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "json"
+
+[tables.table-027.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "boolean"
+
+[tables.table-027.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "bigint"
+
+[tables.table-027.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "date"
+
+[tables.table-027.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "boolean"
+
+[tables.table-027.cols.col-14]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 14
+type = "text"
+
+[tables.table-027.idxs.idx-1]
+cols = [6]
+type = "btree"
+unique = true
+
+[tables.table-027.idxs.idx-2]
+cols = [14]
+type = "fulltext"
+unique = false
+
+[tables.table-027.idxs.idx-3]
+cols = [7, 11, 12]
+type = "btree"
+unique = false
+
+[tables.table-028]
+has_clustered_index = false
+index_bytes = 119537664
+rows = 1760000
+schema = "schema-B"
+table_bytes = 551550976
+
+[tables.table-028.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-028.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "integer"
+
+[tables.table-028.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "json"
+
+[tables.table-028.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "integer"
+
+[tables.table-028.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "timestamp"
+
+[tables.table-028.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "boolean"
+
+[tables.table-028.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "integer"
+
+[tables.table-028.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "integer"
+
+[tables.table-028.cols.col-9]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "text"
+
+[tables.table-028.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "smallint"
+
+[tables.table-028.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "integer"
+
+[tables.table-028.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "bigint"
+
+[tables.table-028.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "bigint"
+
+[tables.table-028.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "timestamp"
+
+[tables.table-028.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "boolean"
+
+[tables.table-028.idxs.idx-1]
+cols = [11, 12]
+type = "btree"
+unique = true
+
+[tables.table-028.idxs.idx-2]
+cols = [9]
+type = "btree"
+unique = false
+
+[tables.table-028.idxs.idx-3]
+cols = [8]
+type = "btree"
+unique = false
+
+[tables.table-028.idxs.idx-4]
+cols = [5, 8, 15]
+type = "btree"
+unique = true
+
+[tables.table-028.idxs.idx-5]
+cols = [1, 15]
+type = "btree"
+unique = false
+
+[tables.table-029]
+has_clustered_index = false
+index_bytes = 119808
+rows = 2800
+schema = "schema-B"
+table_bytes = 392192
+
+[tables.table-029.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-029.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "numeric(12,2)"
+
+[tables.table-029.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "smallint"
+
+[tables.table-029.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-029.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "timestamp"
+
+[tables.table-029.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "integer"
+
+[tables.table-029.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "integer"
+
+[tables.table-029.cols.col-8]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "text"
+
+[tables.table-029.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "boolean"
+
+[tables.table-029.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "smallint"
+
+[tables.table-029.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "integer"
+
+[tables.table-029.cols.col-12]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "text"
+
+[tables.table-029.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "timestamp"
+
+[tables.table-029.idxs.idx-1]
+cols = [1, 3, 12]
+type = "btree"
+unique = true
+
+[tables.table-029.idxs.idx-2]
+cols = [3]
+type = "hash"
+unique = true
+
+[tables.table-029.idxs.idx-3]
+cols = [5]
+type = "btree"
+unique = true
+
+[tables.table-029.idxs.idx-4]
+cols = [2, 5, 9]
+type = "btree"
+unique = true
+
+[tables.table-030]
+has_clustered_index = false
+index_bytes = 6144
+rows = 200
+schema = "schema-B"
+table_bytes = 31744
+
+[tables.table-030.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-030.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "date"
+
+[tables.table-030.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "smallint"
+
+[tables.table-030.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-030.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "json"
+
+[tables.table-030.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "boolean"
+
+[tables.table-030.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "integer"
+
+[tables.table-030.cols.col-8]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "text"
+
+[tables.table-030.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "numeric(12,2)"
+
+[tables.table-030.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "timestamp"
+
+[tables.table-030.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "numeric(12,2)"
+
+[tables.table-030.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "uuid"
+
+[tables.table-030.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "timestamp"
+
+[tables.table-030.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 14
+type = "timestamp"
+
+[tables.table-030.cols.col-15]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "text"
+
+[tables.table-030.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "integer"
+
+[tables.table-030.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "integer"
+
+[tables.table-030.cols.col-18]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "text"
+
+[tables.table-030.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 19
+type = "integer"
+
+[tables.table-030.idxs.idx-1]
+cols = [14]
+type = "btree"
+unique = true
+
+[tables.table-030.idxs.idx-2]
+cols = [1]
+type = "btree"
+unique = false
+
+[tables.table-030.idxs.idx-3]
+cols = [4, 11]
+type = "hash"
+unique = false
+
+[tables.table-031]
+has_clustered_index = false
+index_bytes = 5120
+rows = 100
+schema = "schema-D"
+table_bytes = 36864
+
+[tables.table-031.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-031.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "timestamp"
+
+[tables.table-031.cols.col-3]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "text"
+
+[tables.table-031.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-031.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "bigint"
+
+[tables.table-031.idxs.idx-1]
+cols = [3]
+type = "btree"
+unique = true
+
+[tables.table-031.idxs.idx-2]
+cols = [1, 2, 3]
+type = "btree"
+unique = false
+
+[tables.table-031.idxs.idx-3]
+cols = [2]
+type = "fulltext"
+unique = false
+
+[tables.table-032]
+has_clustered_index = false
+index_bytes = 809500672
+rows = 3460000
+schema = "schema-D"
+table_bytes = 1572864000
+
+[tables.table-032.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-032.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "integer"
+
+[tables.table-032.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "json"
+
+[tables.table-032.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "json"
+
+[tables.table-032.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "boolean"
+
+[tables.table-032.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "boolean"
+
+[tables.table-032.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "user-defined"
+
+[tables.table-032.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "bigint"
+
+[tables.table-032.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "integer"
+
+[tables.table-032.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "integer"
+
+[tables.table-032.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "numeric(12,2)"
+
+[tables.table-032.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "timestamp"
+
+[tables.table-032.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "json"
+
+[tables.table-032.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "boolean"
+
+[tables.table-032.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "integer"
+
+[tables.table-032.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "date"
+
+[tables.table-032.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "integer"
+
+[tables.table-032.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 18
+type = "integer"
+
+[tables.table-032.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 19
+type = "integer"
+
+[tables.table-032.idxs.idx-1]
+cols = [6]
+type = "btree"
+unique = true
+
+[tables.table-032.idxs.idx-2]
+cols = [11]
+type = "btree"
+unique = false
+
+[tables.table-032.idxs.idx-3]
+cols = [7, 15]
+type = "hash"
+unique = true
+
+[tables.table-033]
+has_clustered_index = false
+index_bytes = 27648
+rows = 1100
+schema = "schema-E"
+table_bytes = 79872
+
+[tables.table-033.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-033.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "date"
+
+[tables.table-033.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "bigint"
+
+[tables.table-033.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "smallint"
+
+[tables.table-033.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-033.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "integer"
+
+[tables.table-033.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "bigint"
+
+[tables.table-033.cols.col-8]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "text"
+
+[tables.table-033.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "integer"
+
+[tables.table-033.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "bigint"
+
+[tables.table-033.idxs.idx-1]
+cols = [4]
+type = "btree"
+unique = true
+
+[tables.table-034]
+has_clustered_index = false
+index_bytes = 33554432
+rows = 216000
+schema = "schema-D"
+table_bytes = 61865984
+
+[tables.table-034.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-034.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "boolean"
+
+[tables.table-034.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "numeric(12,2)"
+
+[tables.table-034.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "timestamp"
+
+[tables.table-034.cols.col-5]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "text"
+
+[tables.table-034.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "integer"
+
+[tables.table-034.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "json"
+
+[tables.table-034.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "timestamp"
+
+[tables.table-034.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "numeric(12,2)"
+
+[tables.table-034.idxs.idx-1]
+cols = [1, 4]
+type = "btree"
+unique = true
+
+[tables.table-034.idxs.idx-2]
+cols = [4]
+type = "btree"
+unique = false
+
+[tables.table-034.idxs.idx-3]
+cols = [3, 4]
+type = "btree"
+unique = false
+
+[tables.table-035]
+has_clustered_index = false
+index_bytes = 666624
+rows = 9700
+schema = "schema-C"
+table_bytes = 2097152
+
+[tables.table-035.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-035.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "integer"
+
+[tables.table-035.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "boolean"
+
+[tables.table-035.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "integer"
+
+[tables.table-035.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "timestamp"
+
+[tables.table-035.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "bigint"
+
+[tables.table-035.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "json"
+
+[tables.table-035.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "boolean"
+
+[tables.table-035.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "uuid"
+
+[tables.table-035.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "numeric(12,2)"
+
+[tables.table-035.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "timestamp"
+
+[tables.table-035.idxs.idx-1]
+cols = [1, 5]
+type = "btree"
+unique = true
+
+[tables.table-035.idxs.idx-2]
+cols = [1, 4, 10]
+type = "btree"
+unique = false
+
+[tables.table-035.idxs.idx-3]
+cols = [5, 7, 10]
+type = "btree"
+unique = false
+
+[tables.table-035.idxs.idx-4]
+cols = [2, 9, 11]
+type = "btree"
+unique = false
+
+[tables.table-035.idxs.idx-5]
+cols = [6]
+type = "btree"
+unique = false
+
+[tables.table-035.idxs.idx-6]
+cols = [1, 6, 10]
+type = "btree"
+unique = false
+
+[tables.table-036]
+has_clustered_index = false
+index_bytes = 98304
+rows = 800
+schema = "schema-E"
+table_bytes = 268288
+
+[tables.table-036.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-036.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "text"
+
+[tables.table-036.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "boolean"
+
+[tables.table-036.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "text"
+
+[tables.table-036.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "bigint"
+
+[tables.table-036.cols.col-6]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "text"
+
+[tables.table-036.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "integer"
+
+[tables.table-036.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "integer"
+
+[tables.table-036.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "integer"
+
+[tables.table-036.cols.col-10]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "text"
+
+[tables.table-036.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "integer"
+
+[tables.table-036.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "integer"
+
+[tables.table-036.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "numeric(12,2)"
+
+[tables.table-036.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "integer"
+
+[tables.table-036.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "smallint"
+
+[tables.table-036.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "integer"
+
+[tables.table-036.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "integer"
+
+[tables.table-036.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 18
+type = "date"
+
+[tables.table-036.idxs.idx-1]
+cols = [3, 5, 8]
+type = "btree"
+unique = true
+
+[tables.table-037]
+has_clustered_index = false
+index_bytes = 2097152
+rows = 52000
+schema = "schema-E"
+table_bytes = 7340032
+
+[tables.table-037.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-037.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "integer"
+
+[tables.table-037.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "integer"
+
+[tables.table-037.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "json"
+
+[tables.table-037.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-037.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "date"
+
+[tables.table-037.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "user-defined"
+
+[tables.table-037.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "boolean"
+
+[tables.table-037.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "integer"
+
+[tables.table-037.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "integer"
+
+[tables.table-037.idxs.idx-1]
+cols = [3, 5, 7]
+type = "btree"
+unique = true
+
+[tables.table-038]
+has_clustered_index = false
+index_bytes = 17825792
+rows = 190000
+schema = "schema-E"
+table_bytes = 32505856
+
+[tables.table-038.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-038.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "bigint"
+
+[tables.table-038.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "integer"
+
+[tables.table-038.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-038.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "boolean"
+
+[tables.table-038.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "date"
+
+[tables.table-038.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "smallint"
+
+[tables.table-038.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "user-defined"
+
+[tables.table-038.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "integer"
+
+[tables.table-038.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "timestamp"
+
+[tables.table-038.cols.col-11]
+len_avg = 30
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "text"
+
+[tables.table-038.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "uuid"
+
+[tables.table-038.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "boolean"
+
+[tables.table-038.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "uuid"
+
+[tables.table-038.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "integer"
+
+[tables.table-038.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "binary"
+
+[tables.table-038.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "binary"
+
+[tables.table-038.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "timestamp"
+
+[tables.table-038.idxs.idx-1]
+cols = [2, 4, 12]
+type = "btree"
+unique = true
+
+[tables.table-038.idxs.idx-2]
+cols = [12, 16]
+type = "btree"
+unique = false
+
+[tables.table-039]
+has_clustered_index = false
+index_bytes = 1048576
+rows = 38000
+schema = "schema-F"
+table_bytes = 11534336
+
+[tables.table-039.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-039.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "numeric(12,2)"
+
+[tables.table-039.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "numeric(12,2)"
+
+[tables.table-039.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "numeric(12,2)"
+
+[tables.table-039.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "text"
+
+[tables.table-039.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "date"
+
+[tables.table-039.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "numeric(12,2)"
+
+[tables.table-039.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "integer"
+
+[tables.table-039.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "timestamp"
+
+[tables.table-039.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "uuid"
+
+[tables.table-039.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "numeric(12,2)"
+
+[tables.table-039.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "timestamp"
+
+[tables.table-039.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "integer"
+
+[tables.table-039.cols.col-14]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "text"
+
+[tables.table-039.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "timestamp"
+
+[tables.table-039.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "integer"
+
+[tables.table-039.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "timestamp"
+
+[tables.table-039.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "date"
+
+[tables.table-039.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 19
+type = "integer"
+
+[tables.table-039.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 20
+type = "integer"
+
+[tables.table-039.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 21
+type = "bigint"
+
+[tables.table-039.cols.col-22]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 22
+type = "integer"
+
+[tables.table-039.cols.col-23]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 23
+type = "uuid"
+
+[tables.table-039.cols.col-24]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 24
+type = "integer"
+
+[tables.table-039.cols.col-25]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 25
+type = "uuid"
+
+[tables.table-039.cols.col-26]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 26
+type = "integer"
+
+[tables.table-039.cols.col-27]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 27
+type = "integer"
+
+[tables.table-039.cols.col-28]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 28
+type = "numeric(12,2)"
+
+[tables.table-039.cols.col-29]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 29
+type = "smallint"
+
+[tables.table-039.cols.col-30]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 30
+type = "integer"
+
+[tables.table-039.cols.col-31]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 31
+type = "smallint"
+
+[tables.table-039.cols.col-32]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 32
+type = "text"
+
+[tables.table-039.cols.col-33]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 33
+type = "smallint"
+
+[tables.table-039.cols.col-34]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 34
+type = "integer"
+
+[tables.table-039.cols.col-35]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 35
+type = "timestamp"
+
+[tables.table-039.cols.col-36]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 36
+type = "bigint"
+
+[tables.table-039.cols.col-37]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 37
+type = "text"
+
+[tables.table-039.cols.col-38]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 38
+type = "boolean"
+
+[tables.table-039.cols.col-39]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 39
+type = "json"
+
+[tables.table-039.cols.col-40]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 40
+type = "integer"
+
+[tables.table-039.cols.col-41]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 41
+type = "timestamp"
+
+[tables.table-039.cols.col-42]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 42
+type = "numeric(12,2)"
+
+[tables.table-039.cols.col-43]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 43
+type = "numeric(12,2)"
+
+[tables.table-039.cols.col-44]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 44
+type = "binary"
+
+[tables.table-039.cols.col-45]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 45
+type = "uuid"
+
+[tables.table-039.cols.col-46]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 46
+type = "json"
+
+[tables.table-039.cols.col-47]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 47
+type = "integer"
+
+[tables.table-039.cols.col-48]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 48
+type = "boolean"
+
+[tables.table-039.cols.col-49]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 49
+type = "date"
+
+[tables.table-039.cols.col-50]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 50
+type = "text"
+
+[tables.table-039.cols.col-51]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 51
+type = "user-defined"
+
+[tables.table-039.cols.col-52]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 52
+type = "bigint"
+
+[tables.table-039.cols.col-53]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 53
+type = "text"
+
+[tables.table-039.cols.col-54]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 54
+type = "integer"
+
+[tables.table-039.cols.col-55]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 55
+type = "binary"
+
+[tables.table-039.cols.col-56]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 56
+type = "date"
+
+[tables.table-039.cols.col-57]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 57
+type = "integer"
+
+[tables.table-039.cols.col-58]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 58
+type = "integer"
+
+[tables.table-039.cols.col-59]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 59
+type = "date"
+
+[tables.table-039.cols.col-60]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 60
+type = "bigint"
+
+[tables.table-039.cols.col-61]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 61
+type = "smallint"
+
+[tables.table-039.cols.col-62]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 62
+type = "date"
+
+[tables.table-039.cols.col-63]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 63
+type = "numeric(12,2)"
+
+[tables.table-039.cols.col-64]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 64
+type = "integer"
+
+[tables.table-039.cols.col-65]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 65
+type = "integer"
+
+[tables.table-039.cols.col-66]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 66
+type = "text"
+
+[tables.table-039.idxs.idx-1]
+cols = [22, 42, 48]
+type = "btree"
+unique = true
+
+[tables.table-039.idxs.idx-2]
+cols = [14, 38]
+type = "fulltext"
+unique = false
+
+[tables.table-040]
+has_clustered_index = false
+index_bytes = 260046848
+rows = 16010000
+schema = "schema-D"
+table_bytes = 783286272
+
+[tables.table-040.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-040.cols.col-2]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "text"
+
+[tables.table-040.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "smallint"
+
+[tables.table-040.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "date"
+
+[tables.table-040.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "bigint"
+
+[tables.table-040.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "date"
+
+[tables.table-040.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "boolean"
+
+[tables.table-040.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "smallint"
+
+[tables.table-040.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "integer"
+
+[tables.table-040.cols.col-10]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "text"
+
+[tables.table-040.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "numeric(12,2)"
+
+[tables.table-040.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "smallint"
+
+[tables.table-040.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "uuid"
+
+[tables.table-040.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 14
+type = "numeric(12,2)"
+
+[tables.table-040.idxs.idx-1]
+cols = [5, 10, 12]
+type = "btree"
+unique = true
+
+[tables.table-040.idxs.idx-2]
+cols = [2, 4]
+type = "hash"
+unique = true
+
+[tables.table-040.idxs.idx-3]
+cols = [2, 5, 12]
+type = "btree"
+unique = true
+
+[tables.table-040.idxs.idx-4]
+cols = [2, 4, 6]
+type = "btree"
+unique = false
+
+[tables.table-040.idxs.idx-5]
+cols = [1]
+type = "btree"
+unique = true
+
+[tables.table-040.idxs.idx-6]
+cols = [3, 10]
+type = "hash"
+unique = false
+
+[tables.table-041]
+has_clustered_index = false
+index_bytes = 7340032
+rows = 62000
+schema = "schema-B"
+table_bytes = 20971520
+
+[tables.table-041.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-041.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "text"
+
+[tables.table-041.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "date"
+
+[tables.table-041.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "date"
+
+[tables.table-041.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "smallint"
+
+[tables.table-041.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "timestamp"
+
+[tables.table-041.cols.col-7]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "text"
+
+[tables.table-041.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "smallint"
+
+[tables.table-041.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "integer"
+
+[tables.table-041.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "bigint"
+
+[tables.table-041.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 11
+type = "user-defined"
+
+[tables.table-041.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "timestamp"
+
+[tables.table-041.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "integer"
+
+[tables.table-041.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "integer"
+
+[tables.table-041.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "timestamp"
+
+[tables.table-041.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "bigint"
+
+[tables.table-041.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "integer"
+
+[tables.table-041.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 18
+type = "binary"
+
+[tables.table-041.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 19
+type = "integer"
+
+[tables.table-041.idxs.idx-1]
+cols = [8, 14]
+type = "btree"
+unique = true
+
+[tables.table-041.idxs.idx-2]
+cols = [8, 11]
+type = "btree"
+unique = false
+
+[tables.table-042]
+has_clustered_index = false
+index_bytes = 290816
+rows = 2500
+schema = "schema-F"
+table_bytes = 894976
+
+[tables.table-042.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-042.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "numeric(12,2)"
+
+[tables.table-042.cols.col-3]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "text"
+
+[tables.table-042.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "integer"
+
+[tables.table-042.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 5
+type = "uuid"
+
+[tables.table-042.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "numeric(12,2)"
+
+[tables.table-042.cols.col-7]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "text"
+
+[tables.table-042.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 8
+type = "integer"
+
+[tables.table-042.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "bigint"
+
+[tables.table-042.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "text"
+
+[tables.table-042.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "smallint"
+
+[tables.table-042.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "date"
+
+[tables.table-042.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "text"
+
+[tables.table-042.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "integer"
+
+[tables.table-042.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "numeric(12,2)"
+
+[tables.table-042.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "bigint"
+
+[tables.table-042.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "boolean"
+
+[tables.table-042.cols.col-18]
+len_avg = 130
+len_p95 = 0
+nullable = false
+ordinal = 18
+type = "text"
+
+[tables.table-042.cols.col-19]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 19
+type = "text"
+
+[tables.table-042.idxs.idx-1]
+cols = [1, 3, 16]
+type = "btree"
+unique = true
+
+[tables.table-042.idxs.idx-2]
+cols = [16]
+type = "btree"
+unique = false
+
+[tables.table-042.idxs.idx-3]
+cols = [14]
+type = "btree"
+unique = true
+
+[tables.table-042.idxs.idx-4]
+cols = [6]
+type = "btree"
+unique = false
+
+[tables.table-042.idxs.idx-5]
+cols = [5, 11]
+type = "btree"
+unique = true
+
+[tables.table-043]
+has_clustered_index = false
+index_bytes = 194560
+rows = 4900
+schema = "schema-D"
+table_bytes = 488448
+
+[tables.table-043.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-043.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "json"
+
+[tables.table-043.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "integer"
+
+[tables.table-043.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "integer"
+
+[tables.table-043.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "integer"
+
+[tables.table-043.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "integer"
+
+[tables.table-043.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "integer"
+
+[tables.table-043.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "timestamp"
+
+[tables.table-043.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "smallint"
+
+[tables.table-043.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 10
+type = "uuid"
+
+[tables.table-043.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "binary"
+
+[tables.table-043.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "integer"
+
+[tables.table-043.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 13
+type = "integer"
+
+[tables.table-043.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "date"
+
+[tables.table-043.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 15
+type = "numeric(12,2)"
+
+[tables.table-043.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 16
+type = "integer"
+
+[tables.table-043.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "json"
+
+[tables.table-043.cols.col-18]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 18
+type = "date"
+
+[tables.table-043.cols.col-19]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 19
+type = "text"
+
+[tables.table-043.cols.col-20]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 20
+type = "bigint"
+
+[tables.table-043.cols.col-21]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 21
+type = "boolean"
+
+[tables.table-043.cols.col-22]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 22
+type = "timestamp"
+
+[tables.table-043.cols.col-23]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 23
+type = "integer"
+
+[tables.table-043.cols.col-24]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 24
+type = "text"
+
+[tables.table-043.cols.col-25]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 25
+type = "uuid"
+
+[tables.table-043.cols.col-26]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 26
+type = "date"
+
+[tables.table-043.cols.col-27]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 27
+type = "bigint"
+
+[tables.table-043.cols.col-28]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 28
+type = "numeric(12,2)"
+
+[tables.table-043.cols.col-29]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 29
+type = "timestamp"
+
+[tables.table-043.cols.col-30]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 30
+type = "numeric(12,2)"
+
+[tables.table-043.cols.col-31]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 31
+type = "smallint"
+
+[tables.table-043.cols.col-32]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 32
+type = "json"
+
+[tables.table-043.cols.col-33]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 33
+type = "timestamp"
+
+[tables.table-043.cols.col-34]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 34
+type = "integer"
+
+[tables.table-043.cols.col-35]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 35
+type = "boolean"
+
+[tables.table-043.cols.col-36]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 36
+type = "json"
+
+[tables.table-043.cols.col-37]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 37
+type = "date"
+
+[tables.table-043.cols.col-38]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 38
+type = "integer"
+
+[tables.table-043.cols.col-39]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 39
+type = "smallint"
+
+[tables.table-043.cols.col-40]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 40
+type = "timestamp"
+
+[tables.table-043.cols.col-41]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 41
+type = "timestamp"
+
+[tables.table-043.cols.col-42]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 42
+type = "boolean"
+
+[tables.table-043.cols.col-43]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 43
+type = "numeric(12,2)"
+
+[tables.table-043.cols.col-44]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 44
+type = "integer"
+
+[tables.table-043.cols.col-45]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 45
+type = "bigint"
+
+[tables.table-043.cols.col-46]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 46
+type = "integer"
+
+[tables.table-043.cols.col-47]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 47
+type = "date"
+
+[tables.table-043.cols.col-48]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 48
+type = "bigint"
+
+[tables.table-043.cols.col-49]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 49
+type = "date"
+
+[tables.table-043.cols.col-50]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 50
+type = "user-defined"
+
+[tables.table-043.cols.col-51]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 51
+type = "bigint"
+
+[tables.table-043.cols.col-52]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 52
+type = "json"
+
+[tables.table-043.cols.col-53]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 53
+type = "integer"
+
+[tables.table-043.cols.col-54]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 54
+type = "timestamp"
+
+[tables.table-043.cols.col-55]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 55
+type = "integer"
+
+[tables.table-043.idxs.idx-1]
+cols = [38]
+type = "btree"
+unique = true
+
+[tables.table-044]
+has_clustered_index = false
+index_bytes = 35651584
+rows = 1690000
+schema = "schema-F"
+table_bytes = 143654912
+
+[tables.table-044.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-044.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 2
+type = "integer"
+
+[tables.table-044.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "json"
+
+[tables.table-044.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "timestamp"
+
+[tables.table-044.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "date"
+
+[tables.table-044.cols.col-6]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 6
+type = "text"
+
+[tables.table-044.cols.col-7]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 7
+type = "uuid"
+
+[tables.table-044.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "integer"
+
+[tables.table-044.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 9
+type = "timestamp"
+
+[tables.table-044.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "integer"
+
+[tables.table-044.cols.col-11]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "json"
+
+[tables.table-044.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 12
+type = "text"
+
+[tables.table-044.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "bigint"
+
+[tables.table-044.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 14
+type = "boolean"
+
+[tables.table-044.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "integer"
+
+[tables.table-044.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "timestamp"
+
+[tables.table-044.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 17
+type = "timestamp"
+
+[tables.table-044.cols.col-18]
+len_avg = 30
+len_p95 = 0
+nullable = false
+ordinal = 18
+type = "text"
+
+[tables.table-044.cols.col-19]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 19
+type = "bigint"
+
+[tables.table-044.idxs.idx-1]
+cols = [19]
+type = "btree"
+unique = true
+
+[tables.table-044.idxs.idx-2]
+cols = [16, 19]
+type = "btree"
+unique = false
+
+[tables.table-044.idxs.idx-3]
+cols = [1, 2]
+type = "btree"
+unique = false
+
+[tables.table-044.idxs.idx-4]
+cols = [8]
+type = "fulltext"
+unique = false
+
+[tables.table-045]
+has_clustered_index = false
+index_bytes = 16384
+rows = 600
+schema = "schema-D"
+table_bytes = 96256
+
+[tables.table-045.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "bigint"
+
+[tables.table-045.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "timestamp"
+
+[tables.table-045.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 3
+type = "integer"
+
+[tables.table-045.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 4
+type = "integer"
+
+[tables.table-045.cols.col-5]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 5
+type = "timestamp"
+
+[tables.table-045.cols.col-6]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 6
+type = "bigint"
+
+[tables.table-045.cols.col-7]
+len_avg = 510
+len_p95 = 0
+nullable = true
+ordinal = 7
+type = "text"
+
+[tables.table-045.cols.col-8]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 8
+type = "integer"
+
+[tables.table-045.cols.col-9]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 9
+type = "smallint"
+
+[tables.table-045.cols.col-10]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 10
+type = "binary"
+
+[tables.table-045.cols.col-11]
+len_avg = 130
+len_p95 = 0
+nullable = true
+ordinal = 11
+type = "text"
+
+[tables.table-045.cols.col-12]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 12
+type = "timestamp"
+
+[tables.table-045.cols.col-13]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 13
+type = "numeric(12,2)"
+
+[tables.table-045.cols.col-14]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 14
+type = "numeric(12,2)"
+
+[tables.table-045.cols.col-15]
+len_avg = 10
+len_p95 = 0
+nullable = true
+ordinal = 15
+type = "smallint"
+
+[tables.table-045.cols.col-16]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 16
+type = "boolean"
+
+[tables.table-045.cols.col-17]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 17
+type = "json"
+
+[tables.table-045.idxs.idx-1]
+cols = [14]
+type = "btree"
+unique = true
+
+[fk_edges]
+table-001 = [{ to = "table-041", cols = [17] }]
+table-002 = [{ to = "table-027", cols = [1] }, { to = "table-034", cols = [2] }]
+table-003 = [{ to = "table-004", cols = [20] }]
+table-004 = [{ to = "table-018", cols = [7] }]
+table-005 = [{ to = "table-042", cols = [2] }, { to = "table-004", cols = [15] }]
+table-006 = [{ to = "table-031", cols = [13] }, { to = "table-017", cols = [4] }]
+table-007 = [{ to = "table-045", cols = [3] }]
+table-008 = [{ to = "table-028", cols = [16] }, { to = "table-037", cols = [8] }]
+table-009 = [{ to = "table-044", cols = [7] }]
+table-010 = [{ to = "table-037", cols = [2] }]
+table-011 = [{ to = "table-026", cols = [1] }]
+table-012 = [{ to = "table-030", cols = [20] }]
+table-013 = [{ to = "table-032", cols = [19] }]
+table-014 = [{ to = "table-002", cols = [4] }]
+table-015 = [{ to = "table-013", cols = [5] }, { to = "table-003", cols = [13] }, { to = "table-006", cols = [12] }]
+table-016 = [{ to = "table-043", cols = [28] }, { to = "table-014", cols = [29] }]
+table-017 = [{ to = "table-002", cols = [7] }, { to = "table-020", cols = [2] }]
+table-018 = [{ to = "table-036", cols = [15] }]
+table-019 = [{ to = "table-005", cols = [6] }, { to = "table-015", cols = [3] }]
+table-020 = [{ to = "table-042", cols = [10] }, { to = "table-015", cols = [20] }, { to = "table-006", cols = [18] }]
+table-021 = [{ to = "table-026", cols = [1] }, { to = "table-027", cols = [12] }]
+table-022 = [{ to = "table-025", cols = [4] }, { to = "table-026", cols = [5] }, { to = "table-013", cols = [7] }]
+table-023 = [{ to = "table-014", cols = [51] }]
+table-024 = [{ to = "table-022", cols = [12] }]
+table-025 = [{ to = "table-017", cols = [3] }]
+table-026 = [{ to = "table-002", cols = [3] }, { to = "table-038", cols = [6] }, { to = "table-033", cols = [1] }]
+table-027 = [{ to = "table-034", cols = [8] }]
+table-028 = [{ to = "table-032", cols = [11] }]
+table-029 = [{ to = "table-027", cols = [11] }]
+table-031 = [{ to = "table-029", cols = [5] }]
+table-032 = [{ to = "table-028", cols = [2] }, { to = "table-005", cols = [1] }]
+table-033 = [{ to = "table-045", cols = [6] }]
+table-034 = [{ to = "table-010", cols = [6] }, { to = "table-038", cols = [9] }, { to = "table-033", cols = [1] }]
+table-035 = [{ to = "table-010", cols = [5] }, { to = "table-041", cols = [10] }, { to = "table-016", cols = [4] }]
+table-036 = [{ to = "table-006", cols = [1] }, { to = "table-013", cols = [9] }]
+table-037 = [{ to = "table-038", cols = [1] }, { to = "table-043", cols = [5] }]
+table-038 = [{ to = "table-024", cols = [11] }]
+table-039 = [{ to = "table-014", cols = [61] }]
+table-041 = [{ to = "table-023", cols = [8] }, { to = "table-036", cols = [8] }]
+table-042 = [{ to = "table-022", cols = [15] }, { to = "table-028", cols = [6] }, { to = "table-012", cols = [19] }]
+table-043 = [{ to = "table-039", cols = [46] }]
+table-044 = [{ to = "table-021", cols = [8] }]
+table-045 = [{ to = "table-032", cols = [2] }]

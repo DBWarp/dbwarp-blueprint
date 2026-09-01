@@ -1,0 +1,28 @@
+# Build artifacts (NOT vendor — that's intentionally committed for audit).
+/target/
+/target-*/
+/build/
+**/*.rs.bk
+__pycache__/
+*.pyc
+
+# Local user state.
+.idea/
+.vscode/
+*.swp
+
+# Codex review correspondence (prompts + responses). These are the
+# review process paper trail, not release artifacts. Local-only.
+CODEX_*.md
+
+# Test scratch.
+/tmp/
+/artifact-publish/
+/test-output/
+
+# Keep release/ if/when populated with checked-in releases (none today).
+
+# Generated decks (regenerate with `dbwarp-blueprint --deck` or `--from-toml ... --deck`).
+*.pptx
+~$*.pptx
+.~lock.*.pptx#

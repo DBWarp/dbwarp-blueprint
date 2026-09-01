@@ -1,0 +1,5 @@
+# Default customer builds use Cargo.lock and the normal crates.io index.
+# Release builds also publish a separate vendored source bundle for customers
+# who need a fully offline dependency-audit path.
+[net]
+offline = false

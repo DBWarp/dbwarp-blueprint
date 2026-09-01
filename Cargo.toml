@@ -1,0 +1,75 @@
+[package]
+name = "dbwarp-blueprint"
+version = "1.5.0"
+edition = "2021"
+rust-version = "1.94.0"
+authors = ["Paul Anderson <paul@paul-anderson.com>"]
+license = "Apache-2.0 OR MIT"
+description = "Customer-side database Blueprint tool for DBWarp migration planning and pre-flight estimation."
+repository = "https://github.com/DBWarp/dbwarp-blueprint"
+readme = "README.md"
+
+[[bin]]
+name = "dbwarp-blueprint"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+anstream = "1"
+anstyle = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4", features = ["derive"] }
+glob = "0.3"
+getrandom = "0.3"
+hex = "0.4"
+hmac = "0.12"
+mysql_async = { version = "0.34", default-features = false, features = ["minimal", "rustls-tls", "chrono"] }
+regex = "1"
+rpassword = "7"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
+rustls-pemfile = "2"
+rustls-pki-types = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+unicode-normalization = "0.1"
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "rustls", "chrono"] }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "time"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
+tokio-postgres-rustls = "0.13"
+tokio-util = { version = "0.7", features = ["compat"] }
+toml = { version = "0.8", default-features = false, features = ["display", "parse"] }
+webpki-roots = "0.26"
+zeroize = { version = "1", features = ["derive"] }
+zstd = "0.13"
+dbwarp-blueprint-core = { path = "crates/dbwarp-blueprint-core", features = ["file-formats"] }
+mimalloc = "0.1.52"
+
+[patch.crates-io]
+mysql_async = { path = "vendor/mysql_async" }
+
+[features]
+default = []
+# Linux Kerberos auth via tiberius + libgssapi. Requires the system
+# library libgssapi-krb5 / libkrb5 at compile AND run time
+# (Gentoo: app-crypt/mit-krb5; Debian: libkrb5-dev libkrb5-3
+# libgssapi-krb5-2; RHEL: krb5-devel krb5-libs). Build with
+# `cargo build --release --features integrated-auth-gssapi`.
+# The binary's reproducible-build sha differs from the vanilla build;
+# document both in STATUS.md.
+integrated-auth-gssapi = ["tiberius/integrated-auth-gssapi"]
+# Windows SSPI auth via tiberius. SSPI is built into Windows so no
+# external prerequisite. Build with `--features winauth` on Windows
+# targets only.
+winauth = ["tiberius/winauth"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+panic = "abort"
+strip = "symbols"
+codegen-units = 1
+incremental = false
+
+[profile.release.package.zstd-sys]
+opt-level = 3

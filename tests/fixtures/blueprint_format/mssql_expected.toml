@@ -1,0 +1,126 @@
+# dbwarp-blueprint v6
+# Anonymous database Blueprint. Source object names and row values are excluded.
+# Review under your organization's data-classification policy before sharing.
+# https://github.com/DBWarp/dbwarp-blueprint
+
+# Producer: blueprint_format.py SQL fallback; anonymization key source: customer-key-file
+
+schema_version = 6
+generated_at = "2026-04-28T00:00:00Z"
+engine = "sqlserver"
+engine_version = "16.0.4115.5"
+source_kind = "production"
+length_metadata = "not-captured"
+declared_length_fidelity = "not-captured"
+index_length_fidelity = "not-captured"
+observed_length_fidelity = "not-sampled"
+
+[totals]
+index_bytes = 1143996416
+row_count = 13485000
+table_bytes = 4514119680
+table_count = 2
+
+[database_topology]
+contract = "dbwarp-blueprint-topology/v1"
+deployment = "unknown"
+local_role = "unknown"
+visibility = "unknown"
+member_count = 0
+identifiers_redacted = true
+
+[dataset_scope]
+contract = "dbwarp-blueprint-dataset-scope/v1"
+layout = "unknown"
+table_inventory_completeness = "unknown"
+row_count_completeness = "unknown"
+size_completeness = "unknown"
+row_count_method = "sqlserver-partition-counter"
+size_method = "sqlserver-partition-pages"
+limitations = ["topology-unobserved", "topology-visibility-unknown"]
+
+[tables.table-001]
+has_clustered_index = true
+index_bytes = 1048576000
+rows = 12500000
+schema = "schema-A"
+table_bytes = 4194304000
+
+[tables.table-001.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "integer"
+
+[tables.table-001.cols.col-2]
+len_avg = 510
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "text"
+
+[tables.table-001.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "timestamp"
+
+[tables.table-001.idxs.idx-1]
+cols = [2]
+type = "nonclustered"
+unique = true
+
+[tables.table-001.idxs.idx-2]
+cols = [1]
+type = "clustered"
+unique = true
+
+[tables.table-002]
+has_clustered_index = true
+index_bytes = 95420416
+rows = 985000
+schema = "schema-A"
+table_bytes = 319815680
+
+[tables.table-002.cols.col-1]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 1
+type = "integer"
+
+[tables.table-002.cols.col-2]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 2
+type = "integer"
+
+[tables.table-002.cols.col-3]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 3
+type = "integer"
+
+[tables.table-002.cols.col-4]
+len_avg = 10
+len_p95 = 0
+nullable = false
+ordinal = 4
+type = "timestamp"
+
+[tables.table-002.idxs.idx-1]
+cols = [2, 4]
+type = "nonclustered"
+unique = false
+
+[tables.table-002.idxs.idx-2]
+cols = [1]
+type = "clustered"
+unique = true
+
+[fk_edges]
+table-002 = [{ to = "table-001", cols = [2], to_cols = [1] }]

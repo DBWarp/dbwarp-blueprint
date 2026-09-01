@@ -1,0 +1,391 @@
+{
+  "schema_version": 1,
+  "locale": "de",
+  "messages": {
+    "DBP0001E": {
+      "summary": "Der Vorgang dbwarp-blueprint ist fehlgeschlagen",
+      "cause": "Der angeforderte Vorgang ist fehlgeschlagen, bevor eine spezifischere Bedienermeldung ihn klassifizieren konnte.",
+      "action": "Überprüfen Sie die technischen Details und die Kausalkette, korrigieren Sie den zugrunde liegenden Zustand und versuchen Sie es erneut."
+    },
+    "DBP1000E": {
+      "summary": "Die Datenbankverbindung URI ist erforderlich",
+      "cause": "Es wurde keine Live-Datenbank URI oder Offline-Eingabemodus angegeben.",
+      "action": "Übergeben Sie --connect URI oder wählen Sie einen Offline-Eingabemodus aus."
+    },
+    "DBP1001E": {
+      "summary": "Das Passwort für die Verbindung URI wurde abgelehnt",
+      "cause": "Verbindungs-URIs sind für die Prozessinspektion und den Shell-Verlauf sichtbar, daher sind eingebettete Anmeldeinformationen unsicher.",
+      "action": "Verwenden Sie --password-file, --password-env oder die interaktive Eingabeaufforderung TTY. Siehe AUTH.md und SECURITY.md."
+    },
+    "DBP1002E": {
+      "summary": "Das Datenbankschema URI wird nicht unterstützt",
+      "cause": "Der Wert --connect verwendete kein unterstütztes Schema PostgreSQL, MySQL, MariaDB oder SQL Server URI.",
+      "action": "Verwenden Sie postgresql://, postgres://, mysql://, mariadb://, sqlserver://, mssql:// oder tds://."
+    },
+    "DBP1003E": {
+      "summary": "Die Überschreibung des TLS-Servernamens ist nicht verfügbar",
+      "cause": "Diese Version implementiert --tls-server-name nicht.",
+      "action": "Verwenden Sie in --connect einen Hostnamen, der dem Zertifikat entspricht. PostgreSQL und MySQL dürfen verify-ca verwenden, wenn die Richtlinie eine reine Zertifikatskettenprüfung zulässt; SQL Server prüft den Hostnamen in beiden prüfenden Modi."
+    },
+    "DBP1004E": {
+      "summary": "Microsoft Entra-Token-Option, die für eine andere Engine verwendet wird",
+      "cause": "Die Azure-Token-Optionen gelten speziell für die SQL Server-Authentifizierung.",
+      "action": "Verwenden Sie für PostgreSQL oder MySQL Cloud IAM cloud-token und stellen Sie das externe Token über genau eine Quelle mit --password-file oder --password-env bereit."
+    },
+    "DBP1005E": {
+      "summary": "Der Authentifizierungsmodus ist für die ausgewählte Engine nicht verfügbar",
+      "cause": "Der ausgewählte --auth-mode ist für die ausgewählte Datenbank-Engine nicht implementiert.",
+      "action": "Verwenden Sie sql-auth, cloud-token, entra-token oder integrated nur mit einer Datenbank-Engine, die diesen Modus unterstützt."
+    },
+    "DBP1006E": {
+      "summary": "Für die Kompressionsprobe strukturierter Dateien fehlt die ausdrückliche Zustimmung",
+      "cause": "Strukturierte Dateimodi können nicht interaktiv fragen und benötigen vor begrenzten Stichproben daher --yes.",
+      "action": "Prüfen Sie den Preflight-Vertrag und führen Sie den Lauf mit --measure-compression --yes erneut aus."
+    },
+    "DBP1007E": {
+      "summary": "Der Längentreuemodus ist für diese Engine nicht verfügbar",
+      "cause": "Explizite Längentreuekontrollen gelten derzeit nur für die Live-Erfassung von MySQL oder MariaDB.",
+      "action": "Entfernen Sie den expliziten Modus oder verwenden Sie eine unterstützte MySQL- oder MariaDB-Quelle."
+    },
+    "DBP1008E": {
+      "summary": "Konflikt zwischen Längentreue-Optionen",
+      "cause": "Der alte Alias exact für exakte Längen wurde mit der Längentreue strict kombiniert.",
+      "action": "Entfernen Sie den alten Alias oder verwenden Sie --length-fidelity exact --yes."
+    },
+    "DBP1009E": {
+      "summary": "Für die genaue Längentreue bedarf es einer ausdrücklichen Zustimmung",
+      "cause": "Exakte Stichprobenlängen können genauere Kundenstatistiken offenlegen und erfordern --yes.",
+      "action": "Prüfen Sie den Preflight-Vertrag und führen Sie den Lauf mit --length-fidelity exact --yes erneut aus."
+    },
+    "DBP1010E": {
+      "summary": "Der eingebettete Lokalisierungskatalog ist unvollständig",
+      "cause": "Eine angekündigte Sprache deckt nicht genau die aktive CLI-, Diagnose- oder Präsentationsoberfläche ab.",
+      "action": "Installieren Sie einen vollständigen Build oder wählen Sie Englisch; Betreuer müssen jedes Gebietsschema mit jeder für den Kunden sichtbaren Zeichenfolge aktualisieren."
+    },
+    "DBP1011E": {
+      "summary": "Befehlszeilenargumente sind ungültig",
+      "cause": "Clap hat eine Option, einen Wert, einen Konflikt, eine Anforderung oder ein Positionsargument abgelehnt.",
+      "action": "Korrigieren Sie den Befehl mit dbwarp-blueprint --help und versuchen Sie es erneut."
+    },
+    "DBP1012E": {
+      "summary": "Die Datenbankverbindungs-URI ist fehlerhaft",
+      "cause": "Der Wert --connect verwendete ein unterstütztes Schema, aber Autorität, Host, Port, Benutzerinformationen oder Datenbankpfad konnten nicht analysiert werden.",
+      "action": "Korrigieren Sie die URI-Struktur, setzen Sie IPv6-Hosts in eckige Klammern, geben Sie einen Datenbanknamen an und halten Sie Anmeldeinformationen aus der URI heraus."
+    },
+    "DBP1013E": {
+      "summary": "Die Quellenklassifizierung ist ungültig",
+      "cause": "Der Wert --source-kind ist leer oder gehört nicht zu den unterstützten Quellenklassifizierungen.",
+      "action": "Verwenden Sie production, staging, scrubbed-replica oder synthetic."
+    },
+    "DBP1101E": {
+      "summary": "Batch-Manifest konnte nicht gelesen werden",
+      "cause": "Der Manifestpfad war nicht verfügbar oder seine Berechtigungen verhinderten das Lesen.",
+      "action": "Überprüfen Sie den Pfad und die Dateiberechtigungen und versuchen Sie es dann erneut."
+    },
+    "DBP1102E": {
+      "summary": "Das Batch-Manifest konnte nicht analysiert werden",
+      "cause": "Das Manifest ist für das unterstützte Batchschema TOML nicht gültig.",
+      "action": "Korrigieren Sie die Struktur und die Werte von TOML und validieren Sie sie dann mit --dry-run."
+    },
+    "DBP1103E": {
+      "summary": "Das Batch-Manifest enthält keine Quellen",
+      "cause": "Das Manifest enthält keine [[source]]-Einträge.",
+      "action": "Fügen Sie mindestens einen [[source]]-Block hinzu."
+    },
+    "DBP1104E": {
+      "summary": "Für die Sammelsammlung bedarf es einer ausdrücklichen Zustimmung",
+      "cause": "Für die nicht interaktive Multi-Source-Sammlung ist --yes. erforderlich.",
+      "action": "Zuerst mit --dry-run ausführen, den Plan überprüfen und dann mit --yes. erneut ausführen"
+    },
+    "DBP1105E": {
+      "summary": "Eine Batch-Quelle ist fehlgeschlagen",
+      "cause": "Eine Quelle in einer Sammlung mit mehreren Quellen konnte nicht als Blueprint erfasst werden.",
+      "action": "Überprüfen Sie die quellenspezifischen Details und führen Sie sie erneut mit --dry-run aus, bevor Sie es erneut versuchen."
+    },
+    "DBP1106E": {
+      "summary": "Die Art der Batch-Quelle wird nicht unterstützt",
+      "cause": "Eine Quellenart war keine unterstützte Datenbank-Engine oder kein unterstütztes strukturiertes Dateiformat.",
+      "action": "Verwenden Sie `postgresql`, `mysql`, `sqlserver`, `parquet` oder `avro`."
+    },
+    "DBP1107E": {
+      "summary": "Dateiquelle hat keine Eingaben gelöst",
+      "cause": "Der konfigurierte Pfad, die konfigurierten Pfade oder der Glob stimmten mit keinen strukturierten Dateien überein.",
+      "action": "Korrigieren Sie die Quellpfade relativ zum Manifest."
+    },
+    "DBP1108E": {
+      "summary": "Der Dateidatensatzmodus wird nicht unterstützt",
+      "cause": "Der Wert `dataset_mode` war nicht `single_file`, `one_table_per_file`, `merge_same_schema` oder `partitioned_dataset`.",
+      "action": "Wählen Sie einen unterstützten `dataset_mode`."
+    },
+    "DBP1109E": {
+      "summary": "Die Kennung der Batch-Quelle ist ungültig",
+      "cause": "Eine [[source]]-Kennung enthält nach sicherer Normalisierung keinen ASCII-Buchstaben und keine Ziffer.",
+      "action": "Geben Sie jeder Batch-Quelle eine stabile Kennung mit mindestens einem ASCII-Buchstaben oder einer Ziffer."
+    },
+    "DBP1110E": {
+      "summary": "Die Konfiguration der Datenbankquellenverbindung ist nicht eindeutig",
+      "cause": "Die Batchquelle hat nicht genau eine Verbindung, connect_env oder connect_file angegeben.",
+      "action": "Stellen Sie genau eine Verbindungsquelle ein."
+    },
+    "DBP1111E": {
+      "summary": "Die Umgebungsvariable für die Stapelverbindung ist nicht verfügbar",
+      "cause": "Die benannte Variable connect_env fehlte oder war nicht lesbar.",
+      "action": "Exportieren Sie die Variable oder verwenden Sie connect_file."
+    },
+    "DBP1112E": {
+      "summary": "Die Batch-Verbindungsdatei ist nicht verfügbar",
+      "cause": "Der Pfad connect_file fehlte oder war nicht lesbar.",
+      "action": "Überprüfen Sie den Pfad relativ zum Batch-Manifest und seinen Berechtigungen."
+    },
+    "DBP1113E": {
+      "summary": "Die Batch-Ausgabe konnte nicht abgeschlossen werden",
+      "cause": "Eine Batch-Blueprint-Datei, ein Quellenaudit, ein Fehlerbericht, ein Verzeichnis oder eine Bundle-Ausgabe konnte nicht kodiert, erstellt, erneut gelesen oder geschrieben werden.",
+      "action": "Prüfen Sie Ausgabepfad, Berechtigungen, freien Speicherplatz und Dateisystemzustand und versuchen Sie es erneut."
+    },
+    "DBP1114E": {
+      "summary": "Die Mitglieder des strukturierten Dateidatensatzes sind inkompatibel",
+      "cause": "Als ein logischer Datensatz ausgewählte Dateien hatten keine Tabellenstruktur oder keine kompatible Spaltenstruktur.",
+      "action": "Prüfen Sie die ausgewählten Dateien und verwenden Sie one_table_per_file oder getrennte Batch-Quellen, wenn sich ihre Schemas unterscheiden."
+    },
+    "DBP1115E": {
+      "summary": "Alle Batch-Quellen sind fehlgeschlagen",
+      "cause": "Das Diagnose-Bundle wurde veröffentlicht, enthält aber keine verwendbare Quell-Blueprint.",
+      "action": "Prüfen Sie errors.txt sowie Eingaben oder Anmeldedaten und führen Sie die fehlgeschlagenen Quellen erneut aus."
+    },
+    "DBP1116E": {
+      "summary": "Das Batch-Bundle ist unvollständig",
+      "cause": "Mindestens eine Batch-Quelle ist fehlgeschlagen, während eine andere abgeschlossen wurde; das veröffentlichte Bundle ist daher unvollständig.",
+      "action": "Prüfen Sie errors.txt und alle Quellaudits und erfassen Sie fehlgeschlagene Quellen erneut."
+    },
+    "DBP1200E": {
+      "summary": "Der Bundle-Selektor ist ungültig",
+      "cause": "Ein Ausdruck für blueprint:// oder --select war fehlerhaft oder widersprüchlich.",
+      "action": "Verwenden Sie source=ID, table=ID, engine=VALUE oder tag=NAME einmal pro Auswahlschlüssel."
+    },
+    "DBP1201E": {
+      "summary": "Die Bundle-Auswahl stimmte mit keiner Quelle überein",
+      "cause": "Keine Bundle-Quelle erfüllt die angegebenen Selektorprädikate.",
+      "action": "Führen Sie --bundle-list aus, um die verfügbaren Quellen und Selektoren zu überprüfen."
+    },
+    "DBP1202E": {
+      "summary": "Der Bundle-Selektor stimmte mit mehreren Quellen überein",
+      "cause": "Der Selektor ist für einen Einzelquellenvorgang nicht spezifisch genug.",
+      "action": "Fügen Sie --select source=ID oder ein anderes einschränkendes Prädikat hinzu."
+    },
+    "DBP1203E": {
+      "summary": "Der Bündelselektor stimmte mit keiner extrahierbaren Blueprint überein",
+      "cause": "Die ausgewählte Quelle verfügt über keine passende eingebettete oder referenzierte Blueprint/Tabelle.",
+      "action": "Quell- und Tabellenselektoren mit --bundle-list. prüfen"
+    },
+    "DBP1204E": {
+      "summary": "Die Bundle-Eingabe konnte nicht gelesen werden",
+      "cause": "Der Bundle-Pfad war nicht verfügbar, keine reguläre lesbare Eingabe oder aufgrund seiner Berechtigungen nicht lesbar.",
+      "action": "Prüfen Sie Bundle-Pfad und Berechtigungen und versuchen Sie es erneut."
+    },
+    "DBP1205E": {
+      "summary": "Der Bundle-Inhalt ist ungültig",
+      "cause": "Das Bundle-TOML oder eine referenzierte Blueprint-Datei konnte nicht analysiert, validiert oder geladen werden.",
+      "action": "Validieren Sie das Bundle und die referenzierten Blueprint-Dateien und erzeugen Sie das Bundle bei Bedarf neu."
+    },
+    "DBP1206E": {
+      "summary": "Die Bundle-Ausgabe konnte nicht geschrieben werden",
+      "cause": "Eine extrahierte oder gepackte Bundle-Ausgabe konnte nicht serialisiert, erstellt oder geschrieben werden.",
+      "action": "Prüfen Sie Zielpfad, Berechtigungen und freien Speicherplatz und versuchen Sie es erneut."
+    },
+    "DBP1301E": {
+      "summary": "Der Ausgabepfad des Decks ist erforderlich",
+      "cause": "--from-toml wurde ohne --deck. bereitgestellt",
+      "action": "Übergeben Sie --deck output.pptx."
+    },
+    "DBP1302E": {
+      "summary": "Die Schemaversion von Blueprint TOML wird nicht unterstützt",
+      "cause": "Die Eingabe-Blueprint verwendet eine Schemaversion, die diese Version nicht lesen kann.",
+      "action": "Generieren Sie die Blueprint mit einer kompatiblen dbwarp-blueprint-Version neu."
+    },
+    "DBP1401E": {
+      "summary": "PostgreSQL Blueprint-Erfassung fehlgeschlagen",
+      "cause": "Eine PostgreSQL-Verbindung, eine Katalogabfrage, ein RTT-Probe-, Sampling- oder Dekodierungsvorgang ist fehlgeschlagen.",
+      "action": "Überprüfen Sie die technischen Details, die Konnektivität, die Berechtigungen, die TLS-Richtlinie und den Quellzustand und versuchen Sie es dann erneut."
+    },
+    "DBP1402E": {
+      "summary": "MySQL Blueprint-Erfassung fehlgeschlagen",
+      "cause": "Eine MySQL- oder MariaDB-Verbindung, eine Katalogabfrage, ein RTT-Probe-, Sampling- oder Dekodierungsvorgang ist fehlgeschlagen.",
+      "action": "Überprüfen Sie die technischen Details, die Konnektivität, die Berechtigungen, die TLS-Richtlinie und den Quellzustand und versuchen Sie es dann erneut."
+    },
+    "DBP1403E": {
+      "summary": "SQL Server Blueprint-Erfassung fehlgeschlagen",
+      "cause": "Eine SQL Server-Verbindung, eine Katalogabfrage, ein RTT-Probe-, Sampling- oder Dekodierungsvorgang ist fehlgeschlagen.",
+      "action": "Überprüfen Sie die technischen Details, die Konnektivität, die Berechtigungen, die TLS-Richtlinie und den Quellzustand und versuchen Sie es dann erneut."
+    },
+    "DBP1404W": {
+      "summary": "Die TLS-Präferenz ist auf Klartext zurückgefallen",
+      "cause": "Eine PostgreSQL-Loopback-Verbindung im TLS-Modus prefer konnte TLS nicht aushandeln und wurde lokal über Klartext fortgesetzt.",
+      "action": "Verwenden Sie --tls-mode verify-full oder require, wenn selbst lokaler Klartext unzulässig ist."
+    },
+    "DBP1405W": {
+      "summary": "Die Datenbank-RTT-Prüfung war nicht verfügbar",
+      "cause": "Die optionale Latenzprüfung SELECT 1 ist fehlgeschlagen, während die primäre Katalogerfassung weiterhin verwendbar war.",
+      "action": "Prüfen Sie Berechtigungen und Verbindung der Prüfung oder verwenden Sie --no-rtt-probe, wenn der DBA die Prüfung absichtlich verbietet."
+    },
+    "DBP1406W": {
+      "summary": "Das Zeitbudget für Stichproben wurde ausgeschöpft",
+      "cause": "Tier 2 erreichte das konfigurierte Laufzeitbudget, bevor alle Tabellen oder Textspalten untersucht werden konnten.",
+      "action": "Erhöhen Sie --max-wall-secs oder akzeptieren Sie eine teilweise Stichprobe und prüfen Sie die Auditwarnungen."
+    },
+    "DBP1407W": {
+      "summary": "Die Kompressionsstichprobe war nicht verfügbar",
+      "cause": "Eine begrenzte Zeilenstichprobenabfrage, ein Datenstrom, eine Kodierung oder ein Kompressionsvorgang ist für mindestens eine Tabelle fehlgeschlagen, während die Blueprint-Erfassung fortgesetzt wurde.",
+      "action": "Prüfen Sie technische Details und Tabellenberechtigungen und führen Sie Tier 2 erneut aus, wenn vollständige Kompressionsergebnisse erforderlich sind."
+    },
+    "DBP1408W": {
+      "summary": "Die Spaltenstil-Stichprobe war nicht verfügbar",
+      "cause": "Eine begrenzte Stilprüfung einer Textspalte ist für mindestens eine Spalte fehlgeschlagen, während die Blueprint-Erfassung fortgesetzt wurde.",
+      "action": "Prüfen Sie technische Details und Spaltenberechtigungen; erzeugte Stilbezeichnungen können unvollständig sein."
+    },
+    "DBP1409W": {
+      "summary": "Die Datenbankverbindungsaufgabe hat einen Fehler gemeldet",
+      "cause": "Eine PostgreSQL-Verbindungstreiberaufgabe hat während oder nach der Erfassung einen asynchronen Fehler gemeldet.",
+      "action": "Prüfen Sie die Treiberdetails und bestätigen Sie die Vollständigkeit der Blueprint-Datei und des Audits, bevor Sie sich darauf verlassen."
+    },
+    "DBP1501E": {
+      "summary": "Die Erfassung der strukturierten Datei-Blueprint ist fehlgeschlagen",
+      "cause": "Parquet oder Avro Metadaten, Dekodierung oder begrenzte Komprimierungsstichprobe sind fehlgeschlagen.",
+      "action": "Überprüfen Sie das Eingabeformat, die Dateiberechtigungen und die Sampling-Limits und versuchen Sie es dann erneut."
+    },
+    "DBP1502E": {
+      "summary": "Die Blueprint- oder Bündelausgabe ist fehlgeschlagen",
+      "cause": "Eine Blueprint, ein Bündel oder eine zugehörige Ausgabe konnte nicht codiert, erstellt oder geschrieben werden.",
+      "action": "Überprüfen Sie den Zielpfad, die Berechtigungen, den freien Speicherplatz und die Eingabegültigkeit."
+    },
+    "DBP1503E": {
+      "summary": "PowerPoint Deckgenerierung fehlgeschlagen",
+      "cause": "Die Eingabe-Blueprint konnte nicht in ein PowerPoint-Deck umgewandelt oder als solches geschrieben werden.",
+      "action": "Überprüfen Sie die Eingabe-Blueprint, den Zielpfad, die Berechtigungen und den freien Speicherplatz."
+    },
+    "DBP1504W": {
+      "summary": "Das Audit-Protokoll konnte nicht geschrieben werden",
+      "cause": "Das angeforderte Audit-Log-Ziel war nicht verfügbar, nachdem der primäre Vorgang abgeschlossen wurde oder fehlgeschlagen ist.",
+      "action": "Überprüfen Sie den Prüfpfad, die Berechtigungen und den freien Speicherplatz. Behalten Sie die Terminal-Prüfungsausgabe bei."
+    },
+    "DBP1601E": {
+      "summary": "Der Erwerb der Anmeldeinformationen ist fehlgeschlagen",
+      "cause": "Das ausgewählte Passwort, Token, die Datei, die Umgebung, TTY oder die integrierte Authentifizierungsquelle konnte nicht sicher verwendet werden.",
+      "action": "Korrigieren Sie die Quelle und Berechtigungen der Anmeldeinformationen, ohne Geheimnisse in die Verbindung URI einzufügen."
+    },
+    "DBP1602E": {
+      "summary": "Die Konfiguration von TLS ist fehlgeschlagen",
+      "cause": "Der TLS-Modus, die Zertifizierungsstelle, das Zertifikat, der Schlüssel, die Hostnamen-Richtlinie oder die Sicherheitsüberschreibung waren ungültig.",
+      "action": "Korrigieren Sie die TLS-Einstellungen und das Zertifikatmaterial und versuchen Sie es dann erneut."
+    },
+    "DBP1603E": {
+      "summary": "Der Datenbankbenutzername konnte nicht bezogen werden",
+      "cause": "Die ausgewählte Quelle --user, --user-env oder --user-file fehlte, war nicht lesbar oder war leer.",
+      "action": "Korrigieren Sie Quelle und Berechtigungen des Benutzernamens und versuchen Sie es erneut, ohne Geheimnisse in die URI aufzunehmen."
+    },
+    "DBP1604E": {
+      "summary": "Die Datenbank-Authentifizierungskonfiguration ist ungültig",
+      "cause": "Der ausgewählte --auth-mode steht im Konflikt mit den Anforderungen an die Anmeldeinformationsquelle oder die Transportsicherheit.",
+      "action": "Wählen Sie einen kompatiblen Authentifizierungsmodus und eine Anmeldeinformationsquelle; cloud-token erfordert genau eine Quelle über --password-file/-env und verify-full TLS."
+    },
+    "DBP1605W": {
+      "summary": "Die Durchsetzung von Berechtigungen für sensible Dateien ist nicht verfügbar",
+      "cause": "Diese Plattform stellt die Unix-Modusbitprüfung nicht bereit, mit der allgemein lesbare Anmeldeinformations- oder private Schlüsseldateien abgelehnt werden.",
+      "action": "Prüfen Sie die Datei-ACL manuell und beschränken Sie den Lesezugriff auf das vorgesehene Konto, bevor Sie fortfahren."
+    },
+    "DBP1606E": {
+      "summary": "Die Prüfung des authentifizierten Datenbankprinzipals ist fehlgeschlagen",
+      "cause": "Die Identität der SQL-Server-Sitzung war nicht verfügbar, konnte nicht sicher verglichen werden oder stimmte nicht mit --expect-server-principal überein.",
+      "action": "Prüfen Sie Prozessidentität, Login-Zuordnung, Verbindungsendpunkt und erwarteten Principal; führen Sie den Vorgang erneut aus, ohne Datenbankberechtigungen zu erweitern."
+    },
+    "DBP1607E": {
+      "summary": "Die Initialisierung des Anonymisierungsschlüssels ist fehlgeschlagen",
+      "cause": "Die kundenseitig verwahrte Schlüsseldatei war unsicher, nicht lesbar oder fehlerhaft, oder die Betriebssystem-Zufallsquelle war nicht verfügbar.",
+      "action": "Verwenden Sie eine zugriffsbeschränkte Datei mit genau 32 Rohbytes oder 64 Hexadezimalzeichen, oder lassen Sie --anonymization-key-file für einen neuen prozesslokalen Schlüssel weg."
+    },
+    "DBP1701E": {
+      "summary": "Operation vor Zustimmung abgebrochen",
+      "cause": "Die interaktive Aufforderung vor dem Flug wurde abgelehnt oder erhielt keine kanonische y/yes-Zustimmung.",
+      "action": "Überprüfen Sie den Plan und führen Sie ihn erneut aus, oder übergeben Sie --yes nach ausdrücklicher Genehmigung."
+    },
+    "DBP1702E": {
+      "summary": "Die Zustimmungsantwort konnte nicht gelesen werden",
+      "cause": "Die interaktive Vorabprüfung konnte nicht von der Standardeingabe lesen.",
+      "action": "Führen Sie den Befehl in einem interaktiven Terminal aus oder übergeben Sie --yes, nachdem Sie den Vorgang unabhängig geprüft und genehmigt haben."
+    },
+    "DBP1801E": {
+      "summary": "Die asynchrone Laufzeit konnte nicht initialisiert werden",
+      "cause": "Der Prozess konnte die für Datenbankverbindungen und gleichzeitige Arbeit erforderliche Laufzeit nicht initialisieren.",
+      "action": "Prüfen Sie Prozessressourcenlimits und den installierten Build; erfassen Sie die technischen Details und wenden Sie sich an den Support, wenn der Fehler bestehen bleibt."
+    },
+    "DBP1014E": {
+      "summary": "Für die Artefaktdetails fehlt die ausdrückliche Zustimmung",
+      "cause": "Anonyme Abhängigkeitsgraphen können eine Anwendung identifizierbar machen, und der Modus analyzed liest Objektdefinitionen vorübergehend.",
+      "action": "Prüfen Sie den Datenschutzvertrag für Artefakte und führen Sie den Befehl erneut mit --yes aus, oder verwenden Sie --artifact-detail summary."
+    },
+    "DBP1015E": {
+      "summary": "TLS-Clientzertifikate sind für SQL Server nicht verfügbar",
+      "cause": "Der SQL-Server-Treiber implementiert keine Authentifizierung mit --tls-cert oder --tls-key.",
+      "action": "Entfernen Sie beide Optionen und verwenden Sie einen SQL-Server-Authentifizierungsmodus zusammen mit verify-full zur Prüfung des Serverzertifikats."
+    },
+    "DBP1410W": {
+      "summary": "Der Artefaktkatalog war nicht verfügbar",
+      "cause": "Ein optionaler Artefaktkatalog konnte nicht gelesen werden; daher ist das Artefaktinventar ausdrücklich als unvollständig markiert.",
+      "action": "Prüfen Sie die technischen Details und Quellberechtigungen; führen Sie den Vorgang nach Gewährung der Katalogsichtbarkeit erneut aus, wenn ein vollständiges Inventar erforderlich ist."
+    },
+    "DBP1411W": {
+      "summary": "Daten zur Datenbanktopologie waren nicht verfügbar",
+      "cause": "Ein optionaler Topologiekatalog konnte nicht gelesen werden; daher wurden die Sichtbarkeit der Mitglieder und die zugehörigen Vollständigkeitsangaben vorsichtig reduziert.",
+      "action": "Prüfen Sie die Quellberechtigungen und den Zustand der Topologie und führen Sie die Erfassung erneut aus, wenn vollständige Topologiedaten erforderlich sind."
+    },
+    "DBP1412W": {
+      "summary": "Die verteilte Größenaggregation war nicht verfügbar",
+      "cause": "Eine bekannte verteilte oder geshardete Datenbank konnte keine aggregierten Relationsgrößen bereitstellen; daher wurden irreführende Gateway- oder mitgliedslokale Statistiken unterdrückt.",
+      "action": "Erfassen Sie über einen unterstützten aggregationsfähigen Endpunkt, während alle erforderlichen Mitglieder verfügbar sind, und führen Sie die Erfassung erneut aus, bevor Sie die Blueprint zur Kapazitätsplanung verwenden."
+    },
+    "DBP1413W": {
+      "summary": "Die Datensatzabdeckung ist unvollständig",
+      "cause": "Mindestens eine Dimension für Tabelleninventar, Zeilenanzahl oder Größenabdeckung ist unvollständig oder unbekannt; daher müssen die Summen qualifiziert werden.",
+      "action": "Prüfen Sie dataset_scope und dessen Einschränkungen; erfassen Sie über einen topologiebewussten Koordinator oder stellen Sie die fehlenden Nachweise vor der Kapazitätsplanung wieder her."
+    },
+    "DBP1414W": {
+      "summary": "Die Datensatzbeziehung im Bundle ist unbekannt",
+      "cause": "Mindestens eine Quelle wurde nicht als unabhängig, Replikat oder Shard deklariert; daher ist eine quellenübergreifende Berechnung unsicher.",
+      "action": "Setzen Sie dataset_relationship und dataset_group für jede Quelle im Batch-Manifest und führen Sie die Erfassung erneut aus."
+    },
+    "DBP1415W": {
+      "summary": "Bundle-Replikate stimmen nicht überein",
+      "cause": "Zwei als Replikate deklarierte Quellen haben unterschiedliche Tabellen-, Zeilen- oder Byte-Summen; ein deterministischer Vertreter wurde ohne Mittelwertbildung beibehalten.",
+      "action": "Prüfen Sie Aktualität und Umfang der Quellen und erfassen Sie die Replikatgruppe erneut, bevor Sie Aggregatsummen verwenden."
+    },
+    "DBP1416W": {
+      "summary": "Die Shard-Gruppe im Bundle ist unvollständig",
+      "cause": "Eine Shard-Gruppe wurde nicht als vollständig deklariert oder mindestens ein erwarteter Shard ist fehlgeschlagen; daher hat diese Gruppe keine Aggregatsummen beigetragen.",
+      "action": "Listen Sie alle erwarteten Shards auf, setzen Sie dataset_group_complete=true nur bei vollständiger Liste und wiederholen Sie fehlgeschlagene Erfassungen."
+    },
+    "DBP1417W": {
+      "summary": "Bundle-Aggregatsummen wurden unterdrückt",
+      "cause": "Eine unbekannte Datensatzbeziehung machte das logische Aggregat unsicher; Tabellen-, Zeilen- und Byte-Summen wurden daher mit aggregation=suppressed als null ausgegeben.",
+      "action": "Deklarieren Sie die Quellenbeziehungen ausdrücklich und führen Sie die Erfassung erneut aus; die Blueprint-Nachweise je Quelle bleiben verfügbar."
+    },
+    "DBP1418W": {
+      "summary": "Der Umfang einer Bundle-Quelle ist unvollständig",
+      "cause": "Mindestens eine in die Bundle-Berechnung einbezogene Quelle hat eine unvollständige oder unbekannte Datensatzabdeckung.",
+      "action": "Prüfen Sie dataset_scope der Quell-Blueprint und stellen Sie vor der Kapazitätsplanung vollständige topologiebewusste Nachweise wieder her."
+    },
+    "DBP1419E": {
+      "summary": "Die Live-Erfassung hat ihr hartes Zeitlimit überschritten",
+      "cause": "Verbindung, Katalog, RTT oder Stichprobe wurde nicht vor --max-wall-secs abgeschlossen, daher trennte der Client die Verbindung. PostgreSQL und MySQL erzwingen zusätzlich serverseitige Anweisungslimits; SQL Server erzwingt serverseitig nur ein Sperrwartezeitlimit.",
+      "action": "Untersuchen Sie den Datenbank- oder Netzwerkstillstand, bestätigen Sie das Ende der Serverarbeit oder führen Sie die Erfassung mit einem größeren geprüften Wert für --max-wall-secs erneut aus."
+    },
+    "DBP1421W": {
+      "summary": "Der Nachweis des Datenbankprinzipals war nicht verfügbar",
+      "cause": "Die verbundene SQL-Server-Sitzung konnte ihren authentifizierten, effektiven Server- oder Datenbankprinzipal nicht melden, daher sind die Identitätsfelder im Audit unvollständig.",
+      "action": "Prüfen Sie Konnektivität und Serververhalten; führen Sie den Vorgang erneut aus, bevor Sie das Audit als Nachweis der Erfassungsidentität verwenden."
+    },
+    "DBP1420E": {
+      "summary": "Das angeforderte Schema ist nicht sichtbar",
+      "cause": "Mindestens ein Selektor --schema wurde über den nativen Schemakatalog und die Sichtbarkeitsregeln der verbundenen Datenbank nicht aufgelöst.",
+      "action": "Prüfen Sie die verbundene Datenbank, die Schemaschreibweise, die aktive Rolle und die Metadatenberechtigungen und versuchen Sie es erneut; für einen nicht aufgelösten Umfang wird keine Blueprint geschrieben."
+    }
+  }
+}

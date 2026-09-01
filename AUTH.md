@@ -1,0 +1,163 @@
+# Authentication
+
+`dbwarp-blueprint` supports the authentication modes most commonly needed for PostgreSQL, MySQL, and SQL Server Blueprint collection.
+
+## Username
+
+You can provide the username in the URI or separately:
+
+```bash
+--connect postgresql://app@db.internal/payments
+```
+
+or:
+
+```bash
+--connect postgresql://db.internal/payments --user app
+```
+
+For usernames that are awkward to URI-encode, use:
+
+```bash
+--user-file /path/to/user.txt
+--user-env DB_USER
+```
+
+## Password
+
+Recommended:
+
+```bash
+--password-file /path/to/password.txt
+```
+
+Alternative:
+
+```bash
+--password-env DB_PASSWORD
+```
+
+If no password source is supplied, the tool prompts interactively when possible.
+
+Passwords embedded in the connection URI are refused.
+
+## SQL Server Entra ID token
+
+For Azure SQL Database or Managed Instance using Microsoft Entra ID, generate the token with your normal tooling and pass it to `dbwarp-blueprint` as a secret.
+
+Token file:
+
+```bash
+./dbwarp-blueprint \
+  --connect sqlserver://dbwarp_user@server.database.windows.net,1433/db \
+  --azure-token-file /secure/path/token.txt \
+  --tls-mode verify-full \
+  --measure-compression --yes \
+  --out blueprint.toml
+```
+
+Named environment variable:
+
+```bash
+./dbwarp-blueprint \
+  --connect sqlserver://dbwarp_user@server.database.windows.net,1433/db \
+  --azure-token-env AZURE_SQL_TOKEN \
+  --tls-mode verify-full \
+  --out blueprint.toml
+```
+
+The tool does not call Azure CLI, does not refresh tokens, and does not write the token to disk.
+
+## SQL Server Integrated Auth
+
+Integrated authentication uses the operating system credential already present on the host.
+
+Linux Kerberos / GSSAPI:
+
+```bash
+kinit user@EXAMPLE.COM
+DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh
+./target/release/dbwarp-blueprint \
+  --connect sqlserver://db.internal,1433/payments \
+  --auth-mode integrated \
+  --expect-server-principal 'EXAMPLE\dbwarp-blueprint' \
+  --tls-mode verify-full \
+  --out blueprint.toml
+```
+
+Windows SSPI:
+
+```powershell
+.\dbwarp-blueprint.exe `
+  --connect sqlserver://db.internal,1433/payments `
+  --auth-mode integrated `
+  --expect-server-principal 'EXAMPLE\dbwarp-blueprint' `
+  --tls-mode verify-full `
+  --out blueprint.toml
+```
+
+In integrated mode, `dbwarp-blueprint` does not read a password. The operating system supplies the authentication token to the SQL Server driver.
+
+Integrated authentication is available for SQL Server only. PostgreSQL and MySQL reject `--auth-mode integrated` with `DBP1005E`.
+
+The examples above assume the Windows principal already exists as a SQL Server login. The tier scripts in `sql/grants/` create a SQL login with a password, which is the wrong shape for this mode, so the login must be created `FROM WINDOWS` first and the tier grants then applied unchanged. Only the login DDL differs. See [Windows and domain principals for integrated authentication](sql/grants/DATABASE_PERMISSIONS.md#windows-and-domain-principals-for-integrated-authentication) for the statements, and for the group, managed service account, and computer account cases.
+
+Two operational points matter more in this mode than under `sql-auth`. The account the collector process runs as is the identity SQL Server sees, so a collector launched by an administrator on a host where `BUILTIN\Administrators` belongs to `sysadmin` authenticates as sysadmin and bypasses every `DENY` in the grant script while the capture still succeeds. `--expect-server-principal` turns that into a `DBP1606E` failure before any catalog read. And a dedicated service account inherits no file access from whoever launched it, so it needs read on its own credential file where one is used and write on the `--out` and `--audit-log` paths.
+
+Every SQL Server connection records `ORIGINAL_LOGIN()`, `SUSER_SNAME()`, and
+`USER_NAME()` in the local audit. `--expect-server-principal` is optional and
+works with SQL authentication too. It asks SQL Server to compare
+`ORIGINAL_LOGIN()` with the expected principal on the established session. A
+mismatch or unavailable identity fails with `DBP1606E` before any catalog
+capture, so an operator cannot accidentally collect under a different or
+over-privileged login. Exact identities remain local audit evidence and are
+not included in the Blueprint, deck, or publication artifacts.
+
+## Cloud-managed database authentication
+
+A managed endpoint does not by itself change the database grants required by `dbwarp-blueprint`. A native database username and password use `sql-auth` and require no cloud control-plane role after networking and the database account have been provisioned.
+
+`dbwarp-blueprint` does not call cloud CLIs, metadata services, secret managers, or token-refresh APIs. A wrapper must generate or retrieve each short-lived token and supply it through one protected secret source.
+
+### PostgreSQL and MySQL cloud tokens
+
+Use `cloud-token` for a direct PostgreSQL or MySQL managed-service token generated by AWS, Azure, or Google Cloud. Supply exactly one of `--password-file` or `--password-env`. The mode requires `verify-full`; add the provider or instance CA bundle when it is not rooted in the binary's compiled trust set.
+
+PostgreSQL example:
+
+```bash
+./dbwarp-blueprint \
+  --connect postgresql://dbwarp_blueprint@managed-db.example.com/app \
+  --auth-mode cloud-token \
+  --password-file /secure/path/token.txt \
+  --tls-mode verify-full --tls-ca /secure/path/provider-ca.pem \
+  --out blueprint.toml --yes
+```
+
+MySQL example:
+
+```bash
+./dbwarp-blueprint \
+  --connect mysql://dbwarp_blueprint@managed-db.example.com/app \
+  --auth-mode cloud-token \
+  --password-file /secure/path/token.txt \
+  --tls-mode verify-full --tls-ca /secure/path/provider-ca.pem \
+  --out blueprint.toml --yes
+```
+
+For MySQL, `cloud-token` enables the `mysql_clear_password` exchange only inside that verified TLS connection. Normal `sql-auth` connections keep the plugin disabled. PostgreSQL uses its normal password protocol inside the same verified TLS requirement.
+
+### Cloud-side runtime permissions
+
+These permissions authorize login or a connection tunnel; they never replace the database principal and grants:
+
+| Managed path | Binary mode | Runtime permission outside the database |
+|---|---|---|
+| RDS/Aurora PostgreSQL or MySQL IAM login | `cloud-token` | `rds-db:connect` on the exact database-user ARN |
+| Azure Database for PostgreSQL/MySQL Entra login | `cloud-token` | No Azure resource RBAC role for database data access; the identity must be mapped inside the database |
+| Cloud SQL PostgreSQL/MySQL direct IAM login | `cloud-token` | Exact permission `cloudsql.instances.login`; `roles/cloudsql.instanceUser` is the broader predefined alternative |
+| Cloud SQL Auth Proxy or connector | Usually `sql-auth`; the proxy may perform automatic IAM auth | Proxy identity needs `roles/cloudsql.client`; automatic IAM auth also needs login permission |
+| Azure SQL Database or Managed Instance Entra login | `entra-token` | No Azure resource RBAC role for database data access; use the SQL Server token flags documented above |
+| Any supported managed database using a native database credential | `sql-auth` | None |
+
+The deployment permission review should record the version-aware database grants, exact cloud policies, built-in role alternatives, and scope caveats. Provider configuration, principal creation, network access, token generation, and optional secret retrieval are provisioning or wrapper responsibilities—not permissions that should be attached to the collector merely because the endpoint is managed.

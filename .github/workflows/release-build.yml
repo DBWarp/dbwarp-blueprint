@@ -1,0 +1,455 @@
+name: Release Builds
+
+# Manual dispatches default to Linux to limit CI cost. Select all platforms, or
+# push an exact release tag, when platform release artifacts are required.
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Which build legs to run (v* tag pushes always build all)"
+        required: true
+        default: linux-only
+        type: choice
+        options:
+          - linux-only
+          - all
+  push:
+    tags:
+      # v* only — a stray non-release tag (wip/test/checkpoint) must not
+      # launch the full multi-OS matrix.
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-builds-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  validate:
+    name: test-and-contract-gates
+    if: github.repository == 'DBWarp/dbwarp-blueprint'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal --component rustfmt
+          rustup default 1.94.0
+
+      - name: Validate source, tests, and customer documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all --check
+          cargo test --locked --all-targets --no-fail-fast
+          python3 tools/generate_third_party_notices.py
+          python3 tools/test_check_public_tree.py
+          python3 tools/test_check_release_archive.py
+          ./tools/check_blueprint_core_sync.sh
+          python3 tools/check_public_tree.py
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            package_version="$(sed -n -E 's/^version = "([^"]+)"/\1/p' Cargo.toml | head -1)"
+            expected_tag="v${package_version}"
+            if [ "$GITHUB_REF_NAME" != "$expected_tag" ]; then
+              echo "release tag $GITHUB_REF_NAME does not match Cargo package version $expected_tag" >&2
+              exit 1
+            fi
+          fi
+
+  # Emits the build-matrix include list. A separate job keeps the matrix
+  # selection explicit and makes manual Linux-only dispatches inexpensive.
+  plan:
+    name: select-build-legs
+    if: github.repository == 'DBWarp/dbwarp-blueprint'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      include: ${{ steps.legs.outputs.include }}
+    steps:
+      - name: Select legs
+        id: legs
+        run: |
+          set -euo pipefail
+          legs_file="$RUNNER_TEMP/legs.json"
+          cat > "$legs_file" <<'EOF'
+          [
+            {"name": "linux-x86_64", "os": "ubuntu-latest",
+             "target": "x86_64-unknown-linux-gnu",
+             "ext": "", "archive_ext": "tar.gz", "features": ""},
+            {"name": "linux-arm64", "os": "ubuntu-24.04-arm",
+             "target": "aarch64-unknown-linux-gnu",
+             "ext": "", "archive_ext": "tar.gz", "features": ""},
+            {"name": "macos-arm64", "os": "macos-14",
+             "target": "aarch64-apple-darwin",
+             "ext": "", "archive_ext": "tar.gz", "features": "",
+             "gated": true},
+            {"name": "windows-x86_64", "os": "windows-2022",
+             "target": "x86_64-pc-windows-msvc",
+             "ext": ".exe", "archive_ext": "zip", "features": "winauth",
+             "gated": true}
+          ]
+          EOF
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+            && [ "${{ inputs.platforms }}" != "all" ]; then
+            include="$(jq -c 'map(select(.gated != true))' "$legs_file")"
+          else
+            include="$(jq -c '.' "$legs_file")"
+          fi
+          echo "building: $(echo "$include" | jq -r 'map(.name) | join(", ")')"
+          echo "include=$include" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: [plan, validate]
+    if: github.repository == 'DBWarp/dbwarp-blueprint'
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.include) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal --target "${{ matrix.target }}"
+          rustup default 1.94.0
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${GITHUB_WORKSPACE}=."
+          export DBWARP_BLUEPRINT_TOOLCHAIN=1.94.0
+          export DBWARP_BLUEPRINT_BUILD_REVISION="$GITHUB_SHA"
+          export DBWARP_BLUEPRINT_BUILD_DIRTY=false
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target-repro"
+          if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
+            command -v clang-cl >/dev/null
+            export CXX_x86_64_pc_windows_msvc=clang-cl
+            export RUSTFLAGS="$RUSTFLAGS -C link-arg=/Brepro"
+          fi
+          rm -rf "$CARGO_TARGET_DIR"
+          features="${{ matrix.features }}"
+          if [ -n "$features" ]; then
+            cargo build --release --locked --target "${{ matrix.target }}" --features "$features"
+          else
+            cargo build --release --locked --target "${{ matrix.target }}"
+          fi
+          mkdir -p repro-first
+          cp "$CARGO_TARGET_DIR/${{ matrix.target }}/release/dbwarp-blueprint${{ matrix.ext }}" \
+            "repro-first/dbwarp-blueprint${{ matrix.ext }}"
+
+      - name: Verify same-runner reproducibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${GITHUB_WORKSPACE}=."
+          export DBWARP_BLUEPRINT_TOOLCHAIN=1.94.0
+          export DBWARP_BLUEPRINT_BUILD_REVISION="$GITHUB_SHA"
+          export DBWARP_BLUEPRINT_BUILD_DIRTY=false
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target-repro"
+          if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
+            command -v clang-cl >/dev/null
+            export CXX_x86_64_pc_windows_msvc=clang-cl
+            export RUSTFLAGS="$RUSTFLAGS -C link-arg=/Brepro"
+          fi
+          rm -rf "$CARGO_TARGET_DIR"
+          features="${{ matrix.features }}"
+          if [ -n "$features" ]; then
+            cargo build --release --locked --target "${{ matrix.target }}" --features "$features"
+          else
+            cargo build --release --locked --target "${{ matrix.target }}"
+          fi
+          cmp \
+            "repro-first/dbwarp-blueprint${{ matrix.ext }}" \
+            "$CARGO_TARGET_DIR/${{ matrix.target }}/release/dbwarp-blueprint${{ matrix.ext }}"
+
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="dist/dbwarp-blueprint-${{ matrix.name }}"
+          mkdir -p "$stage"
+          cp "target-repro/${{ matrix.target }}/release/dbwarp-blueprint${{ matrix.ext }}" "$stage/"
+          translation_notice="MACHINE_TRANSLATIONS.md"
+          if [ ! -f "$translation_notice" ]; then
+            translation_notice="public/MACHINE_TRANSLATIONS.md"
+          fi
+          cp README.md SECURITY.md TLS.md AUTH.md FORMAT.md AUDIT.md BUILD.md DECK.md STATUS.md \
+            "$translation_notice" THIRD_PARTY_NOTICES.md LICENSE-APACHE LICENSE-MIT "$stage/"
+          cp blueprint_format.py verify.sh "$stage/"
+          mkdir -p "$stage/docs"
+          cp \
+            docs/ARTIFACT_INVENTORY.md \
+            docs/BATCH_AND_BUNDLES.md \
+            docs/COMPRESSION_MEASUREMENT.md \
+            docs/COOKBOOK.md \
+            docs/DBA_REVIEW_GUIDE.md \
+            docs/INDEX.md \
+            docs/INTERNATIONALISATION.md \
+            docs/MESSAGES.md \
+            docs/QUICKSTART.md \
+            docs/STRUCTURED_FILES.md \
+            docs/TRANSLATIONS.md \
+            docs/TROUBLESHOOTING.md \
+            "$stage/docs/"
+          for locale in de fr es pl ja zh; do
+            mkdir -p "$stage/docs/$locale"
+            cp "docs/$locale/"*.md "$stage/docs/$locale/"
+          done
+          mkdir -p "$stage/sql/grants" "$stage/sql/revoke"
+          cp sql/blueprint.mysql.sql sql/blueprint.pg.sql sql/blueprint.sqlserver.sql "$stage/sql/"
+          cp sql/grants/README.md sql/grants/DATABASE_PERMISSIONS.md "$stage/sql/grants/"
+          for engine in mysql postgresql sqlserver-2019 sqlserver-2022; do
+            mkdir -p "$stage/sql/grants/$engine"
+            cp "sql/grants/$engine/"*.sql "$stage/sql/grants/$engine/"
+          done
+          cp sql/revoke/*.sql "$stage/sql/revoke/"
+          cp -R samples "$stage/"
+          cp -R third-party-licenses "$stage/"
+          mkdir -p "$stage/binaries"
+          cp binaries/README.md "$stage/binaries/"
+          mkdir -p "$stage/assets/fonts/dm-sans"
+          cp assets/fonts/dm-sans/OFL.txt "$stage/assets/fonts/dm-sans/"
+          mkdir -p "$stage/licenses/mysql_async"
+          cp vendor/mysql_async/LICENSE-APACHE vendor/mysql_async/LICENSE-MIT \
+            vendor/mysql_async/MODIFICATIONS.md \
+            "$stage/licenses/mysql_async/"
+          python3 tools/generate_sbom.py \
+            --output "$stage/SBOM.cdx.json" \
+            --source-revision "$GITHUB_SHA" \
+            --target "${{ matrix.target }}"
+          source_date_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
+          if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
+            native_compiler="$(clang-cl --version | head -n 1)"
+          else
+            native_compiler="$(cc --version | head -n 1)"
+          fi
+          python3 tools/generate_provenance.py \
+            --output "$stage/PROVENANCE.json" \
+            --kind binary \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-revision "$GITHUB_SHA" \
+            --ref "$GITHUB_REF" \
+            --toolchain 1.94.0 \
+            --target "${{ matrix.target }}" \
+            --features "${{ matrix.features }}" \
+            --source-date-epoch "$source_date_epoch" \
+            --native-dependency-compiler "$native_compiler" \
+            --binary "$stage/dbwarp-blueprint${{ matrix.ext }}"
+          checksum() {
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$1"
+            else
+              shasum -a 256 "$1"
+            fi
+          }
+          if [ "${{ matrix.archive_ext }}" = "zip" ]; then
+            (cd dist && 7z a "dbwarp-blueprint-${{ matrix.name }}.zip" "dbwarp-blueprint-${{ matrix.name }}")
+          else
+            tar -C dist -czf "dist/dbwarp-blueprint-${{ matrix.name }}.tar.gz" "dbwarp-blueprint-${{ matrix.name }}"
+          fi
+          python3 tools/check_release_archive.py \
+            "dist/dbwarp-blueprint-${{ matrix.name }}.${{ matrix.archive_ext }}" \
+            --kind binary \
+            --expected-source-revision "$GITHUB_SHA"
+          (cd dist && checksum "dbwarp-blueprint-${{ matrix.name }}.${{ matrix.archive_ext }}" > "dbwarp-blueprint-${{ matrix.name }}.${{ matrix.archive_ext }}.sha256")
+          (cd dist && checksum "dbwarp-blueprint-${{ matrix.name }}/dbwarp-blueprint${{ matrix.ext }}" > "dbwarp-blueprint-${{ matrix.name }}.binary.sha256")
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dbwarp-blueprint-${{ matrix.name }}
+          path: |
+            dist/dbwarp-blueprint-${{ matrix.name }}.${{ matrix.archive_ext }}
+            dist/dbwarp-blueprint-${{ matrix.name }}.${{ matrix.archive_ext }}.sha256
+            dist/dbwarp-blueprint-${{ matrix.name }}.binary.sha256
+          # Workflow artifacts are only a relay to the github-release job in
+          # this same run; GitHub Releases is the durable home. Don't keep
+          # them the default 90 days.
+          retention-days: 7
+
+  source-vendored:
+    name: source-vendored
+    needs: validate
+    if: github.repository == 'DBWarp/dbwarp-blueprint'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal
+          rustup default 1.94.0
+
+      - name: Build vendored source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="dist/dbwarp-blueprint-source-vendored"
+          mkdir -p dist
+          mkdir -p "$src"
+          git archive --format=tar HEAD | tar -xf - -C "$src"
+          printf '%s\n' "$GITHUB_SHA" > "$src/.dbwarp-source-revision"
+          python3 tools/check_public_tree.py --root "$src"
+          python3 tools/generate_sbom.py \
+            --output "$src/SBOM.cdx.json" \
+            --source-revision "$GITHUB_SHA" \
+            --target source
+          python3 tools/generate_provenance.py \
+            --output "$src/PROVENANCE.json" \
+            --kind source \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-revision "$GITHUB_SHA" \
+            --ref "$GITHUB_REF" \
+            --toolchain 1.94.0 \
+            --target source
+          mkdir -p "$src/.cargo"
+          (cd "$src" && cargo vendor vendor-crates > .cargo/config.toml)
+          cat >> "$src/.cargo/config.toml" <<'TOML'
+
+          [net]
+          offline = true
+          TOML
+          python3 tools/check_public_tree.py \
+            --root "$src" \
+            --allow-vendored-dependencies
+          tar -C dist -czf dist/dbwarp-blueprint-source-vendored.tar.gz dbwarp-blueprint-source-vendored
+          python3 tools/check_release_archive.py \
+            dist/dbwarp-blueprint-source-vendored.tar.gz \
+            --kind source \
+            --expected-source-revision "$GITHUB_SHA"
+          (cd dist && sha256sum dbwarp-blueprint-source-vendored.tar.gz > dbwarp-blueprint-source-vendored.tar.gz.sha256)
+
+      - name: Upload vendored source artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dbwarp-blueprint-source-vendored
+          path: |
+            dist/dbwarp-blueprint-source-vendored.tar.gz
+            dist/dbwarp-blueprint-source-vendored.tar.gz.sha256
+          retention-days: 7
+
+  checksums:
+    name: combined-checksums
+    runs-on: ubuntu-latest
+    needs: [build, source-vendored]
+    if: github.repository == 'DBWarp/dbwarp-blueprint'
+    permissions:
+      contents: read
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+
+      - name: Combine checksums
+        shell: bash
+        run: |
+          find artifacts -name '*.sha256' -print0 | sort -z | xargs -0 cat > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload SHA256SUMS
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: SHA256SUMS
+          path: SHA256SUMS.txt
+          retention-days: 7
+
+  release:
+    name: github-release
+    runs-on: ubuntu-latest
+    needs: [build, source-vendored]
+    if: github.repository == 'DBWarp/dbwarp-blueprint' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          find artifacts -name '*.sha256' -print0 | sort -z | xargs -0 cat > SHA256SUMS.txt
+          find artifacts \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.sha256' \) -print | sort
+          cat SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes_file="release-notes.md"
+          package_version="$(sed -n -E 's/^version = "([^"]+)"/\1/p' Cargo.toml | head -1)"
+          schema_version="$(sed -n -E 's/^pub const SCHEMA_VERSION: u32 = ([0-9]+);$/\1/p' crates/dbwarp-blueprint-core/src/format.rs)"
+          if [ -z "$package_version" ] || [ -z "$schema_version" ]; then
+            echo "could not derive release package or schema version" >&2
+            exit 1
+          fi
+          cat > "$notes_file" <<NOTES
+          dbwarp-blueprint ${package_version} release binaries.
+
+          Release highlights:
+          - Blueprint schema v${schema_version} emits the canonical Blueprint contract, qualifies topology and dataset-scope completeness, and retains declared capacities separately from representative observed widths.
+          - The shared deterministic Blueprint core covers stable table selection, scaling, generated identities, relationship planning, dependency order, and bounded synthetic generation for DBWarp consumers.
+          - Parquet and Avro inspection now provide richer schema, sampling, compression, canonicalization, and multi-file/bundle behavior while preserving bounded execution and sanitized outputs.
+          - Batch and bundle workflows support selecting complete catalogs or bounded subsets without requiring one command per database, table, or structured file.
+          - PostgreSQL, MySQL, and SQL Server capture paths include stronger type, index, length, TLS, deadline, consent, and coded-error handling.
+          - Complete human-facing catalogs remain embedded for English, German, French, Spanish, Polish, Japanese, and Simplified Chinese.
+          - English customer documentation is authoritative. Machine-translated document sets, when separately included after the review gate, are explicitly non-authoritative and may contain errors.
+          - Option names, accepted values, URI schemes, selectors, DBP codes, audit fields, anonymous identifiers, and emitted TOML/bundle schemas remain canonical English tokens.
+
+          Trust paths:
+          - Small source build: clone this repository, review the source, and build with Cargo.lock.
+          - Offline audit build: download dbwarp-blueprint-source-vendored.tar.gz, review the included vendor/mysql_async patch and vendor-crates/ dependency tree, and run ./build.sh inside the extracted tree.
+          - Convenience path: download a platform binary, verify its SHA256, and review the matching source tag.
+
+          Runtime security model:
+          - The binary sends no telemetry.
+          - Live modes initiate the configured database connection. The operating system and configured identity or TLS path may also contact the DNS resolver or KDC/domain controller as documented in AUDIT.md.
+          - The output Blueprint file is local until you choose to share it.
+
+          Download the archive for your platform, then verify it against SHA256SUMS.txt before running.
+          NOTES
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$notes_file"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file "$notes_file"
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" SHA256SUMS.txt --clobber
+          while IFS= read -r asset; do
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$asset" --clobber
+          done < <(find artifacts \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.sha256' \) -print | sort)

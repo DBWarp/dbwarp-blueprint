@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "engine": "postgresql",
+  "engine_version": "16.2 (packaged build metadata)",
+  "tables": [
+    {
+      "oid": 16384,
+      "schema_name": "public",
+      "table_name": "users",
+      "reltuples": 12500000.0,
+      "table_bytes": 4200000000,
+      "index_bytes": 1100000000,
+      "last_analyze": "2026-04-26T10:00:00Z",
+      "columns": [
+        {"attnum": 1, "type": "bigint", "not_null": true, "avg_width": 8},
+        {"attnum": 2, "type": "text", "not_null": true, "avg_width": 32},
+        {"attnum": 3, "type": "timestamp with time zone", "not_null": true, "avg_width": 8}
+      ],
+      "indexes": [
+        {"name": "users_pkey", "method": "btree", "unique": true, "col_ords": [1]},
+        {"name": "users_email_uq", "method": "btree", "unique": true, "col_ords": [2]}
+      ],
+      "fks": []
+    },
+    {
+      "oid": 16400,
+      "schema_name": "public",
+      "table_name": "orders",
+      "reltuples": 985000.0,
+      "table_bytes": 320000000,
+      "index_bytes": 95000000,
+      "last_analyze": "2026-04-26T10:00:00Z",
+      "columns": [
+        {"attnum": 1, "type": "bigint", "not_null": true, "avg_width": 8},
+        {"attnum": 2, "type": "bigint", "not_null": true, "avg_width": 8},
+        {"attnum": 3, "type": "bigint", "not_null": true, "avg_width": 8},
+        {"attnum": 4, "type": "timestamp with time zone", "not_null": true, "avg_width": 8}
+      ],
+      "indexes": [
+        {"name": "orders_pkey", "method": "btree", "unique": true, "col_ords": [1]},
+        {"name": "orders_user_idx", "method": "btree", "unique": false, "col_ords": [2, 4]}
+      ],
+      "fks": [
+        {"to_oid": 16384, "col_ords": [2], "to_col_ords": [1]}
+      ]
+    }
+  ]
+}

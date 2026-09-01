@@ -1,0 +1,391 @@
+{
+  "schema_version": 1,
+  "locale": "es",
+  "messages": {
+    "DBP0001E": {
+      "summary": "Error en la operación dbwarp-blueprint",
+      "cause": "La operación solicitada falló antes de que un mensaje de operador más específico pudiera clasificarla.",
+      "action": "Revise los detalles técnicos y la cadena causal, corrija la condición subyacente y vuelva a intentarlo."
+    },
+    "DBP1000E": {
+      "summary": "Se requiere conexión a la base de datos URI",
+      "cause": "No se proporcionó ninguna base de datos activa URI ni modo de entrada fuera de línea.",
+      "action": "Pase --connect URI o seleccione un modo de entrada fuera de línea."
+    },
+    "DBP1001E": {
+      "summary": "Se rechazó la contraseña en la conexión URI",
+      "cause": "Los URI de conexión son visibles para la inspección del proceso y el historial del shell, por lo que las credenciales integradas no son seguras.",
+      "action": "Utilice --password-file, --password-env o el mensaje interactivo TTY. Consulte AUTH.md y SECURITY.md."
+    },
+    "DBP1002E": {
+      "summary": "El esquema de base de datos URI no es compatible",
+      "cause": "El valor --connect no utilizó un esquema PostgreSQL, MySQL, MariaDB o SQL Server URI compatible.",
+      "action": "Utilice postgresql://, postgres://, mysql://, mariadb://, sqlserver://, mssql:// o tds://."
+    },
+    "DBP1003E": {
+      "summary": "La sustitución del nombre de servidor TLS no está disponible",
+      "cause": "Esta versión no implementa --tls-server-name.",
+      "action": "Utilice en --connect un nombre de host que coincida con el certificado. PostgreSQL y MySQL pueden utilizar verify-ca cuando la política permita validar solo la cadena; SQL Server valida el nombre de host en ambos modos de verificación."
+    },
+    "DBP1004E": {
+      "summary": "Opción de token de Microsoft Entra utilizada para otro motor",
+      "cause": "Las opciones del token de Azure son específicas de la autenticación SQL Server.",
+      "action": "Para PostgreSQL o MySQL IAM en la nube, use cloud-token y proporcione el token externo mediante exactamente un origen --password-file o --password-env."
+    },
+    "DBP1005E": {
+      "summary": "El modo de autenticación no está disponible para el motor seleccionado",
+      "cause": "El --auth-mode seleccionado no está implementado para el motor de base de datos elegido.",
+      "action": "Utilice sql-auth, cloud-token, entra-token o integrated solo con un motor de base de datos que admita ese modo."
+    },
+    "DBP1006E": {
+      "summary": "El muestreo de archivos estructurados carece de consentimiento explícito",
+      "cause": "Los modos de archivo estructurado no pueden pedir confirmación y requieren --yes antes de leer muestras acotadas.",
+      "action": "Revise el contrato previo al vuelo y vuelva a ejecutarlo con --measure-compression --yes."
+    },
+    "DBP1007E": {
+      "summary": "El modo de fidelidad de longitud no está disponible para este motor",
+      "cause": "Actualmente, los controles explícitos de fidelidad de longitud se aplican solo a la captura en vivo MySQL o MariaDB.",
+      "action": "Elimine el modo explícito o utilice una fuente MySQL o MariaDB compatible."
+    },
+    "DBP1008E": {
+      "summary": "Las opciones de fidelidad de longitud entran en conflicto",
+      "cause": "El alias heredado exact para longitudes se combinó con el modo de fidelidad strict.",
+      "action": "Elimine el alias heredado o utilice --length-fidelity exact --yes."
+    },
+    "DBP1009E": {
+      "summary": "La fidelidad de la longitud exacta carece de consentimiento explícito",
+      "cause": "Las longitudes exactas de las muestras pueden revelar estadísticas de clientes más precisas y requieren --yes.",
+      "action": "Revise el contrato previo al vuelo y vuelva a ejecutarlo con --length-fidelity exact --yes."
+    },
+    "DBP1010E": {
+      "summary": "El catálogo de localización integrado está incompleto",
+      "cause": "Un idioma anunciado no cubre exactamente la superficie activa CLI, de diagnóstico o de presentación.",
+      "action": "Instale una compilación completa o seleccione inglés; los mantenedores deben actualizar cada configuración regional con cada cadena visible para el cliente."
+    },
+    "DBP1011E": {
+      "summary": "Los argumentos de la línea de comandos no son válidos",
+      "cause": "Clap rechazó una opción, valor, conflicto, requisito o argumento posicional.",
+      "action": "Corrija el comando usando dbwarp-blueprint --help y vuelva a intentarlo."
+    },
+    "DBP1012E": {
+      "summary": "El URI de conexión a la base de datos está mal formado",
+      "cause": "El valor --connect usó un esquema compatible, pero no se pudieron analizar la autoridad, el host, el puerto, la información de usuario o la ruta de la base de datos.",
+      "action": "Corrija la estructura del URI, encierre los hosts IPv6 entre corchetes, incluya un nombre de base de datos y mantenga las credenciales fuera del URI."
+    },
+    "DBP1013E": {
+      "summary": "La clasificación de origen no es válida",
+      "cause": "El valor --source-kind está vacío o no es una de las clasificaciones de origen compatibles.",
+      "action": "Use production, staging, scrubbed-replica o synthetic."
+    },
+    "DBP1101E": {
+      "summary": "No se pudo leer el manifiesto de lote",
+      "cause": "La ruta del manifiesto no estaba disponible o sus permisos impedían la lectura.",
+      "action": "Verifique la ruta y los permisos del archivo, luego vuelva a intentarlo."
+    },
+    "DBP1102E": {
+      "summary": "No se pudo analizar el manifiesto por lotes",
+      "cause": "El manifiesto no es válido para el esquema por lotes TOML admitido.",
+      "action": "Corrija la estructura y los valores TOML, luego valide con --dry-run."
+    },
+    "DBP1103E": {
+      "summary": "El manifiesto por lotes no contiene fuentes",
+      "cause": "El manifiesto no tiene entradas [[source]].",
+      "action": "Agregue al menos un bloque [[source]]."
+    },
+    "DBP1104E": {
+      "summary": "La recopilación por lotes carece de consentimiento explícito",
+      "cause": "La recopilación de múltiples fuentes no interactiva requiere --yes.",
+      "action": "Ejecute primero con --dry-run, revise el plan y luego vuelva a ejecutar con --yes."
+    },
+    "DBP1105E": {
+      "summary": "Error en una fuente por lotes",
+      "cause": "No se pudo capturar como Blueprint una fuente en una colección de múltiples fuentes.",
+      "action": "Inspeccione los detalles específicos de la fuente y vuelva a ejecutar con --dry-run antes de volver a intentarlo."
+    },
+    "DBP1106E": {
+      "summary": "El tipo de origen del lote no es compatible",
+      "cause": "Un tipo de origen no correspondía a un motor de base de datos ni a un formato de archivo estructurado compatible.",
+      "action": "Use `postgresql`, `mysql`, `sqlserver`, `parquet` o `avro`."
+    },
+    "DBP1107E": {
+      "summary": "Fuente del archivo resuelta sin entradas",
+      "cause": "La ruta configurada, las rutas o el global no coinciden con archivos estructurados.",
+      "action": "Corrija las rutas de origen relativas al manifiesto."
+    },
+    "DBP1108E": {
+      "summary": "El modo del conjunto de archivos no es compatible",
+      "cause": "El valor `dataset_mode` no era `single_file`, `one_table_per_file`, `merge_same_schema` ni `partitioned_dataset`.",
+      "action": "Elija un `dataset_mode` compatible."
+    },
+    "DBP1109E": {
+      "summary": "El identificador de origen del lote no es válido",
+      "cause": "Un identificador [[source]] no contiene ninguna letra ASCII ni ningún dígito después de la normalización segura.",
+      "action": "Asigne a cada origen del lote un identificador estable que contenga al menos una letra ASCII o un dígito."
+    },
+    "DBP1110E": {
+      "summary": "La configuración de la conexión de origen de la base de datos es ambigua",
+      "cause": "El origen del lote no especificó exactamente uno de los de conexión, connect_env o connect_file.",
+      "action": "Establezca exactamente una fuente de conexión."
+    },
+    "DBP1111E": {
+      "summary": "La variable de entorno de conexión por lotes no está disponible",
+      "cause": "La variable denominada connect_env faltaba o era ilegible.",
+      "action": "Exporte la variable o utilice connect_file."
+    },
+    "DBP1112E": {
+      "summary": "El archivo de conexión por lotes no está disponible",
+      "cause": "Faltaba la ruta connect_file o era ilegible.",
+      "action": "Verifique la ruta relativa al manifiesto por lotes y sus permisos."
+    },
+    "DBP1113E": {
+      "summary": "No se pudo completar la salida del lote",
+      "cause": "No se pudo codificar, crear, volver a leer o escribir un Blueprint de lote, una auditoría de origen, un informe de errores, un directorio o una salida de bundle.",
+      "action": "Compruebe la ruta de salida, los permisos, el espacio libre y el estado del sistema de archivos, y vuelva a intentarlo."
+    },
+    "DBP1114E": {
+      "summary": "Los miembros del conjunto de archivos estructurados son incompatibles",
+      "cause": "Los archivos seleccionados como un conjunto de datos lógico no tenían estructura de tabla o no compartían un diseño de columnas compatible.",
+      "action": "Revise los archivos seleccionados y use one_table_per_file u orígenes de lote separados cuando sus esquemas sean distintos."
+    },
+    "DBP1115E": {
+      "summary": "Fallaron todos los orígenes del lote",
+      "cause": "Se publicó el paquete de diagnóstico, pero no contiene ningún Blueprint de origen utilizable.",
+      "action": "Revise errors.txt y las entradas o credenciales, y vuelva a ejecutar los orígenes fallidos."
+    },
+    "DBP1116E": {
+      "summary": "El paquete del lote es parcial",
+      "cause": "Al menos un origen del lote falló mientras otro finalizó; por tanto, el paquete publicado está incompleto.",
+      "action": "Revise errors.txt y todas las auditorías secundarias y vuelva a capturar los orígenes fallidos."
+    },
+    "DBP1200E": {
+      "summary": "El selector de paquetes no es válido",
+      "cause": "Una expresión blueprint:// o --select tenía un formato incorrecto o era contradictoria.",
+      "action": "Utilice source=ID, table=ID, engine=VALUE o tag=NAME una vez por tecla selectora."
+    },
+    "DBP1201E": {
+      "summary": "El selector de paquetes no coincide con ninguna fuente",
+      "cause": "Ninguna fuente de paquete satisface los predicados del selector proporcionados.",
+      "action": "Ejecute --bundle-list para inspeccionar las fuentes y selectores disponibles."
+    },
+    "DBP1202E": {
+      "summary": "El selector de paquetes coincidió con varias fuentes",
+      "cause": "El selector no es lo suficientemente específico para una operación de fuente única.",
+      "action": "Agregue --select source=ID u otro predicado restrictivo."
+    },
+    "DBP1203E": {
+      "summary": "El selector de paquetes no coincide con ningun Blueprint extraíble",
+      "cause": "La fuente seleccionada no tiene ningun Blueprint/tabla incrustada o referenciada que coincida.",
+      "action": "Verifique los selectores de fuente y tabla con --bundle-list."
+    },
+    "DBP1204E": {
+      "summary": "No se pudo leer la entrada del bundle",
+      "cause": "La ruta del bundle no estaba disponible, no era una entrada normal legible o sus permisos impedían la lectura.",
+      "action": "Compruebe la ruta y los permisos del bundle y vuelva a intentarlo."
+    },
+    "DBP1205E": {
+      "summary": "El contenido del bundle no es válido",
+      "cause": "No se pudo analizar, validar o cargar el TOML del bundle o uno de sus archivos Blueprint referenciados.",
+      "action": "Valide el bundle y los archivos Blueprint referenciados y, si es necesario, vuelva a generar el bundle."
+    },
+    "DBP1206E": {
+      "summary": "No se pudo escribir la salida del bundle",
+      "cause": "No se pudo serializar, crear o escribir una salida de bundle extraída o empaquetada.",
+      "action": "Compruebe la ruta de destino, los permisos y el espacio libre y vuelva a intentarlo."
+    },
+    "DBP1301E": {
+      "summary": "Se requiere la ruta de salida de la presentación",
+      "cause": "--from-toml se proporcionó sin --deck.",
+      "action": "Pase --deck output.pptx."
+    },
+    "DBP1302E": {
+      "summary": "La versión del esquema del Blueprint TOML no es compatible",
+      "cause": "El Blueprint de entrada utiliza una versión de esquema que esta versión no puede leer.",
+      "action": "Regenere el Blueprint con una versión dbwarp-blueprint compatible."
+    },
+    "DBP1401E": {
+      "summary": "PostgreSQL error en la captura de Blueprint",
+      "cause": "Error en una conexión PostgreSQL, consulta de catálogo, sonda RTT, muestreo o operación de decodificación.",
+      "action": "Revise los detalles técnicos, la conectividad, los privilegios, la política TLS y el estado del origen y luego vuelva a intentarlo."
+    },
+    "DBP1402E": {
+      "summary": "MySQL error en la captura de Blueprint",
+      "cause": "Error en una conexión MySQL o MariaDB, una consulta de catálogo, una sonda RTT, un muestreo o una operación de decodificación.",
+      "action": "Revise los detalles técnicos, la conectividad, los privilegios, la política TLS y el estado del origen y luego vuelva a intentarlo."
+    },
+    "DBP1403E": {
+      "summary": "SQL Server error en la captura de Blueprint",
+      "cause": "Error en una conexión SQL Server, consulta de catálogo, sonda RTT, muestreo o operación de decodificación.",
+      "action": "Revise los detalles técnicos, la conectividad, los privilegios, la política TLS y el estado del origen y luego vuelva a intentarlo."
+    },
+    "DBP1404W": {
+      "summary": "La preferencia TLS recurrió a texto sin cifrar",
+      "cause": "Una conexión PostgreSQL de bucle local en modo TLS prefer no pudo negociar TLS y continuó localmente sin cifrar.",
+      "action": "Use --tls-mode verify-full o require cuando ni siquiera se permita texto sin cifrar local."
+    },
+    "DBP1405W": {
+      "summary": "La sonda RTT de la base de datos no estaba disponible",
+      "cause": "La sonda de latencia opcional SELECT 1 falló mientras la captura principal del catálogo seguía siendo utilizable.",
+      "action": "Compruebe los permisos y la conectividad de la sonda, o use --no-rtt-probe si el DBA la prohíbe intencionadamente."
+    },
+    "DBP1406W": {
+      "summary": "Se agotó el presupuesto de tiempo de muestreo",
+      "cause": "Tier 2 alcanzó el presupuesto de tiempo configurado antes de poder muestrear todas las tablas o columnas de texto.",
+      "action": "Aumente --max-wall-secs o acepte un muestreo parcial y revise las advertencias de auditoría."
+    },
+    "DBP1407W": {
+      "summary": "La muestra de compresión no estaba disponible",
+      "cause": "Una consulta de muestra acotada, un flujo, una codificación o una operación de compresión falló para al menos una tabla mientras continuaba la captura de Blueprint.",
+      "action": "Revise el detalle técnico y los permisos de las tablas; vuelva a ejecutar Tier 2 si necesita pruebas completas de compresión."
+    },
+    "DBP1408W": {
+      "summary": "La muestra de estilo de columna no estaba disponible",
+      "cause": "Una sonda acotada del estilo de una columna de texto falló para al menos una columna mientras continuaba la captura de Blueprint.",
+      "action": "Revise el detalle técnico y los permisos de la columna; las etiquetas de estilo generadas pueden estar incompletas."
+    },
+    "DBP1409W": {
+      "summary": "La tarea de conexión a la base de datos informó de un error",
+      "cause": "Una tarea del controlador de conexión PostgreSQL informó de un error asíncrono durante o después de la captura.",
+      "action": "Revise el detalle del controlador y compruebe que el Blueprint y la auditoría estén completas antes de confiar en ellas."
+    },
+    "DBP1501E": {
+      "summary": "Error en la captura de Blueprint de archivo estructurado",
+      "cause": "Error en el muestreo de compresión limitada, decodificación o metadatos Parquet o Avro.",
+      "action": "Verifique el formato de entrada, los permisos de archivo y los límites de muestreo, luego vuelva a intentarlo."
+    },
+    "DBP1502E": {
+      "summary": "Falló la salida de Blueprint o paquete",
+      "cause": "No se pudo codificar, crear ni escribir un Blueprint, un paquete o una salida asociada.",
+      "action": "Verifique la ruta de destino, los permisos, el espacio libre y la validez de la entrada."
+    },
+    "DBP1503E": {
+      "summary": "Falló la generación de la presentación de PowerPoint",
+      "cause": "El Blueprint de entrada no se pudo convertir ni escribir como una presentación de PowerPoint.",
+      "action": "Verifique el Blueprint de entrada, la ruta de destino, los permisos y el espacio libre."
+    },
+    "DBP1504W": {
+      "summary": "No se pudo escribir el registro de auditoría",
+      "cause": "El destino del registro de auditoría solicitado no estaba disponible después de que la operación principal se completó o falló.",
+      "action": "Verifique la ruta de auditoría, los permisos y el espacio libre; preservar la salida de auditoría del terminal."
+    },
+    "DBP1601E": {
+      "summary": "Error en la adquisición de credenciales",
+      "cause": "La contraseña, el token, el archivo, el entorno, TTY o la fuente de autenticación integrada seleccionados no se pudieron utilizar de forma segura.",
+      "action": "Corrija la fuente de credenciales y los permisos sin colocar secretos en la conexión URI."
+    },
+    "DBP1602E": {
+      "summary": "Error en la configuración TLS",
+      "cause": "El modo TLS, la CA, el certificado, la clave, la política de nombre de host o la anulación de seguridad no eran válidos.",
+      "action": "Corrija la configuración de TLS y el material del certificado, luego vuelva a intentarlo."
+    },
+    "DBP1603E": {
+      "summary": "No se pudo obtener el nombre de usuario de la base de datos",
+      "cause": "El origen --user, --user-env o --user-file seleccionado no existía, no se podía leer o estaba vacío.",
+      "action": "Corrija el origen del nombre de usuario y sus permisos y vuelva a intentarlo sin incluir secretos en el URI."
+    },
+    "DBP1604E": {
+      "summary": "La configuración de autenticación de la base de datos no es válida",
+      "cause": "El --auth-mode seleccionado entra en conflicto con los requisitos de origen de credenciales o de seguridad del transporte.",
+      "action": "Elija un modo de autenticación y un origen de credenciales compatibles; cloud-token requiere exactamente un origen --password-file/-env y TLS verify-full."
+    },
+    "DBP1605W": {
+      "summary": "No está disponible la aplicación de permisos para archivos sensibles",
+      "cause": "Esta plataforma no expone la comprobación de bits de modo Unix utilizada para rechazar archivos de credenciales o claves privadas legibles por demasiados usuarios.",
+      "action": "Compruebe manualmente la ACL del archivo y limite el acceso de lectura a la cuenta prevista antes de continuar."
+    },
+    "DBP1606E": {
+      "summary": "Falló la aserción del principal de base de datos autenticado",
+      "cause": "La identidad de la sesión de SQL Server no estaba disponible, no se pudo comparar de forma segura o no coincidió con --expect-server-principal.",
+      "action": "Verifique la identidad del proceso, la asignación del inicio de sesión, el punto de conexión y el principal esperado; vuelva a ejecutar sin ampliar los permisos de la base de datos."
+    },
+    "DBP1607E": {
+      "summary": "Falló la inicialización de la clave de anonimato",
+      "cause": "El archivo de clave custodiado por el cliente no era seguro, no se podía leer o tenía un formato incorrecto, o la fuente aleatoria del sistema operativo no estaba disponible.",
+      "action": "Use un archivo con permisos restringidos que contenga exactamente 32 bytes sin procesar o 64 caracteres hexadecimales, u omita --anonymization-key-file para generar una clave nueva local al proceso."
+    },
+    "DBP1701E": {
+      "summary": "Operación cancelada antes del consentimiento.",
+      "cause": "El mensaje interactivo previo al vuelo fue rechazado o no recibió el consentimiento canónico y/yes.",
+      "action": "Revise el plan y vuelva a ejecutarlo, o apruebe --yes después de una aprobación explícita."
+    },
+    "DBP1702E": {
+      "summary": "No se pudo leer la respuesta de consentimiento",
+      "cause": "La solicitud interactiva previa no pudo leer de la entrada estándar.",
+      "action": "Ejecute el comando en un terminal interactivo o pase --yes después de revisar y aprobar la operación de Blueprint independiente."
+    },
+    "DBP1801E": {
+      "summary": "No se pudo inicializar el entorno de ejecución asíncrono",
+      "cause": "El proceso no pudo inicializar el entorno requerido para las conexiones a bases de datos y el trabajo simultáneo.",
+      "action": "Compruebe los límites de recursos del proceso y la compilación instalada; recopile el detalle técnico y contacte con soporte si el fallo persiste."
+    },
+    "DBP1014E": {
+      "summary": "El detalle de artefactos no tiene consentimiento explícito",
+      "cause": "Los grafos de dependencias anónimos pueden caracterizar una aplicación y el modo analyzed lee temporalmente las definiciones de objetos.",
+      "action": "Revise el contrato de privacidad de artefactos y vuelva a ejecutar con --yes, o use --artifact-detail summary."
+    },
+    "DBP1015E": {
+      "summary": "Los certificados TLS de cliente no están disponibles para SQL Server",
+      "cause": "El controlador de SQL Server no implementa la autenticación mediante certificado de cliente con --tls-cert o --tls-key.",
+      "action": "Elimine ambas opciones y utilice un modo de autenticación de SQL Server junto con la validación verify-full del certificado del servidor."
+    },
+    "DBP1410W": {
+      "summary": "El catálogo de artefactos no estaba disponible",
+      "cause": "No se pudo leer un catálogo de artefactos opcional, por lo que el inventario de artefactos se marca explícitamente como incompleto.",
+      "action": "Revise el detalle técnico y los privilegios de origen; vuelva a ejecutar tras conceder visibilidad del catálogo cuando se requiera un inventario completo."
+    },
+    "DBP1411W": {
+      "summary": "No estaban disponibles los datos de topología de la base de datos",
+      "cause": "No se pudo leer un catálogo de topología opcional, por lo que se redujeron de forma conservadora la visibilidad de los miembros y las declaraciones de integridad relacionadas.",
+      "action": "Revise los privilegios del origen y el estado de la topología y vuelva a ejecutar cuando se requieran datos de topología completos."
+    },
+    "DBP1412W": {
+      "summary": "No estaba disponible la agregación de tamaños distribuidos",
+      "cause": "Una base de datos distribuida o fragmentada conocida no pudo proporcionar tamaños de relación agregados, por lo que se suprimieron las estadísticas locales engañosas de la pasarela o de un miembro.",
+      "action": "Capture mediante un punto de acceso compatible y capaz de agregar, con todos los miembros necesarios disponibles, y vuelva a ejecutar antes de usar el Blueprint para dimensionar capacidad."
+    },
+    "DBP1413W": {
+      "summary": "La cobertura del conjunto de datos está incompleta",
+      "cause": "Al menos una dimensión de inventario de tablas, recuento de filas o cobertura de tamaños está incompleta o es desconocida, por lo que los totales requieren una salvedad.",
+      "action": "Revise dataset_scope y sus limitaciones; capture mediante un coordinador consciente de la topología o restaure las pruebas que faltan antes de planificar capacidad."
+    },
+    "DBP1414W": {
+      "summary": "La relación del conjunto de datos del paquete es desconocida",
+      "cause": "Al menos una fuente no se declaró como independiente, réplica o fragmento, por lo que la aritmética entre fuentes no es segura.",
+      "action": "Defina dataset_relationship y dataset_group para cada fuente del manifiesto por lotes y vuelva a ejecutar la captura."
+    },
+    "DBP1415W": {
+      "summary": "Las réplicas del paquete no coinciden",
+      "cause": "Dos fuentes declaradas como réplicas tienen resúmenes de tablas, filas o bytes distintos; se conservó un representante determinista sin promediar.",
+      "action": "Revise la vigencia y el alcance de las fuentes y vuelva a capturar el grupo de réplicas antes de usar los totales agregados."
+    },
+    "DBP1416W": {
+      "summary": "El grupo de fragmentos del paquete está incompleto",
+      "cause": "Un grupo de fragmentos no se declaró completo o falló al menos un fragmento esperado, por lo que ese grupo no aportó totales agregados.",
+      "action": "Enumere todos los fragmentos esperados, establezca dataset_group_complete=true solo cuando la lista sea exhaustiva y repita los miembros fallidos."
+    },
+    "DBP1417W": {
+      "summary": "Se suprimieron los totales agregados del paquete",
+      "cause": "Una relación de conjunto de datos desconocida hizo inseguro el agregado lógico, por lo que los totales de tablas, filas y bytes se emitieron como cero con aggregation=suppressed.",
+      "action": "Declare explícitamente las relaciones de las fuentes y vuelva a ejecutar la captura; la evidencia Blueprint por fuente sigue disponible."
+    },
+    "DBP1418W": {
+      "summary": "El alcance de una fuente del paquete está incompleto",
+      "cause": "Al menos una fuente incluida en la aritmética del paquete tiene una cobertura de datos incompleta o desconocida.",
+      "action": "Revise dataset_scope en el Blueprint de esa fuente y restaure evidencia completa consciente de la topología antes de planificar capacidad."
+    },
+    "DBP1419E": {
+      "summary": "La captura en vivo superó su límite de tiempo estricto",
+      "cause": "La conexión, el catálogo, la sonda RTT o el muestreo no terminó antes de --max-wall-secs, por lo que el cliente cerró la conexión. PostgreSQL y MySQL también aplican límites de sentencia en el servidor; SQL Server solo aplica un límite de espera de bloqueos en el servidor.",
+      "action": "Investigue el bloqueo de la base de datos o la red, confirme que el trabajo del servidor se detuvo o repita con un valor --max-wall-secs mayor y revisado."
+    },
+    "DBP1421W": {
+      "summary": "La evidencia del principal de base de datos no estaba disponible",
+      "cause": "La sesión de SQL Server conectada no pudo informar su principal autenticado, su principal efectivo del servidor o su principal de base de datos, por lo que los campos de identidad de la auditoría están incompletos.",
+      "action": "Revise la conectividad y el comportamiento del servidor; vuelva a ejecutar antes de usar la auditoría como prueba de la identidad de captura."
+    },
+    "DBP1420E": {
+      "summary": "El esquema solicitado no es visible",
+      "cause": "Al menos un selector --schema no se resolvió mediante el catálogo de esquemas nativo y las reglas de visibilidad de la base conectada.",
+      "action": "Compruebe la base conectada, la ortografía del esquema, el rol activo y los permisos de metadatos y vuelva a intentarlo; no se escribe ningún Blueprint para un ámbito sin resolver."
+    }
+  }
+}

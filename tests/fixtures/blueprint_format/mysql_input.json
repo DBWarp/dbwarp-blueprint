@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "engine": "mysql",
+  "engine_version": "8.0.36-packaged-build-metadata",
+  "tables": [
+    {
+      "oid": "shop.users",
+      "schema_name": "shop",
+      "table_name": "users",
+      "reltuples": 12500000,
+      "table_bytes": 4200000000,
+      "index_bytes": 1100000000,
+      "last_analyze": "2026-04-26T10:00:00Z",
+      "columns": [
+        {"attnum": 1, "name": "id", "type": "bigint", "not_null": true, "avg_width": 8},
+        {"attnum": 2, "name": "email", "type": "varchar(255)", "not_null": true, "avg_width": 32},
+        {"attnum": 3, "name": "created_at", "type": "datetime", "not_null": true, "avg_width": 8}
+      ],
+      "indexes": [
+        {"name": "PRIMARY", "method": "BTREE", "unique": true, "seq": 1, "col_name": "id"},
+        {"name": "uk_email", "method": "BTREE", "unique": true, "seq": 1, "col_name": "email"}
+      ],
+      "fks": []
+    },
+    {
+      "oid": "shop.orders",
+      "schema_name": "shop",
+      "table_name": "orders",
+      "reltuples": 985000,
+      "table_bytes": 320000000,
+      "index_bytes": 95000000,
+      "last_analyze": "2026-04-26T10:00:00Z",
+      "columns": [
+        {"attnum": 1, "name": "id", "type": "bigint", "not_null": true, "avg_width": 8},
+        {"attnum": 2, "name": "user_id", "type": "bigint", "not_null": true, "avg_width": 8},
+        {"attnum": 3, "name": "total_cents", "type": "bigint", "not_null": true, "avg_width": 8},
+        {"attnum": 4, "name": "created_at", "type": "datetime", "not_null": true, "avg_width": 8}
+      ],
+      "indexes": [
+        {"name": "PRIMARY", "method": "BTREE", "unique": true, "seq": 1, "col_name": "id"},
+        {"name": "ix_user_created", "method": "BTREE", "unique": false, "seq": 1, "col_name": "user_id"},
+        {"name": "ix_user_created", "method": "BTREE", "unique": false, "seq": 2, "col_name": "created_at"}
+      ],
+      "fks": [
+        {"to_oid": "shop.users", "fk_name": "fk_orders_user", "position": 1, "col_name": "user_id", "to_col_name": "id"}
+      ]
+    }
+  ]
+}

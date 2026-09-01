@@ -1,0 +1,18 @@
+* text=auto eol=lf
+
+Cargo.lock    text eol=lf
+Cargo.toml    text eol=lf
+
+*.png         binary
+*.jpg         binary
+*.pdf         binary
+*.tar         binary
+*.gz          binary
+*.zst         binary
+*.crt         binary
+*.pem         binary
+*.zip         binary
+
+# Generated third-party notices preserve upstream bytes. MANIFEST.json hashes
+# those exact payloads, so Git must not rewrite CRLF licence texts on checkout.
+third-party-licenses/crates/** binary

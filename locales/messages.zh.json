@@ -1,0 +1,391 @@
+{
+  "schema_version": 1,
+  "locale": "zh",
+  "messages": {
+    "DBP0001E": {
+      "summary": "dbwarp-blueprint 操作失败",
+      "cause": "在更具体的操作员消息对其进行分类之前，所请求的操作失败。",
+      "action": "检查技术细节和因果链，纠正根本情况，然后重试。"
+    },
+    "DBP1000E": {
+      "summary": "需要数据库连接 URI",
+      "cause": "未提供实时数据库 URI 或离线输入模式。",
+      "action": "传递 --connect URI 或选择一种离线输入模式。"
+    },
+    "DBP1001E": {
+      "summary": "连接 URI 中的密码被拒绝",
+      "cause": "连接 URI 对于进程检查和 shell 历史记录是可见的，因此嵌入的凭据是不安全的。",
+      "action": "使用 --password-file、--password-env 或交互式 TTY 提示符。请参阅 AUTH.md 和 SECURITY.md。"
+    },
+    "DBP1002E": {
+      "summary": "不支持数据库 URI 方案",
+      "cause": "--connect 值未使用受支持的 PostgreSQL、MySQL、MariaDB 或 SQL Server URI 方案。",
+      "action": "使用 postgresql://、postgres://、mysql://、mariadb://、sqlserver://、mssql:// 或 tds://。"
+    },
+    "DBP1003E": {
+      "summary": "TLS 服务器名称覆盖不可用",
+      "cause": "此版本未实现 --tls-server-name。",
+      "action": "使用与证书匹配的 --connect 主机名。如果策略允许仅验证证书链，PostgreSQL 和 MySQL 可以使用 verify-ca；SQL Server 在两种验证模式下都会验证主机名。"
+    },
+    "DBP1004E": {
+      "summary": "用于另一个引擎的 Microsoft Entra 令牌选项",
+      "cause": "Azure 令牌选项特定于 SQL Server 身份验证。",
+      "action": "对于 PostgreSQL 或 MySQL 云 IAM，请使用 cloud-token，并且仅通过 --password-file 或 --password-env 其中一个来源提供外部令牌。"
+    },
+    "DBP1005E": {
+      "summary": "所选引擎不支持该身份验证模式",
+      "cause": "所选 --auth-mode 尚未针对所选数据库引擎实现。",
+      "action": "仅对支持相应模式的数据库引擎使用 sql-auth、cloud-token、entra-token 或 integrated。"
+    },
+    "DBP1006E": {
+      "summary": "结构化文件压缩采样缺乏明确同意",
+      "cause": "结构化文件模式无法交互提示，因此读取有界样本前需要 --yes。",
+      "action": "检查预检契约，并使用 --measure-compression --yes 重新运行。"
+    },
+    "DBP1007E": {
+      "summary": "该引擎无法使用长度保真模式",
+      "cause": "显式长度保真度控制当前仅适用于实时 MySQL 或 MariaDB 捕获。",
+      "action": "删除显式模式或使用受支持的 MySQL 或 MariaDB 源。"
+    },
+    "DBP1008E": {
+      "summary": "长度保真度选项冲突",
+      "cause": "旧的长度别名 exact 与长度保真模式 strict 组合使用。",
+      "action": "删除旧别名或使用 --length-fidelity exact --yes。"
+    },
+    "DBP1009E": {
+      "summary": "精确长度保真度缺乏明确同意",
+      "cause": "精确采样长度可能会揭示更精细的客户统计信息，因此需要 --yes。",
+      "action": "检查预检契约，并使用 --length-fidelity exact --yes 重新运行。"
+    },
+    "DBP1010E": {
+      "summary": "嵌入式本地化目录不完整",
+      "cause": "广告语言并不完全涵盖活动的 CLI、诊断或演示界面。",
+      "action": "安装完整版本或选择英语；维护人员必须使用每个客户可见的字符串更新每个区域设置。"
+    },
+    "DBP1011E": {
+      "summary": "命令行参数无效",
+      "cause": "Clap 拒绝了选项、值、冲突、要求或位置参数。",
+      "action": "使用 dbwarp-blueprint --help 更正命令并重试。"
+    },
+    "DBP1012E": {
+      "summary": "数据库连接 URI 格式错误",
+      "cause": "--connect 值使用了受支持的方案，但无法解析其 authority、主机、端口、用户信息或数据库路径。",
+      "action": "请修正 URI 结构，将 IPv6 主机放在方括号中，提供数据库名称，并且不要在 URI 中放置凭据。"
+    },
+    "DBP1013E": {
+      "summary": "源分类无效",
+      "cause": "--source-kind 值为空，或不是受支持的源分类之一。",
+      "action": "请使用 production、staging、scrubbed-replica 或 synthetic。"
+    },
+    "DBP1101E": {
+      "summary": "无法读取批次清单",
+      "cause": "清单路径不可用或其权限阻止读取。",
+      "action": "检查路径和文件权限，然后重试。"
+    },
+    "DBP1102E": {
+      "summary": "无法解析批次清单",
+      "cause": "该清单对于支持的 TOML 批处理模式无效。",
+      "action": "更正 TOML 结构和值，然后使用 --dry-run 进行验证。"
+    },
+    "DBP1103E": {
+      "summary": "批次清单不包含来源",
+      "cause": "该清单没有 [[source]] 条目。",
+      "action": "添加至少一个 [[source]] 块。"
+    },
+    "DBP1104E": {
+      "summary": "批量收集缺乏明确同意",
+      "cause": "非交互式多源收集需要 --yes。",
+      "action": "首先使用 --dry-run 运行，检查计划，然后使用 --yes 重新运行。"
+    },
+    "DBP1105E": {
+      "summary": "批处理源失败",
+      "cause": "无法塑造多源集合中的一个源。",
+      "action": "检查特定于源的详细信息并在重试之前使用 --dry-run 重新运行。"
+    },
+    "DBP1106E": {
+      "summary": "不支持该批处理源类型",
+      "cause": "源类型不是受支持的数据库引擎或结构化文件格式。",
+      "action": "请使用 `postgresql`、`mysql`、`sqlserver`、`parquet` 或 `avro`。"
+    },
+    "DBP1107E": {
+      "summary": "文件源解析无输入",
+      "cause": "配置的路径、多个路径或 glob 没有与结构化文件匹配。",
+      "action": "更正相对于清单的源路径。"
+    },
+    "DBP1108E": {
+      "summary": "不支持该文件数据集模式",
+      "cause": "`dataset_mode` 值不是 `single_file`、`one_table_per_file`、`merge_same_schema` 或 `partitioned_dataset`。",
+      "action": "请选择受支持的 `dataset_mode`。"
+    },
+    "DBP1109E": {
+      "summary": "批处理源标识符无效",
+      "cause": "某个 [[source]] id 在安全规范化后不含任何 ASCII 字母或数字。",
+      "action": "请为每个批处理源提供一个稳定标识符，其中至少包含一个 ASCII 字母或数字。"
+    },
+    "DBP1110E": {
+      "summary": "数据库源连接配置不明确",
+      "cause": "批处理源未准确指定连接、connect_env 或 connect_file 之一。",
+      "action": "仅设置一个连接源。"
+    },
+    "DBP1111E": {
+      "summary": "批量连接环境变量不可用",
+      "cause": "指定的 connect_env 变量丢失或不可读。",
+      "action": "导出变量或使用 connect_file。"
+    },
+    "DBP1112E": {
+      "summary": "批量连接文件不可用",
+      "cause": "connect_file 路径丢失或不可读。",
+      "action": "检查相对于批处理清单的路径及其权限。"
+    },
+    "DBP1113E": {
+      "summary": "无法完成批处理输出",
+      "cause": "无法编码、创建、重新读取或写入批处理 Blueprint、源审计、错误报告、目录或捆绑包输出。",
+      "action": "请检查输出路径、权限、可用空间和文件系统状态，然后重试。"
+    },
+    "DBP1114E": {
+      "summary": "结构化文件数据集成员不兼容",
+      "cause": "作为同一逻辑数据集选择的文件没有表结构，或未共享兼容的列布局。",
+      "action": "请检查所选文件；如果其架构不同，请使用 one_table_per_file 或单独的批处理源。"
+    },
+    "DBP1115E": {
+      "summary": "所有批处理源均失败",
+      "cause": "诊断捆绑包已发布，但其中没有可用的源 Blueprint。",
+      "action": "请检查 errors.txt 以及输入或凭据，然后重新运行失败的源。"
+    },
+    "DBP1116E": {
+      "summary": "批处理捆绑包不完整",
+      "cause": "至少一个批处理源失败而另一个已完成，因此发布的捆绑包不完整。",
+      "action": "请检查 errors.txt 和所有子审计，并重新采集失败的源。"
+    },
+    "DBP1200E": {
+      "summary": "捆绑包选择器无效",
+      "cause": "blueprint:// 或 --select 表达式格式错误或矛盾。",
+      "action": "每个选择器键使用一次 source=ID、table=ID、engine=VALUE 或 tag=NAME。"
+    },
+    "DBP1201E": {
+      "summary": "捆绑包选择器没有匹配任何来源",
+      "cause": "没有包源满足提供的选择器谓词。",
+      "action": "运行 --bundle-list 以检查可用的源和选择器。"
+    },
+    "DBP1202E": {
+      "summary": "捆绑选择器匹配多个源",
+      "cause": "对于单源操作来说，选择器不够具体。",
+      "action": "添加 --select source=ID 或其他缩小谓词。"
+    },
+    "DBP1203E": {
+      "summary": "捆绑选择器不匹配可提取Blueprint",
+      "cause": "所选源没有匹配的嵌入式或引用的 Blueprint/表。",
+      "action": "使用 --bundle-list 检查源和表选择器。"
+    },
+    "DBP1204E": {
+      "summary": "无法读取捆绑包输入",
+      "cause": "捆绑包路径不可用、不是常规可读输入，或其权限阻止读取。",
+      "action": "请检查捆绑包路径和权限，然后重试。"
+    },
+    "DBP1205E": {
+      "summary": "捆绑包内容无效",
+      "cause": "无法解析、验证或加载捆绑包 TOML 或其引用的某个 Blueprint 文件。",
+      "action": "请验证捆绑包和引用的 Blueprint 文件，必要时重新生成捆绑包。"
+    },
+    "DBP1206E": {
+      "summary": "无法写入捆绑包输出",
+      "cause": "无法序列化、创建或写入已提取或已打包的捆绑包输出。",
+      "action": "请检查目标路径、权限和可用空间，然后重试。"
+    },
+    "DBP1301E": {
+      "summary": "需要 Deck 输出路径",
+      "cause": "提供了 --from-toml，但未提供 --deck。",
+      "action": "通过 --deck output.pptx。"
+    },
+    "DBP1302E": {
+      "summary": "Blueprint TOML 架构版本不受支持",
+      "cause": "输入Blueprint使用此版本无法读取的架构版本。",
+      "action": "使用兼容的 dbwarp-blueprint 版本重新生成Blueprint。"
+    },
+    "DBP1401E": {
+      "summary": "PostgreSQL Blueprint捕获失败",
+      "cause": "PostgreSQL 连接、目录查询、RTT 探测、采样或解码操作失败。",
+      "action": "检查技术细节、连接、权限、TLS 策略和源运行状况，然后重试。"
+    },
+    "DBP1402E": {
+      "summary": "MySQL Blueprint捕获失败",
+      "cause": "MySQL 或 MariaDB 连接、目录查询、RTT 探测、采样或解码操作失败。",
+      "action": "检查技术细节、连接、权限、TLS 策略和源运行状况，然后重试。"
+    },
+    "DBP1403E": {
+      "summary": "SQL Server Blueprint捕获失败",
+      "cause": "SQL Server 连接、目录查询、RTT 探测、采样或解码操作失败。",
+      "action": "检查技术细节、连接、权限、TLS 策略和源运行状况，然后重试。"
+    },
+    "DBP1404W": {
+      "summary": "TLS 首选连接已回退到明文",
+      "cause": "TLS 模式 prefer 下的 PostgreSQL 环回连接无法协商 TLS，因此在本地继续使用明文。",
+      "action": "如果连本地明文也不允许，请使用 --tls-mode verify-full 或 require。"
+    },
+    "DBP1405W": {
+      "summary": "数据库 RTT 探测不可用",
+      "cause": "可选延迟探测 SELECT 1 失败，但主要目录捕获仍可使用。",
+      "action": "请检查探测权限和连接；如果 DBA 有意禁止该探测，请使用 --no-rtt-probe。"
+    },
+    "DBP1406W": {
+      "summary": "采样时间预算已用尽",
+      "cause": "Tier 2 在完成所有表或文本列采样之前已达到配置的运行时间预算。",
+      "action": "请增大 --max-wall-secs，或接受部分采样并检查审计警告。"
+    },
+    "DBP1407W": {
+      "summary": "压缩样本不可用",
+      "cause": "在继续捕获 Blueprint 的过程中，至少一个表的有界行采样查询、数据流、编码或压缩操作失败。",
+      "action": "请检查技术详情和表权限；如果需要完整的压缩证据，请重新运行 Tier 2。"
+    },
+    "DBP1408W": {
+      "summary": "列样式样本不可用",
+      "cause": "在继续捕获 Blueprint 的过程中，至少一个文本列的有界样式探测失败。",
+      "action": "请检查技术详情和列权限；生成的样式标签可能不完整。"
+    },
+    "DBP1409W": {
+      "summary": "数据库连接任务报告了错误",
+      "cause": "PostgreSQL 连接驱动任务在捕获期间或之后报告了异步错误。",
+      "action": "请检查驱动详情，并在依赖结果之前确认 Blueprint 和审计完整。"
+    },
+    "DBP1501E": {
+      "summary": "结构化文件Blueprint捕获失败",
+      "cause": "Parquet 或 Avro 元数据、解码或有限压缩采样失败。",
+      "action": "检查输入格式、文件权限和采样限制，然后重试。"
+    },
+    "DBP1502E": {
+      "summary": "Blueprint 或捆绑包输出失败",
+      "cause": "无法编码、创建或写入 Blueprint、捆绑包或关联输出。",
+      "action": "检查目标路径、权限、可用空间和输入有效性。"
+    },
+    "DBP1503E": {
+      "summary": "PowerPoint 演示文稿生成失败",
+      "cause": "无法将输入 Blueprint 转换为或写入 PowerPoint 演示文稿。",
+      "action": "检查输入Blueprint、目标路径、权限和可用空间。"
+    },
+    "DBP1504W": {
+      "summary": "审核日志无法写入",
+      "cause": "主要操作完成或失败后，请求的审核日志目标不可用。",
+      "action": "检查审计路径、权限、可用空间；保留终端审计输出。"
+    },
+    "DBP1601E": {
+      "summary": "凭证获取失败",
+      "cause": "无法安全使用所选的密码、令牌、文件、环境、TTY 或集成身份验证源。",
+      "action": "更正凭证来源和权限，而不在连接 URI 中放置机密。"
+    },
+    "DBP1602E": {
+      "summary": "TLS 配置失败",
+      "cause": "TLS 模式、CA、证书、密钥、主机名策略或安全覆盖无效。",
+      "action": "更正 TLS 设置和证书材料，然后重试。"
+    },
+    "DBP1603E": {
+      "summary": "获取数据库用户名失败",
+      "cause": "所选 --user、--user-env 或 --user-file 来源不存在、不可读或为空。",
+      "action": "请修正用户名来源及其权限，然后重试，并且不要在 URI 中放置秘密信息。"
+    },
+    "DBP1604E": {
+      "summary": "数据库身份验证配置无效",
+      "cause": "所选 --auth-mode 与凭据来源或传输安全要求冲突。",
+      "action": "请选择兼容的身份验证模式和凭据来源；cloud-token 需要且仅需要一个 --password-file/-env 来源以及 TLS verify-full。"
+    },
+    "DBP1605W": {
+      "summary": "无法强制执行敏感文件权限",
+      "cause": "此平台不提供 Unix 模式位检查，因而无法据此拒绝可被广泛读取的凭据或私钥文件。",
+      "action": "继续之前，请手动检查文件 ACL，并将读取权限限制为预期账户。"
+    },
+    "DBP1606E": {
+      "summary": "已认证数据库主体断言失败",
+      "cause": "SQL Server 会话身份不可用、无法安全比较，或与 --expect-server-principal 不匹配。",
+      "action": "检查进程身份、登录映射、连接端点和预期主体；不要扩大数据库权限，修正后重新运行。"
+    },
+    "DBP1607E": {
+      "summary": "匿名化密钥初始化失败",
+      "cause": "由客户保管的密钥文件不安全、无法读取或格式错误，或操作系统随机源不可用。",
+      "action": "使用包含恰好 32 个原始字节或 64 个十六进制字符且权限受限的文件，或省略 --anonymization-key-file 以使用新的进程本地密钥。"
+    },
+    "DBP1701E": {
+      "summary": "未经同意取消操作",
+      "cause": "交互式飞行前提示被拒绝或未收到规范的 y/yes 同意。",
+      "action": "检查计划并重新运行，或在明确批准后通过 --yes。"
+    },
+    "DBP1702E": {
+      "summary": "无法读取同意响应",
+      "cause": "交互式预检提示无法从标准输入读取。",
+      "action": "请在交互式终端中运行，或在独立审查并批准操作后传入 --yes。"
+    },
+    "DBP1801E": {
+      "summary": "无法初始化异步运行时",
+      "cause": "进程无法初始化数据库连接和并发工作所需的运行时。",
+      "action": "请检查进程资源限制和已安装的构建；如果故障持续，请收集技术详情并联系支持人员。"
+    },
+    "DBP1014E": {
+      "summary": "对象详细级别缺少明确同意",
+      "cause": "匿名依赖关系图可能刻画应用程序特征，并且 analyzed 模式会临时读取对象定义。",
+      "action": "请审查对象隐私约定，然后使用 --yes 重新运行，或使用 --artifact-detail summary。"
+    },
+    "DBP1015E": {
+      "summary": "SQL Server 不支持 TLS 客户端证书",
+      "cause": "SQL Server 驱动未实现 --tls-cert 或 --tls-key 客户端证书身份验证。",
+      "action": "删除这两个选项，并使用 SQL Server 身份验证模式以及 verify-full 服务器证书验证。"
+    },
+    "DBP1410W": {
+      "summary": "对象目录不可用",
+      "cause": "无法读取可选的对象目录，因此对象清单被明确标记为不完整。",
+      "action": "请检查技术详情和源权限；如果需要完整清单，请在授予目录可见性后重新运行。"
+    },
+    "DBP1411W": {
+      "summary": "数据库拓扑证据不可用",
+      "cause": "无法读取可选的拓扑目录，因此成员可见性和相关完整性声明已被保守地降低。",
+      "action": "请检查源权限和拓扑运行状况；如果需要完整的拓扑证据，请重新运行。"
+    },
+    "DBP1412W": {
+      "summary": "分布式大小聚合不可用",
+      "cause": "已知的分布式或分片数据库无法提供聚合关系大小，因此已抑制可能造成误导的网关本地或成员本地统计信息。",
+      "action": "请在所有必需成员均可用时，通过受支持且具备聚合能力的端点进行采集，然后在使用 Blueprint 进行容量规划之前重新运行。"
+    },
+    "DBP1413W": {
+      "summary": "数据集覆盖不完整",
+      "cause": "表清单、行数或大小覆盖维度中至少有一项不完整或未知，因此必须限定总计的适用范围。",
+      "action": "请检查 dataset_scope 及其限制；通过具备拓扑感知能力的协调器采集，或在容量规划前恢复缺失的证据。"
+    },
+    "DBP1414W": {
+      "summary": "捆绑包的数据集关系未知",
+      "cause": "至少一个源未声明为独立、复制副本或分片，因此跨源计算不安全。",
+      "action": "为批处理清单中的每个源设置 dataset_relationship 和 dataset_group，然后重新运行。"
+    },
+    "DBP1415W": {
+      "summary": "捆绑包中的副本不一致",
+      "cause": "两个声明为副本的源具有不同的表、行或字节汇总；系统保留了一个确定性代表，未进行平均。",
+      "action": "检查源的新鲜度和范围，并在使用聚合总计前重新采集该副本组。"
+    },
+    "DBP1416W": {
+      "summary": "捆绑包的分片组不完整",
+      "cause": "分片组未声明为完整，或至少一个预期分片失败，因此该组未计入任何聚合总计。",
+      "action": "列出所有预期分片，仅在列表完备时设置 dataset_group_complete=true，并重新运行失败的成员。"
+    },
+    "DBP1417W": {
+      "summary": "已抑制捆绑包聚合总计",
+      "cause": "未知的数据集关系使逻辑聚合不安全，因此表、行和字节总计以 aggregation=suppressed 和零值输出。",
+      "action": "明确声明源关系并重新运行；每个源的 Blueprint 证据仍然可用。"
+    },
+    "DBP1418W": {
+      "summary": "捆绑包源范围不完整",
+      "cause": "参与捆绑包计算的至少一个源具有不完整或未知的数据集覆盖范围。",
+      "action": "检查该源 Blueprint 中的 dataset_scope，并在容量规划前恢复能够识别拓扑的完整证据。"
+    },
+    "DBP1419E": {
+      "summary": "实时采集超过严格运行时间限制",
+      "cause": "连接、目录、RTT 或采样未能在 --max-wall-secs 之前完成，因此客户端断开了连接。PostgreSQL 和 MySQL 还会在服务器端强制执行语句限制；SQL Server 在服务器端仅强制执行锁等待限制。",
+      "action": "调查数据库或网络停顿，确认服务器工作已停止，或使用经过审核的更大 --max-wall-secs 值重新运行。"
+    },
+    "DBP1421W": {
+      "summary": "数据库主体证据不可用",
+      "cause": "已连接的 SQL Server 会话无法报告其已认证主体、有效服务器主体或数据库主体，因此审计中的身份字段不完整。",
+      "action": "检查连接和服务器行为；在将审计用作采集身份的证据之前重新运行。"
+    },
+    "DBP1420E": {
+      "summary": "请求的架构不可见",
+      "cause": "至少一个 --schema 选择器未能通过所连接数据库的原生架构目录和可见性规则解析。",
+      "action": "请检查所连接的数据库、架构拼写、活动角色和元数据授权后重试；对于未解析的范围，不会写入 Blueprint。"
+    }
+  }
+}
