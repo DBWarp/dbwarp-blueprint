@@ -493,7 +493,13 @@ pub fn generated_value_len(
     } else if row_idx.wrapping_add(col_idx).checked_rem(11) == Some(0) {
         len = (len / 2).max(1);
     }
-    len.min(max_value_bytes.max(1)).max(1) as usize
+    let declared_cap = match (column.declared_max_chars, column.declared_max_bytes) {
+        (0, 0) => u64::MAX,
+        (chars, 0) => chars,
+        (0, bytes) => bytes,
+        (chars, bytes) => chars.min(bytes),
+    };
+    len.min(declared_cap).min(max_value_bytes.max(1)).max(1) as usize
 }
 
 pub fn entropy_from_column(column: &BlueprintColumn) -> f64 {
@@ -1372,6 +1378,36 @@ mod tests {
         )
         .unwrap();
         assert!(value.len() <= 128);
+    }
+
+    #[test]
+    fn generated_text_never_exceeds_the_declared_column_width() {
+        let mut table = BlueprintTable {
+            rows: 100,
+            table_bytes: 100_000,
+            ..Default::default()
+        };
+        let column = BlueprintColumn {
+            ordinal: 1,
+            column_type: "text".to_string(),
+            native_type: "character varying(2)".to_string(),
+            nullable: false,
+            declared_max_chars: 2,
+            len_avg: 0,
+            len_p95: 0,
+            ..Default::default()
+        };
+        table.cols.insert("col-1".to_string(), column.clone());
+        let options = SyntheticOptions {
+            max_value_bytes: 64 * 1024,
+            null_percent: 0,
+        };
+
+        for row_idx in 0..100 {
+            let value = blueprint_row_value(&table, &column, 0, row_idx, 0, options)
+                .expect("NOT NULL text must produce a value");
+            assert!(value.len() <= 2, "row {row_idx} exceeded VARCHAR(2)");
+        }
     }
 
     #[test]
