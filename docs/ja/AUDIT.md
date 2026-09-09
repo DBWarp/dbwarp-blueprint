@@ -4,8 +4,13 @@
 
 **言語:** [English](../../AUDIT.md) | [Deutsch](../de/AUDIT.md) | [Français](../fr/AUDIT.md) | [Español](../es/AUDIT.md) | [Polski](../pl/AUDIT.md) | **日本語** | [简体中文](../zh/AUDIT.md)
 
-この文書は、ツールが実行し得るすべての操作を列挙します。お客様の
-セキュリティポリシーと照合してください。
+この文書は、実行時におけるアプリケーションレベルのネットワーク、ファイル
+システム、環境、データベース、および監査の動作を説明します。有効な各モードと
+オプションをセキュリティポリシーと照合してください。データベースドライバー、
+TLS・ID ライブラリ、動的ローダー、オペレーティングシステムは、プラットフォーム
+設定、トラストストア、DNS、資格情報キャッシュ、ネットワークストレージも参照
+する場合があります。これらサポート層の動作は、アプリケーション監査では完全に
+可視化されません。
 
 ## ネットワークエグレス
 
@@ -31,24 +36,26 @@ Avro、およびバンドル操作では、アプリケーションが開始す�
 | ファイル | 読み取る時点 | 内容 |
 |---|---|---|
 | `--user-file PATH` | 指定された場合 | ユーザー名のみ。末尾の空白を除去し、空のファイルはエラー。 |
-| `--password-file PATH` | 指定された場合 | 1 回読み取り、使用後にゼロ化。全ユーザー/グループが読み取り可能なモードは拒否。 |
-| `--azure-token-file PATH` | 指定された場合 | SQL Server Entra ID トークン。1 回読み取り、使用後にゼロ化。全ユーザー/グループが読み取り可能なモードは拒否。 |
+| `--password-file PATH` | 指定された場合 | 1 回読み取ります。DBWarp が所有する `Secret` バッファーは破棄時にゼロ化されますが、ドライバーは SECURITY.md の説明どおり独自のコピーを保持する場合があります。Unix でグループまたは他ユーザーが読み取れるモードは拒否します。 |
+| `--anonymization-key-file PATH` | 指定された場合 | 顧客が保持する 32 バイトまたは 64 桁の 16 進 HMAC キー。Unix でグループまたは他ユーザーが読み取れる場合は拒否します。キーは出力されません。 |
+| `--azure-token-file PATH` | 指定された場合 | SQL Server Entra ID トークン。1 回読み取ります。DBWarp が所有する `Secret` バッファーは破棄時にゼロ化されます。Unix でグループまたは他ユーザーが読み取れるモードは拒否します。 |
 | `--tls-ca PATH` | 指定された場合 | 接続時に読み取る信頼済み CA PEM。PostgreSQL/MySQL はバンドルを受け入れ、SQL Server は正確に 1 つの証明書を受け入れます。指定したファイルはエンジンの既定ルートを置き換えます。 |
 | `--tls-cert PATH` | 指定された場合 | PostgreSQL/MySQL のクライアント TLS 証明書（PEM）。接続時に読み取ります。SQL Server では `DBP1015E` で拒否されます。 |
-| `--tls-key PATH` | 指定された場合 | PostgreSQL/MySQL のクライアント TLS 鍵（PEM）。全ユーザー/グループが読み取り可能なモードは拒否。接続時に読み取り、SQL Server では `DBP1015E` で拒否されます。 |
+| `--tls-key PATH` | 指定された場合 | PostgreSQL/MySQL のクライアント TLS 鍵（PEM）。Unix ではグループまたはその他のユーザーが読み取り可能なモードを拒否します。接続時に読み取り、SQL Server では `DBP1015E` で拒否されます。 |
 | `--from-toml PATH` | 指定された場合 | データベース接続なしでデッキを構築するため、ローカルで読み取る既存の dbwarp-blueprint TOML ファイル。 |
 | `--from-parquet PATH` | 指定された場合 | Parquet メタデータと、明示的にサンプリングへ同意した場合に限り、上限付きのデコード済み行。 |
 | `--from-avro PATH` | 指定された場合 | Avro コンテナーのメタデータとレコード。行数を得るためにコンテナー全体を走査。 |
 | `--batch-manifest PATH` | 指定された場合 | マニフェスト、およびマニフェストが参照するすべてのローカル入力、資格情報、トークン、TLS パス。 |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | 指定された場合 | バンドル TOML と、一覧表示、抽出、作成に必要な相対パスの Blueprint ファイル。 |
-| `/dev/tty` | パスワードソースが指定されていない場合 | echo を無効にしたプロンプト。 |
+| 制御端末/コンソール（Unix 系では `/dev/tty`） | パスワードソースが指定されていない場合 | echo を無効にしたプロンプト。 |
 | （ビルド時のみ）`rust-toolchain.toml`、`Cargo.toml`、`Cargo.lock`、vendored release の `.dbwarp-source-revision`、`vendor/mysql_async`、`vendor-crates/*` | `./build.sh` の実行時のみ | toolchain、source provenance、標準 Cargo ビルド入力。 |
 
-**読み取らない**もの:
+アプリケーションには、次を明示的に読み取る経路がありません:
 - `~/.pgpass`、`~/.my.cnf`、`~/.aws/credentials`、`~/.azure/credentials`
 - すべての `~/.ssh/*` ファイル
-- `/etc/passwd`、`/etc/shadow`
-- `--password-env`、`--user-env`、または `--azure-token-env` で名前を指定したもの以外のデータベース資格情報変数。統合 Kerberos ビルドでは `KRB5CCNAME` も参照される場合があります。言語と端末表示の変数は以下に記載します。
+- Blueprint 入力としての `/etc/passwd` または `/etc/shadow`（ただし、
+  プラットフォームの ID・認証ライブラリは OS アカウント情報を参照する場合があります）
+- `--password-env`、`--user-env`、または `--azure-token-env` で名前を指定したもの以外のデータベース資格情報変数。統合 Kerberos ビルドでは、プラットフォームの GSSAPI/Kerberos スタックが独自の設定、キャッシュ、keytab、および環境変数を参照する場合があります。言語と端末表示の変数は以下に記載します。
 
 ## ファイルシステムへの書き込み
 
@@ -62,7 +69,7 @@ Avro、およびバンドル操作では、アプリケーションが開始す�
 | `--out-dir DIR` | dry-run 以外のバッチモード | `bundle.toml`、ソースごとの `blueprints/` と `audits/`、所有権マーカー、および一部失敗後の `errors.txt`。公開には同階層のステージングディレクトリと復旧マーカーを使用。 |
 | （ビルド時のみ）`./target/`、`./build/` | `./build.sh` の実行時のみ | 標準の Cargo ビルド出力。 |
 
-**書き込まない**もの:
+アプリケーションには、次に明示的に書き込む経路がありません:
 - `/var/log/*`
 - `~/.cache/*`、`~/.local/*`、`~/.config/*`
 - 暗黙のシステム一時ディレクトリ（ユーザーは出力またはバッチディレクトリを
@@ -70,8 +77,8 @@ Avro、およびバンドル操作では、アプリケーションが開始す�
 
 ## 読み取る環境変数
 
-監査には実際に参照した変数だけが記録されます。`--lang` が対応言語を
-選択していない場合、言語選択は `DBWARP_BLUEPRINT_LANG`、`LC_ALL`、`LC_MESSAGES`、`LANG` を参照できます。
+監査には DBWarp Blueprint 自体が参照する変数だけが記録されます。`--lang` が対応言語を
+選択していない場合、言語選択は `DBWARP_BLUEPRINT_LANG`、`LC_ALL`、`LC_MESSAGES`、`LANG` をこの順序で参照できます。
 端末表示は `NO_COLOR`、`TERM`、`COLORTERM`、`COLUMNS` を参照できますが、
 これらは表示だけに影響します。
 
@@ -81,6 +88,11 @@ Avro、およびバンドル操作では、アプリケーションが開始す�
 フォールバックはありません。これらのフォールバックは意図的に
 実装されていません。
 
+プラットフォームのデータベース、TLS、DNS、および統合認証ライブラリは、
+このアプリケーションレベルの一覧外にある独自の変数や設定を参照する場合が
+あります。ポリシーでプロセスとライブラリの完全な一覧が必要な場合は、OS
+レベルのトレースを使用してください。
+
 `./build.sh` の実行時は、`PINNED_RUST`（上書き）、`ALLOW_NETWORK`
 （rustup-init ダウンロードへの opt-in）、`TARGET`（cross-compile target）に加え、
 標準の cargo / rustup 変数を読み取ります。本ツール自体は実行時に
@@ -89,7 +101,7 @@ Avro、およびバンドル操作では、アプリケーションが開始す�
 ## 実行ごとの監査ログ
 
 本ツールは、すべての実行で監査ログを stderr に出力します。形式は
-決定論的なプレーンテキストです。`2>audit.txt` でファイルへリダイレクトするか、
+安定したプレーンテキストレイアウトです。`2>audit.txt` でファイルへリダイレクトするか、
 明示的なコピーに `--audit-log PATH` を使用します。
 
 サンプル（Tier 1）:
@@ -102,6 +114,7 @@ build_toolchain:     1.94.0 (vendored)
 mode:                tier-1
 started_at_unix_ms:  1745596800000
 outcome:             ok
+anonymization_key:   ephemeral-random
 schema_selector_count: 1
 
 connection:
@@ -197,7 +210,7 @@ warnings:
   - (none)
 
 network_egress:
-  - db.example:5432 (the DB connection only)
+  - db.example:5432 (database-driver session; DNS may use the configured resolver)
 
 env_vars_read:
   - (none)
@@ -205,12 +218,12 @@ env_vars_read:
 trust_assertions:
   - no row content was read
   - no telemetry was sent anywhere
-  - all numeric statistics rounded to documented precision
-  - identifier ordering is deterministic (sha256-based)
-  - no random or pseudorandom data in output
-  - artifact summary stores bounded counts only; no object identities or definitions
+  - length policy balanced: declared capacities and index prefixes exact; sampled lengths relatively rounded
+  - identifier ordering uses domain-separated HMAC-SHA256 with a fresh process-local key; labels intentionally vary between runs
+  - the anonymization key and source identifiers are not written to the Blueprint
+  - artifact summary stores bounded counts and external-prerequisite classes; no object identities or definitions
   - artifact output excludes source object names, SQL text, endpoints, credentials, keys, certificates, and binaries
-  - credential read once via Secret wrapper, zeroized when dropped at end of engine run; see SECURITY.md for driver-owned copy lifetimes (MySQL clones to non-zeroizing String for the driver API)
+  - credential entered through the Secret wrapper and its buffer is zeroized on drop; driver APIs may retain copies as documented under 'Driver-owned credential copies' in SECURITY.md
 
 run_duration_ms:    142
 finished_at_unix_ms: 1745596800142
@@ -224,7 +237,7 @@ assertion が出力されます。構造上の長さとサンプル長が正確�
 
 監査ログは:
 
-- 反復可能なライブ `--schema` セレクターの数だけを記録する。その値は対話型事前表示に示されるが、監査には追加されない。既存の編集済み接続 URI は引き続き接続先データベースを識別し、MySQL ではそれがスキーマ名でもある。選択された Blueprint は `dataset_scope` で `selection-limited` と記録される。
+- 反復可能なライブ `--schema` セレクターの数だけを記録する。その値は対話型事前表示に示されるが、監査には追加されない。既存の機密情報を除去した接続 URI は引き続き接続先データベースを識別し、MySQL ではそれがスキーマ名でもある。選択された Blueprint は `dataset_scope` で `selection-limited` と記録される。
 - コンパイル時に埋め込まれたソースリビジョンと worktree 変更の有無を記録する。バイナリは自身の最終ハッシュを埋め込めないため、最終 SHA-256 はリリースまたはレジストリの外部チェックサムとする。
 - 資格情報の値ではなく、**ソース**（ファイルパス、環境変数名、TTY）を記録する。
 - SQL Server では `ORIGINAL_LOGIN()`、`SUSER_SNAME()`、`USER_NAME()` が
@@ -236,12 +249,15 @@ assertion が出力されます。構造上の長さとサンプル長が正確�
 - 致命的でない収集およびサンプリングの機能低下を、安定した DBP 警告コードで記録する。空のセクションは、既知の機能低下が観測されなかったことを意味する。
 - 検証済みの `[database_topology]` と `[dataset_scope]` evidence を、closed token と count だけで `topology_and_scope` にコピーする。node 名、endpoint、cluster ID、database ID は出力できない。
 - topology または dataset coverage が不完全な場合に `DBP1411W`、`DBP1412W`、`DBP1413W` を保持し、成功した capture が sizing caveat を隠さないようにする。
-- 決定論的でディメンション別の Blueprint 忠実度推定を記録する。このスコアは、構造、サイジング、列統計、リレーションシップ、アーティファクトについて取得したエビデンスの網羅度を示す。ソースの真値に対する測定誤差や統計的信頼区間ではない。
+- 決定論的でディメンション別の Blueprint 忠実度推定を記録する。このスコアは、構造、サイジング、列統計、リレーションシップ、アーティファクトについて取得したエビデンスの網羅度を示す。ソースの真値に対する測定誤差や統計的信頼区間ではない。PostgreSQL の統計が古い、または一度も分析されていないと報告された場合、サイジングのスコアを下げ、`table-statistics-stale` または `table-statistics-never-analyzed` という明示的な制約として記録する。統計の鮮度が高くても、行数の網羅性の不足を補うことはできない。随時更新されるカウンターを使うエンジンや、統計の鮮度を確認できないエンジンについて、鮮度のエビデンスを捏造することはない。
 - モード（Tier 1 または Tier 2）に適した trust assertion を宣言する。
-- 同じ入力に対して決定論的である。同じ DB、同じ引数なら、タイミングフィールドを除き同じ監査になる。
+- 安定したテキスト形式を使用するが、データベースの状態、時刻、警告、および
+  既定で毎回新しく生成される匿名化キーにより値は変わり得る。承認済みの比較では、
+  保護された `--anonymization-key-file` を再利用して `--generated-at` を固定して
+  ください。タイミングフィールドは引き続き変動する。
 
 **trust assertion の条件付き出力。**
-"credential read once via Secret wrapper..." 行は、
+"credential entered through the Secret wrapper..." 行は、
 資格情報を実際に読み取った実行でのみ出力されます。資格情報取得前に中止する
 失敗経路（URI parse error、URI-embedded password の拒否、dry-run など）では、
 意図的にこの行を出力しません。読み取られていない資格情報について
@@ -251,8 +267,10 @@ assertion できることはないためです。この行の有無と
 
 **監査は運用上の成功経路と失敗経路で出力されます。** 起動後のコマンドライン
 解析エラーも含みます。help/version の終了、および組み込みローカライズ契約を
-読み込む前の失敗では完全な監査は出力されません。それ以降の失敗は stderr と、
-指定されていれば `--audit-log PATH` に `outcome: error: <stage>` の形式で出力されます。
+読み込む前の失敗では完全な監査は出力されません。ツールが途中で失敗した場合
+（認証拒否、ネットワークエラーなど）でも、監査ログは stderr と、指定されていれば
+`--audit-log PATH` に `outcome: error: <stage>` の形式で出力されるため、
+顧客は失敗前に何が試行されたかのフォレンジック記録を常に手にできます。
 失敗時の outcome 行の例:
 
 ```
@@ -281,7 +299,7 @@ outcome:             error: parsing --connect URI (value redacted to avoid loggi
 
 監査は要求詳細、可視性、オブジェクト/依存/外部前提条件の件数、およびすべての完全性フラグを記録します。すべての成果物カタログ操作は `database_operations_observed` に表示されます。任意カタログの失敗は `DBP1410W` を出力し、`warnings` に記録され、不正確な完全性主張を防ぎます。
 
-analyzed モードでは、定義はゼロ化所有者に保持されて消去され、有界なバンドと閉じた機能トークンに削減されます。定義テキスト、ソースオブジェクト名、外部エンドポイント、アーティファクトのプリンシパル、資格情報、鍵/証明書素材、パッケージ/ライブラリ名、バイナリは Blueprint または監査ログへ決して書き込まれません。保持する正確なプリンシパル名は、上記の明示的な `auth` 監査ブロックにある 3 つの SQL Server セッション識別情報だけです。これらは Blueprint、プレゼンテーション、公開アーティファクトには決して書き込まれません。graph と analyzed モードは匿名トポロジでもアプリケーションを識別できるため `--yes` が必要です。
+analyzed モードでは、定義はゼロ化所有者に保持されて消去され、有界なバンドと閉じた機能トークンに削減されます。定義テキスト、ソースオブジェクト名、外部エンドポイント、アーティファクトのプリンシパル、資格情報、鍵/証明書素材、パッケージ/ライブラリ名、バイナリは Blueprint または監査ログへ決して書き込まれません。保持する正確なプリンシパル名は、上記の明示的な `auth` 監査ブロックにある 3 つの SQL Server セッション識別情報だけです。これらは Blueprint、デッキ、公開アーティファクトには決して書き込まれません。graph と analyzed モードは匿名トポロジでもアプリケーションを識別できるため `--yes` が必要です。
 
 監査は次のいずれかの信頼表明でプライバシー姿勢を区別します:
 
@@ -296,10 +314,12 @@ analyzed モードでは、定義はゼロ化所有者に保持されて消去�
 圧縮測定を対話的に承認するか、非対話で `--measure-compression --yes` を渡すと、本ツールはさらに次を行います:
 
 - 空であると証明されていない各テーブルについて、エンジン固有の境界付き
-  サンプリング経路を実行する。PostgreSQL は
-  `TABLESAMPLE SYSTEM(0.1) LIMIT N` から開始し、必要に応じて `LIMIT N` へ
-  フォールバックする。MySQL は `LIMIT N`、SQL Server は `TOP N` を使用する。
-  バイアスのある経路では出力に `sampled_with_bias = true` を設定する。
+  サンプリング経路を実行する。PostgreSQL は推定行数と要求されたサンプルサイズに
+  基づく適応的な割合の `TABLESAMPLE SYSTEM` を `LIMIT N` と組み合わせて使用し、必要に応じて `LIMIT N` へ
+  フォールバックする。MySQL は、安全なアクセス経路が利用できる場合は数値主キーの
+  4 つの制限付き範囲ウィンドウを使用し、それ以外では `LIMIT N` を使用する。
+  SQL Server は `TOP N` を使用する。バイアスのある経路では出力に
+  `sampled_with_bias = true` を設定する。
 - サンプル行をローカルのメモリ内バッファへ読み込む。
 - データベース読み取りは逐次のままにする。`--compression-workers N`
   により、1～32 個の境界付きローカル圧縮ワーカーを実行できる
@@ -314,7 +334,7 @@ analyzed モードでは、定義はゼロ化所有者に保持されて消去�
 
 `local_sample_processing.encoded_rowframe_bytes` は圧縮用にローカルで
 エンコードしたバイト数であり、データベースのネットワークバイト数ではありません。
-ドライバーが公開しない値は `unknown` のままです。`[compression]` ブロックには比率が入ります。`--max-wall-secs` は接続、
+ドライバーが公開しない値は `unknown` のままです。出力ファイルのテーブル単位の `[compression]` ブロックに比率の数値が記録されます。`--max-wall-secs` は接続、
 カタログ、RTT、Tier 2 を含むライブ収集全体の厳格な期限です。
 PostgreSQL はセッション `statement_timeout` も設定し、MySQL は読み取り専用 `SELECT` にセッション
 `max_execution_time` を設定します。SQL Server は同等のセッション全体の文経過時間制限を持たないため、セッション
@@ -333,23 +353,60 @@ PostgreSQL はセッション `statement_timeout` も設定し、MySQL は読み
 
 ## 検証手順
 
+ダウンロードしたプラットフォームアーカイブの検証と、ソースからの再現ビルドは、
+別々の信頼性確認です。まず、同じリリースで公開されたチェックサムを使って
+アーカイブと実行ファイルを検証してください。プラットフォームアーカイブは
+運用者向けバンドルであり、ソースツリーではありません。含まれる文書と
+`verify.sh` は、対応するソースチェックアウトで使用するための参照資料です。
+ソース監査や再ビルドを行う前に、公開リポジトリから正確なリリースタグを取得するか、
+そのリリースの依存関係同梱ソースアーカイブを使用してください。プラットフォーム
+アーカイブ内でそのまま再ビルドできるとは想定しないでください。
+
 本ツールが文書に記載された操作だけを行うことを*証明*するには:
 
-1. **ソース監査**: リポジトリを clone し、`src/secret.rs` を読んだ後、そのファイル以外にある `\.expose\(\)` を grep します:
+1. **ダウンロードの完全性**: `SHA256SUMS.txt` の対応するエントリで
+   プラットフォームアーカイブを検証し、次に展開した実行ファイルをその
+   `*.binary.sha256` ファイルで検証します。両方のチェックサムファイルは、
+   同じ不変のリリースタグから取得する必要があります。
+   [バイナリのダウンロード](BINARIES.md)を参照してください。
+2. **ソース監査**: 対応するソースチェックアウトまたは依存関係同梱ソース
+   アーカイブで `src/secret.rs` を読み、そのファイル以外にある
+   `\.expose\(\)` を検索します。`rg` がインストールされている場合の簡潔な
+   コマンドは次のとおりです:
    ```
    $ rg -n '\.expose\(\)' src --glob '!secret.rs'
    ```
+   それ以外の場合は、そのプラットフォームで承認された再帰的テキスト検索
+   ツールを使用してください。`rg` はビルドまたは検証の前提条件ではありません。
    本番の call site は公開された `&str` を直ちに driver の connection-builder
    へ渡します。MySQL では `mysql_async` の API が `String` を要求するため、
-   さらに `.to_string()` を
-   呼び出します。この copy はゼロ化されず、`OptsBuilder` が drop されるまで存続します。
-   Tier 1 と Tier 2 は同じ MySQL 接続を再利用します。詳細は SECURITY.md §2 を参照してください。
-2. **ソースからビルド**: `./build.sh`。リリース CI は同じ runner 上の別の Cargo target ディレクトリで独立した再ビルドを行い、バイト差があれば拒否します。ローカル比較が有効なのは、source revision、target、features、固定された Rust toolchain、linker、build flags が同一の場合だけです。
-3. **リリースと比較**: `./verify.sh release/dbwarp-blueprint-X.Y.Z-...`
-4. **実行時トレース**: sandbox 内で `strace -f -e trace=open,connect,read,write` を付けて実行します。上記の一覧と比較してください。
-5. **ネットワークトレース**: ホスト上で `tcpdump` を実行します。パスワード認証の
+   さらに `.to_string()` を呼び出します。このゼロ化されないコピーは
+   ドライバーが所有するオプションへ移され、`OptsBuilder` の破棄後も
+   オプション／接続の存続期間中は残る可能性があります。ビルダーを破棄しても
+   コピーが消去された証拠にはなりません。Tier 1 と Tier 2 は同じ
+   MySQL 接続を再利用します。完全な説明は SECURITY.md の
+   **ドライバーが所有する資格情報のコピー**を参照してください。
+3. **ソースからビルド**: `./build.sh`。依存関係同梱ソースアーカイブでは、
+   `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh` を実行します。リリース CI は同じ
+   runner 上で独立した再ビルドを行います。ビルド間で同じ Cargo target
+   ディレクトリを空にして再利用し、最初の実行ファイルは別に保存します。
+   バイト差があれば拒否します。ローカル比較が有効なのは、source revision、
+   target、features、固定された Rust toolchain、linker、build flags が同一の
+   場合だけです。
+4. **リリースと比較**: 対応するソースチェックアウトまたはソースツリーで
+   `./verify.sh /path/to/extracted/dbwarp-blueprint` を実行します。必要な target、
+   features、toolchain、linker、source-date epoch、build flags は BUILD.md の
+   **リリースバイナリの再現**を参照してください。
+5. **実行時トレース**: Linux では sandbox 内で
+   `strace -f -e trace=open,connect,read,write` を付けて実行します。`strace` または
+   `rg` が利用できない場合は、プラットフォームで承認された同等のファイル／
+   ネットワークトレーサーと再帰的テキスト検索ツールを使用してください。
+   上記の一覧と比較してください。
+6. **ネットワークトレース**: ホスト上で `tcpdump` を実行します。パスワード認証の
    ライブ実行では、データベースセッションと想定される DNS 通信を確認します。
    統合認証では、想定される KDC またはドメインコントローラーとの通信も考慮します。
    バッチモードでは、データベースソースごとに 1 つのセッションがあることを照合します。
 
-いずれかがこの文書と一致しない場合は、トレースを添えて issue を登録してください。72 時間以内に調査します。
+いずれかがこの文書と一致しない場合は、SECURITY.md に記載された窓口から
+相違を報告し、再現に必要な最小限の安全なトレースだけを添付してください。
+資格情報、顧客識別子、機密性のあるドライバー出力を公開 issue に含めないでください。

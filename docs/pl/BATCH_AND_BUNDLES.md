@@ -133,7 +133,7 @@ tags = ["lake"]
 ```
 
 Jeśli relacja zostanie pominięta, domyślną wartością jest `unknown`; przebieg
-kończy się, lecz emituje `DBP1414W` i `DBP1417W` oraz wyłącza sumy zbiorcze. Jest
+kończy się powodzeniem, lecz emituje `DBP1414W` i `DBP1417W` oraz wyłącza sumy zbiorcze. Jest
 to bezpieczniejsze niż założenie, że dwa endpointy to dwa niezależne zbiory.
 
 Zadeklaruj członków replikacji we wspólnej grupie:
@@ -199,7 +199,7 @@ spacji, i po normalizacji nie może przekraczać 120 bajtów ASCII.
 Dla źródeł Parquet i Avro:
 
 - `single_file` wymaga dokładnie jednego rozpoznanego pliku i zachowuje go jako jedną tabelę logiczną.
-- `one_table_per_file` odwzorowuje każdy plik na oddzielną oczyszczoną tabelę w
+- `one_table_per_file` odwzorowuje każdy plik na oddzielną anonimowo oznaczoną tabelę w
   jednym podrzędnym pliku Blueprint.
 - `merge_same_schema` scala wiele plików w jedną tabelę logiczną, gdy liczby
   kolumn są zgodne.
@@ -275,10 +275,11 @@ Pakiet jest przenośnym, możliwym do przeglądu wejściem Blueprint. Przed jego
 
 Pakiet nie rozluźnia modelu prywatności:
 
-- źródła działających baz danych nadal emitują oczyszczone identyfikatory tabel,
-  kolumn i indeksów;
-- wartości plików strukturalnych są dekodowane tylko po włączeniu
-  `--measure-compression --yes`;
+- źródła działających baz danych nadal emitują anonimowe identyfikatory tabel,
+  kolumn i indeksów chronione tajnym kluczem;
+- wartości Parquet są dekodowane tylko z `--measure-compression --yes`;
+  przechwytywanie Avro zawsze przechodzi przez rekordy kontenera, aby wyznaczyć
+  liczniki, długości i udziały wartości null, nawet bez pomiaru kompresji;
 - zdekodowane próbki pozostają w pamięci;
 - metadane pakietu używają wybranych przez klienta identyfikatorów źródeł i
   tagów;

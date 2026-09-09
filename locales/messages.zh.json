@@ -19,8 +19,8 @@
     },
     "DBP1002E": {
       "summary": "不支持数据库 URI 方案",
-      "cause": "--connect 值未使用受支持的 PostgreSQL、MySQL、MariaDB 或 SQL Server URI 方案。",
-      "action": "使用 postgresql://、postgres://、mysql://、mariadb://、sqlserver://、mssql:// 或 tds://。"
+      "cause": "--connect 值未使用受支持的 PostgreSQL、MySQL 或 SQL Server URI 方案。",
+      "action": "使用 postgresql://、postgres://、mysql://、sqlserver://、mssql:// 或 tds://。mariadb:// 仅作为 MySQL URI 别名被接受；MariaDB 并非经过单独认证的引擎。"
     },
     "DBP1003E": {
       "summary": "TLS 服务器名称覆盖不可用",
@@ -44,8 +44,8 @@
     },
     "DBP1007E": {
       "summary": "该引擎无法使用长度保真模式",
-      "cause": "显式长度保真度控制当前仅适用于实时 MySQL 或 MariaDB 捕获。",
-      "action": "删除显式模式或使用受支持的 MySQL 或 MariaDB 源。"
+      "cause": "显式长度保真控制目前适用于实时 PostgreSQL 和 MySQL 采集，但不适用于 SQL Server。",
+      "action": "对 SQL Server 采集移除显式模式。兼容性 URI 别名不会扩展已验证的引擎矩阵。"
     },
     "DBP1008E": {
       "summary": "长度保真度选项冲突",
@@ -59,7 +59,7 @@
     },
     "DBP1010E": {
       "summary": "嵌入式本地化目录不完整",
-      "cause": "广告语言并不完全涵盖活动的 CLI、诊断或演示界面。",
+      "cause": "已提供的语言并未完整覆盖当前 CLI、诊断或演示界面。",
       "action": "安装完整版本或选择英语；维护人员必须使用每个客户可见的字符串更新每个区域设置。"
     },
     "DBP1011E": {
@@ -99,7 +99,7 @@
     },
     "DBP1105E": {
       "summary": "批处理源失败",
-      "cause": "无法塑造多源集合中的一个源。",
+      "cause": "多源采集中的一个源无法采集为 Blueprint。",
       "action": "检查特定于源的详细信息并在重试之前使用 --dry-run 重新运行。"
     },
     "DBP1106E": {
@@ -124,7 +124,7 @@
     },
     "DBP1110E": {
       "summary": "数据库源连接配置不明确",
-      "cause": "批处理源未准确指定连接、connect_env 或 connect_file 之一。",
+      "cause": "批处理源未做到从 connect、connect_env 和 connect_file 中恰好指定一个。",
       "action": "仅设置一个连接源。"
     },
     "DBP1111E": {
@@ -209,7 +209,7 @@
     },
     "DBP1402E": {
       "summary": "MySQL Blueprint捕获失败",
-      "cause": "MySQL 或 MariaDB 连接、目录查询、RTT 探测、采样或解码操作失败。",
+      "cause": "MySQL 连接、目录查询、RTT 探测、采样或解码操作失败。",
       "action": "检查技术细节、连接、权限、TLS 策略和源运行状况，然后重试。"
     },
     "DBP1403E": {
@@ -233,7 +233,7 @@
       "action": "请增大 --max-wall-secs，或接受部分采样并检查审计警告。"
     },
     "DBP1407W": {
-      "summary": "压缩样本不可用",
+      "summary": "压缩样本不完整或不可用",
       "cause": "在继续捕获 Blueprint 的过程中，至少一个表的有界行采样查询、数据流、编码或压缩操作失败。",
       "action": "请检查技术详情和表权限；如果需要完整的压缩证据，请重新运行 Tier 2。"
     },
@@ -304,7 +304,7 @@
     },
     "DBP1701E": {
       "summary": "未经同意取消操作",
-      "cause": "交互式飞行前提示被拒绝或未收到规范的 y/yes 同意。",
+      "cause": "交互式预检提示被拒绝或未收到规范的 y/yes 同意。",
       "action": "检查计划并重新运行，或在明确批准后通过 --yes。"
     },
     "DBP1702E": {

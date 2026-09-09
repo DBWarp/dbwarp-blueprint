@@ -11,8 +11,6 @@ __pycache__/
 .vscode/
 *.swp
 
-# Codex review correspondence (prompts + responses). These are the
-# review process paper trail, not release artifacts. Local-only.
 CODEX_*.md
 
 # Test scratch.

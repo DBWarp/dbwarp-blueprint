@@ -188,7 +188,7 @@ Leerzeichen und nach der Normalisierung höchstens 120 ASCII-Bytes lang sein.
 Für Parquet- und Avro-Quellen:
 
 - `single_file` erfordert genau eine aufgelöste Datei und behandelt sie als eine logische Tabelle.
-- `one_table_per_file` ordnet jede Datei einer eigenen bereinigten Tabelle in einer untergeordneten Blueprint-Datei zu.
+- `one_table_per_file` ordnet jede Datei einer eigenen anonym bezeichneten Tabelle in einer untergeordneten Blueprint-Datei zu.
 - `merge_same_schema` führt viele Dateien zu einer logischen Tabelle zusammen, wenn ihre Spaltenanzahlen übereinstimmen.
 - `partitioned_dataset` verwendet derzeit dasselbe Zusammenführungsverhalten wie `merge_same_schema`; der Wert reserviert die semantische Unterscheidung für die Erkennung von Partitionen im Hive-Stil.
 
@@ -258,8 +258,10 @@ Ein Bundle ist eine portable, prüfbare Blueprint-Eingabe. Bevor ein nachgelager
 
 Ein Bundle lockert das Datenschutzmodell nicht:
 
-- Live-Datenbankquellen geben weiterhin bereinigte Tabellen-, Spalten- und Index-IDs aus;
-- Werte aus strukturierten Dateien werden nur dekodiert, wenn `--measure-compression --yes` aktiviert ist;
+- Live-Datenbankquellen geben weiterhin mit einem geheimen Schlüssel erzeugte anonyme Tabellen-, Spalten- und Index-IDs aus;
+- Parquet-Werte werden nur mit `--measure-compression --yes` dekodiert; die
+  Avro-Erfassung durchläuft dagegen immer die Containerdatensätze, um Anzahlen,
+  Längen und NULL-Anteile abzuleiten, auch ohne Komprimierungsmessung;
 - dekodierte Stichproben verbleiben im Arbeitsspeicher;
 - Bundle-Metadaten verwenden vom Kunden gewählte Quellen-IDs und Tags;
 - kein Bundle-Befehl sendet Telemetrie oder lädt Dateien hoch.

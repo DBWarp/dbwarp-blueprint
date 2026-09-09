@@ -166,7 +166,7 @@ still be absent. Missing fidelity markers are legacy/unknown and must not be
 treated as benchmark-ready metadata.
 
 The marker does not claim that sampling covered every table. A benchmark handoff
-must also show zero unsampled variable-width indexed columns in the estimator
+must also show zero unsampled nonempty variable-width indexed columns in the estimator
 manifest; increase `--max-wall-secs` and recapture if that gate fails.
 
 ## Operational Safety

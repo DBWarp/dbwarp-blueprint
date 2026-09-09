@@ -7,7 +7,7 @@
 **Polski** | [日本語](../ja/ARTIFACT_INVENTORY.md) |
 [简体中文](../zh/ARTIFACT_INVENTORY.md)
 
-Od schematu v4 Blueprinty opisują obiekty bazodanowe inne niż tabele oraz wymagania wdrożeniowe
+Od schematu v4 Blueprinty mogą opisywać obiekty bazodanowe inne niż tabele oraz wymagania wdrożeniowe
 bez publikowania nazw źródłowych, definicji, adresów końcowych, sekretów,
 certyfikatów, kluczy ani plików binarnych. Inwentarz pomaga DBWarp oszacować
 złożoność migracji i wskazać zadania wymagające pakietów, infrastruktury,
@@ -49,7 +49,9 @@ tymczasowego odczytu definicji.
 
 Wyjście artefaktów zawiera tylko ograniczone metadane z zamkniętego słownika:
 
-- stabilne anonimowe identyfikatory, np. `view-001`, `function-002` i `schema-A`;
+- anonimowe identyfikatory spójne wewnątrz uruchomienia, np. `view-001`,
+  `function-002` i `schema-A`; stabilność między uruchomieniami wymaga
+  ponownego użycia tego samego chronionego pliku `--anonymization-key-file`;
 - zamknięte tokeny rodzaju, podrodzaju, warstwy, widoczności i trybu bezpieczeństwa;
 - zależności wyłącznie przez anonimowe identyfikatory artefaktów lub tabel;
 - liczniki i ograniczone pasma zamiast swobodnych opisów;
@@ -124,8 +126,8 @@ klasę wymagania zewnętrznego:
 | `encryption_or_credential_material` | Klucze, poświadczenia, zewnętrzny magazyn i obsługa sekretów |
 | `sqlserver_agent` | Dostępność agenta, środowisko i nadzór zadań |
 
-Plik Blueprint wskazuje, czy potrzebny jest materiał binarny, tajny lub końcowy,
-ale go nie przechwytuje. Obiekty zewnętrzne mają stać się jawnymi zadaniami
+Plik Blueprint wskazuje, czy potrzebny jest materiał binarny, tajny lub
+dotyczący punktu końcowego, ale go nie przechwytuje. Obiekty zewnętrzne mają stać się jawnymi zadaniami
 migracji, a nie pominięciami best-effort.
 
 ## Spis cech języka
@@ -149,7 +151,9 @@ Przyszły analizator gramatyczny może zmienić wersję bez zmiany umowy zewnęt
 
 ## Zalecany przebieg przeglądu
 
-1. Uruchom `summary` razem ze zwykłym przeglądem katalogów.
+1. Uruchom domyślny poziom `summary` wraz z przeglądem katalogów artefaktów.
+   Jeśli polityka pozwala tylko na katalogi tabel, użyj zamiast tego
+   `--artifact-detail none` i pomiń ten spis.
 2. Sprawdź liczniki, klasy zewnętrzne, widoczność, nieczytelne katalogi i niezamodelowane rodziny.
 3. Zatwierdź `graph` tylko, gdy anonimowa topologia jest akceptowalna.
 4. Zatwierdź `analyzed` tylko, gdy akceptujesz tymczasowy odczyt definicji.

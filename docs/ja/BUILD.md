@@ -20,6 +20,17 @@ cd dbwarp-blueprint
 target/release/dbwarp-blueprint
 ```
 
+他の例では `./dbwarp-blueprint` を使用します。ソースビルド後は
+`target/release/dbwarp-blueprint` を直接実行するか、そのファイルを
+`./dbwarp-blueprint` にコピーしてから例を実行してください。
+
+固定された Rust toolchain がまだなく、レビュー済みのネットワークアクセスが
+許可される場合は、明示的に opt-in します:
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
 ## ビルドスクリプトの処理
 
 `build.sh` は意図的に保守的な設計です:
@@ -48,6 +59,13 @@ target/release/dbwarp-blueprint
 
 これらは利便性のために提供されています。ポリシーでソースレビューが必要な場合は、同じタグからローカルでビルドしてください。
 
+プラットフォームバイナリアーカイブは運用者向けバンドルであり、ソースツリーでは
+ないため、その場で再ビルドすることはできません。含まれるこのガイドと
+`verify.sh` は、対応するソースを使った検証経路を説明する参照資料です。
+`build.sh`、Cargo ソース、またはローカル比較ビルドが必要な場合は、正確な
+リリースタグのチェックアウトか、そのリリースの依存関係同梱ソースアーカイブを
+使用してください。
+
 リリースファイル:
 
 | プラットフォーム | ファイル |
@@ -59,11 +77,19 @@ target/release/dbwarp-blueprint
 
 ## ダウンロードしたアーカイブの検証
 
-Linux/macOS:
+Linux:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
+
+macOS:
+
+```bash
+shasum -a 256 dbwarp-blueprint-macos-arm64.tar.gz
+```
+
+表示された値を `SHA256SUMS.txt` の該当行と比較します。
 
 Windows PowerShell:
 
@@ -103,6 +129,26 @@ Linux Kerberos ビルド:
 ```bash
 cargo build --release --locked --features integrated-auth-gssapi
 ```
+
+## リリースバイナリの再現
+
+`./build.sh` はレビュー済みソースがビルドできることを示します。バイト単位の
+同一性には、リリースの完全なネイティブビルド入力も必要です。
+`PROVENANCE.json` に記録された正確なソースリビジョン、ターゲット、features、
+固定 Rust toolchain、ネイティブコンパイラー/リンカー、コミット時刻を使った
+`SOURCE_DATE_EPOCH`、リリースワークフローのパス再マッピングとリンカーフラグを
+使用してください。Windows リリースでは `clang-cl` と `/Brepro` も使います。
+
+入力を再現した後、展開したリリースバイナリをローカル結果と比較します:
+
+```bash
+SOURCE_BIN=target/release/dbwarp-blueprint \
+  ./verify.sh /path/to/extracted/dbwarp-blueprint
+```
+
+ハッシュが異なる場合は、バイナリを同等として扱わないでください。リリース CI
+は同じ runner 上の別々の Cargo target ディレクトリで 2 回ビルドし、差異を
+拒否します。`PROVENANCE.json` はローカル再現の評価に必要な情報を記録します。
 
 ## Vendored 依存関係
 

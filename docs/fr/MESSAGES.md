@@ -97,12 +97,12 @@ ni URI de connexion non expurgées.
 | `DBP1301E` | `--from-toml` est utilisé sans `--deck`. |
 | `DBP1302E` | La version du schéma TOML Blueprint n'est pas prise en charge. |
 | `DBP1401E` | La limite de capture PostgreSQL a échoué. |
-| `DBP1402E` | La limite de capture MySQL ou MariaDB a échoué. |
+| `DBP1402E` | La limite de capture MySQL a échoué. |
 | `DBP1403E` | La limite de capture SQL Server a échoué. |
 | `DBP1404W` | Le mode TLS `prefer` de PostgreSQL s'est rabattu sur une connexion en clair en bouclage. |
 | `DBP1405W` | La sonde RTT facultative de la base de données n'était pas disponible. |
 | `DBP1406W` | Le budget temporel d'échantillonnage Tier 2 a été épuisé. |
-| `DBP1407W` | Un échantillon de compression n'était pas disponible. |
+| `DBP1407W` | Un échantillon de compression était incomplet ou indisponible ; des lignes exploitables d’un échantillon partiel ont pu être conservées. |
 | `DBP1408W` | Un échantillon de style de colonne texte n'était pas disponible. |
 | `DBP1409W` | La tâche de connexion asynchrone de PostgreSQL a signalé une erreur. |
 | `DBP1410W` | Un catalogue d'artefacts facultatif était indisponible ; la complétude est donc explicitement réduite. |

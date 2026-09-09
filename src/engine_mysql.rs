@@ -2,9 +2,10 @@
 //!
 //! Connects via `mysql_async` (rustls TLS feature). Reads
 //! information_schema only in Tier 1. Tier 2 additionally runs
-//! `SELECT * FROM <table> LIMIT N` (MySQL has no native TABLESAMPLE),
-//! flagged as biased. zstd-compresses locally, records ratio + stddev,
-//! discards bytes.
+//! a bounded, scale-spread primary-key range sample when a numeric primary key
+//! is available, otherwise `SELECT * FROM <table> LIMIT N` (MySQL has no native
+//! TABLESAMPLE). Both methods are flagged as biased. zstd-compresses locally,
+//! records ratio + stddev, and discards bytes.
 //!
 //! Anonymization + rounding identical to engine_pg.
 
@@ -12,7 +13,6 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use anyhow::{anyhow, bail, Context, Result};
-use clap::ValueEnum;
 use mysql_async::consts::ColumnType as MyColumnType;
 use mysql_async::prelude::*;
 use mysql_async::{OptsBuilder, Pool, SslOpts, Value};
@@ -25,7 +25,7 @@ use crate::artifacts::{
 use crate::audit::AuditLog;
 use crate::engine_common::{
     accumulate_table_totals, elapsed_ms, percent_decode, rtt_percentiles_ms,
-    warn_compression_unavailable,
+    sampled_column_length_stats, warn_compression_unavailable, LengthFidelity,
 };
 use crate::format::{
     self, BlueprintColumn, BlueprintCompression, BlueprintFile, BlueprintIndex, BlueprintTable,
@@ -64,53 +64,6 @@ fn normalized_mysql_version(raw: &str) -> String {
         "unknown".to_string()
     } else {
         normalized.to_string()
-    }
-}
-
-/// Controls how length metadata is anonymized without conflating schema
-/// fidelity with sampled-value fidelity.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
-pub enum LengthFidelity {
-    /// Preserve schema capacities and index prefixes exactly, while placing
-    /// observed value lengths in bounded relative-error buckets.
-    #[default]
-    Balanced,
-    /// Preserve the original coarse privacy bucketing for all lengths.
-    Strict,
-    /// Preserve both structural and observed lengths exactly.
-    Exact,
-}
-
-impl LengthFidelity {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Balanced => "balanced",
-            Self::Strict => "strict",
-            Self::Exact => "exact",
-        }
-    }
-
-    fn preserves_structure(self) -> bool {
-        !matches!(self, Self::Strict)
-    }
-
-    fn legacy_marker(self) -> &'static str {
-        match self {
-            Self::Balanced => "hybrid-v2",
-            Self::Strict => "rounded",
-            Self::Exact => "exact",
-        }
-    }
-
-    fn observed_marker(self, measured: bool) -> &'static str {
-        if !measured {
-            return "not-sampled";
-        }
-        match self {
-            Self::Balanced => "relative-rounded-v2",
-            Self::Strict => "coarse-rounded-v1",
-            Self::Exact => "exact",
-        }
     }
 }
 
@@ -528,7 +481,6 @@ pub async fn run(
                    COALESCE(t.TABLE_ROWS, 0)  AS rows_estimate,
                    COALESCE(t.DATA_LENGTH, 0) AS data_length,
                    COALESCE(t.INDEX_LENGTH, 0) AS index_length,
-                   t.UPDATE_TIME   AS update_time,
                    COALESCE(t.ENGINE, '') AS storage_engine
             FROM information_schema.TABLES t
             WHERE t.TABLE_TYPE = 'BASE TABLE'
@@ -541,23 +493,13 @@ pub async fn run(
                 rows_estimate,
                 data_length,
                 index_length,
-                update_time,
                 storage_engine,
-            ): (
-                String,
-                String,
-                u64,
-                u64,
-                u64,
-                Option<chrono::NaiveDateTime>,
-                String,
-            )| TableRow {
+            ): (String, String, u64, u64, u64, String)| TableRow {
                 schema_name,
                 table_name,
                 rows_estimate,
                 data_length,
                 index_length,
-                update_time,
                 storage_engine,
             },
         )
@@ -583,7 +525,8 @@ pub async fn run(
                    c.TABLE_NAME   AS table_name,
                    c.ORDINAL_POSITION AS ordinal,
                    c.COLUMN_NAME AS col_name,
-                   CONCAT(c.DATA_TYPE, CHAR(31), c.COLUMN_TYPE) AS type_metadata,
+                   CONCAT(c.DATA_TYPE, CHAR(31), c.COLUMN_TYPE, CHAR(31),
+                          COALESCE(c.EXTRA, '')) AS type_metadata,
                    c.IS_NULLABLE  AS is_nullable,
                    COALESCE(c.CHARACTER_MAXIMUM_LENGTH, 0) AS char_max_length,
                    COALESCE(c.CHARACTER_OCTET_LENGTH, 0) AS char_octet_length,
@@ -623,9 +566,10 @@ pub async fn run(
                 u64,
                 String,
             )| {
-                let (data_type, column_type) = type_metadata
-                    .split_once('\u{1f}')
-                    .unwrap_or((type_metadata.as_str(), type_metadata.as_str()));
+                let mut type_parts = type_metadata.splitn(3, '\u{1f}');
+                let data_type = type_parts.next().unwrap_or(type_metadata.as_str());
+                let column_type = type_parts.next().unwrap_or(data_type);
+                let extra = type_parts.next().unwrap_or("");
                 let (character_set_name, collation_name) = character_metadata
                     .split_once('\u{1f}')
                     .unwrap_or((character_metadata.as_str(), ""));
@@ -638,6 +582,7 @@ pub async fn run(
                     col_name,
                     col_type: normalized_mysql_type(data_type, bit_width),
                     native_type: data_type.to_ascii_lowercase(),
+                    value_source: mysql_column_value_source(extra),
                     numeric_unsigned,
                     bit_width,
                     is_nullable: is_nullable == "YES",
@@ -931,10 +876,13 @@ pub async fn run(
                         .unwrap_or("table-unknown");
                     let cols_for_table: &[ColumnRow] =
                         cols_by_qual.get(&qual).map(Vec::as_slice).unwrap_or(&[]);
+                    let range_sample_plan =
+                        mysql_primary_range_sample_plan(&qual, cols_for_table, &idx_groups);
                     match sample_compression(
                         &mut conn,
                         t,
                         cols_for_table,
+                        range_sample_plan.as_ref(),
                         opts.sample_rows,
                         opts.length_fidelity,
                         &compression_pool,
@@ -1004,14 +952,49 @@ pub async fn run(
                     match pending.ticket.resolve() {
                         Ok(measurements) => {
                             audit.record_compression_job_completed(&measurements.work);
+                            let mut columns = vec![None; pending.source_column_count];
+                            for (source_index, measurement) in pending
+                                .sampled_column_indices
+                                .iter()
+                                .copied()
+                                .zip(measurements.columns)
+                            {
+                                columns[source_index] = measurement;
+                            }
+                            let column_lengths = expand_mysql_sampled_columns(
+                                pending.column_lengths,
+                                pending.sampled_column_indices.as_slice(),
+                                pending.source_column_count,
+                            );
+                            let null_fractions = expand_mysql_sampled_columns(
+                                pending.null_fractions,
+                                pending.sampled_column_indices.as_slice(),
+                                pending.source_column_count,
+                            );
+                            let cardinalities = expand_mysql_sampled_columns(
+                                pending.cardinalities,
+                                pending.sampled_column_indices.as_slice(),
+                                pending.source_column_count,
+                            );
+                            let mut payload_profiles =
+                                vec![String::new(); pending.source_column_count];
+                            for (source_index, profile) in pending
+                                .sampled_column_indices
+                                .iter()
+                                .copied()
+                                .zip(pending.payload_profiles)
+                            {
+                                payload_profiles[source_index] = profile;
+                            }
                             compression_by_qual.insert(
                                 qual,
                                 CompressionSample {
                                     table: measurements.table,
-                                    columns: measurements.columns,
-                                    column_lengths: pending.column_lengths,
-                                    null_fractions: pending.null_fractions,
-                                    cardinalities: pending.cardinalities,
+                                    columns,
+                                    column_lengths,
+                                    null_fractions,
+                                    cardinalities,
+                                    payload_profiles,
                                 },
                             );
                         }
@@ -1060,14 +1043,40 @@ pub async fn run(
                     .and_then(|sample| sample.cardinalities.get(col_pos))
                     .cloned()
                     .flatten();
+                let payload_profile = compression_sample
+                    .as_ref()
+                    .and_then(|sample| sample.payload_profiles.get(col_pos))
+                    .map(String::as_str)
+                    .unwrap_or("");
+                let style = style_by_qual_ordinal
+                    .get(&(t.schema_name.clone(), t.table_name.clone(), c.ordinal))
+                    .copied()
+                    .filter(|label| !label.is_empty())
+                    .unwrap_or(payload_profile);
                 let variable_length = matches!(
                     c.col_type.as_str(),
                     "text" | "json" | "binary" | "array" | "user-defined"
                 );
-                let (len_avg, len_p95) = if variable_length {
+                let retain_sampled_lengths = variable_length
+                    || dbwarp_blueprint_core::is_integer_type(&c.col_type)
+                    || dbwarp_blueprint_core::is_numeric_type(&c.col_type);
+                let (len_avg, len_p95) = if retain_sampled_lengths {
                     column_lengths.unwrap_or((0, 0))
                 } else {
                     (0, 0)
+                };
+                let length_sample_rows = if retain_sampled_lengths && column_lengths.is_some() {
+                    column_compression
+                        .as_ref()
+                        .map(|compression| compression.sample_rows)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                let length_sample_method = if length_sample_rows > 0 {
+                    "decoded bounded SQL sample".to_string()
+                } else {
+                    String::new()
                 };
                 col_map.insert(
                     format::col_id(c.ordinal),
@@ -1075,6 +1084,7 @@ pub async fn run(
                         ordinal: c.ordinal,
                         column_type: c.col_type.clone(),
                         nullable: c.is_nullable,
+                        value_source: c.value_source.clone(),
                         null_fraction,
                         native_type: c.native_type.clone(),
                         declared_max_chars: blueprint_length(
@@ -1094,11 +1104,10 @@ pub async fn run(
                         collation: c.collation_name.clone(),
                         len_avg,
                         len_p95,
-                        style: style_by_qual_ordinal
-                            .get(&(t.schema_name.clone(), t.table_name.clone(), c.ordinal))
-                            .copied()
-                            .unwrap_or("")
-                            .to_string(),
+                        length_sample_rows,
+                        length_p95_sample_rows: length_sample_rows,
+                        length_sample_method,
+                        style: style.to_string(),
                         compression: column_compression,
                         cardinality: column_cardinality,
                         ..BlueprintColumn::default()
@@ -1125,19 +1134,12 @@ pub async fn run(
             );
         }
 
-        // Stats freshness from update_time (UPDATE_TIME) — heuristic: > 7d = stale.
-        let stats_freshness = match t.update_time {
-            None => "never_analyzed".to_string(),
-            Some(t_naive) => {
-                let now = chrono::Utc::now().naive_utc();
-                let age = now.signed_duration_since(t_naive);
-                if age.num_days() <= 7 {
-                    "fresh".to_string()
-                } else {
-                    "stale".to_string()
-                }
-            }
-        };
+        // INFORMATION_SCHEMA.TABLES.UPDATE_TIME is source-data modification
+        // recency, not proof of when InnoDB statistics were analyzed. Keep the
+        // field unknown rather than turning an unrelated timestamp into a
+        // misleading freshness claim. The dataset scope already identifies
+        // MySQL row counts as statistical estimates.
+        let stats_freshness = String::new();
 
         let table_blueprint = BlueprintTable {
             rows: format::round_rows(t.rows_estimate),
@@ -1290,7 +1292,6 @@ struct TableRow {
     rows_estimate: u64,
     data_length: u64,
     index_length: u64,
-    update_time: Option<chrono::NaiveDateTime>,
     storage_engine: String,
 }
 
@@ -1324,17 +1325,6 @@ struct MysqlSizingAssessment {
 
 impl MysqlSizingAssessment {
     fn qualify_table_statistics(&mut self, tables: &mut [TableRow], audit: &mut AuditLog) {
-        let now = chrono::Utc::now().naive_utc();
-        if tables.iter().any(|table| {
-            table
-                .update_time
-                .map(|updated| now.signed_duration_since(updated).num_days() > 7)
-                .unwrap_or(true)
-        }) {
-            self.dataset_scope
-                .limitations
-                .push("statistics-stale".to_string());
-        }
         if self.suppress_table_statistics {
             for table in tables {
                 table.rows_estimate = 0;
@@ -1556,6 +1546,7 @@ struct ColumnRow {
     col_name: String,
     col_type: String,
     native_type: String,
+    value_source: String,
     is_nullable: bool,
     char_max_length: u64,
     char_octet_length: u64,
@@ -1566,6 +1557,22 @@ struct ColumnRow {
     datetime_precision: u64,
     character_set_name: String,
     collation_name: String,
+}
+
+fn mysql_column_value_source(extra: &str) -> String {
+    let extra = extra.trim().to_ascii_lowercase();
+    if extra.contains("stored generated") {
+        "generated-stored".to_string()
+    } else if extra.contains("virtual generated") {
+        "generated-virtual".to_string()
+    } else if extra
+        .split_whitespace()
+        .any(|part| part == "auto_increment")
+    {
+        "auto-increment".to_string()
+    } else {
+        String::new()
+    }
 }
 
 impl ColumnRow {
@@ -1908,6 +1915,7 @@ struct CompressionSample {
     column_lengths: Vec<Option<(u64, u64)>>,
     null_fractions: Vec<Option<f64>>,
     cardinalities: Vec<Option<format::BlueprintCardinality>>,
+    payload_profiles: Vec<String>,
 }
 
 include!("engine_mysql_sampling.rs");

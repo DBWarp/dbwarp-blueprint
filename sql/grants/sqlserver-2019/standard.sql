@@ -30,7 +30,7 @@
 -- masking, Always Encrypted, DENY and replica filtering produce the approved
 -- population. Start with sample-rows 1000 / max-wall-secs 300 and raise both
 -- for higher requested detail. Do not add UNMASK, key access or RLS bypass.
--- Common to every tier (verified live on SQL Server 2019 15.0.4480 Developer):
+-- Common to every tier:
 --   VIEW DEFINITION  makes the database's object metadata visible. Catalog
 --     views only show securables the user has SOME permission on: with CONNECT
 --     alone the collector sees 0 tables, and VIEW SECURITY DEFINITION + the DMV
@@ -42,8 +42,10 @@
 -- Run ONCE with sqlcmd (or SSMS in SQLCMD mode) as a sysadmin, or a principal
 -- with ALTER ANY LOGIN on the server and db_owner in the target database:
 --     sqlcmd -S HOST -E -i standard.sql           (Windows auth)
---     sqlcmd -S HOST -U admin -P '...' -i standard.sql
+--     sqlcmd -S HOST -U admin -i standard.sql  (prompts for password)
 -- Re-running is safe; it resets the login password to the value below.
+-- Protect any edited copy containing a password; do not commit or share it.
+-- Remove that copy after use according to your secure-disposal policy.
 -- Azure SQL Database: USE is not supported there. Run the [master] batch
 -- connected to master, the remaining batches connected to the target database,
 -- and skip any [msdb] batch (no Agent).  Or create a contained user instead:

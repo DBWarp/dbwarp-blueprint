@@ -262,7 +262,9 @@ are intentionally not duplicated here.
 A bundle does not relax the privacy model:
 
 - live DB sources still emit secret-keyed anonymous table/column/index IDs;
-- structured-file values are only decoded when `--measure-compression --yes` is enabled;
+- Parquet values are decoded only with `--measure-compression --yes`; Avro
+  capture always walks container records to derive counts, lengths and null
+  fractions, even without compression measurement;
 - decoded samples stay in memory;
 - bundle metadata uses customer-chosen source IDs and tags;
 - no bundle command sends telemetry or uploads files.

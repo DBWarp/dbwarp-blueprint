@@ -60,7 +60,7 @@ texto del mensaje no debe incluir secretos ni URI de conexión sin ocultar.
 | `DBP1003E` | Sustitución del nombre de servidor TLS no admitida. |
 | `DBP1004E` | Se utilizó una opción de token de Azure con un motor distinto de SQL Server. |
 | `DBP1005E` | El modo de autenticación no está disponible para el motor seleccionado. |
-| `DBP1006E` | Se solicitó muestreo de archivos estructurados sin `--yes` explícito. |
+| `DBP1006E` | Se solicitó muestreo de compresión de archivos estructurados sin `--yes` explícito. |
 | `DBP1007E` | Se solicitó un modo explícito de fidelidad de longitudes para un motor que aún no expone ese contrato. |
 | `DBP1008E` | El alias heredado de longitudes exactas entra en conflicto con la fidelidad de longitudes strict. |
 | `DBP1009E` | Se solicitó fidelidad exacta de longitudes muestreadas sin `--yes` explícito. |
@@ -96,12 +96,12 @@ texto del mensaje no debe incluir secretos ni URI de conexión sin ocultar.
 | `DBP1301E` | A `--from-toml` le falta `--deck`. |
 | `DBP1302E` | Versión del esquema TOML Blueprint no admitida. |
 | `DBP1401E` | Falló el límite de captura de PostgreSQL. |
-| `DBP1402E` | Falló el límite de captura de MySQL o MariaDB. |
+| `DBP1402E` | Falló el límite de captura de MySQL. |
 | `DBP1403E` | Falló el límite de captura de SQL Server. |
 | `DBP1404W` | El modo TLS `prefer` de PostgreSQL recurrió a texto sin cifrar en bucle local. |
 | `DBP1405W` | La sonda opcional de RTT de la base de datos no estaba disponible. |
 | `DBP1406W` | Se agotó el presupuesto de tiempo del muestreo de nivel 2. |
-| `DBP1407W` | No estaba disponible una muestra de compresión. |
+| `DBP1407W` | Una muestra de compresión estaba incompleta o no disponible; es posible que se hayan conservado filas utilizables de una muestra parcial. |
 | `DBP1408W` | No estaba disponible una muestra de estilo de columna de texto. |
 | `DBP1409W` | La tarea de conexión asíncrona de PostgreSQL notificó un error. |
 | `DBP1410W` | Un catálogo de artefactos opcional no estaba disponible, por lo que se reduce explícitamente la integridad. |

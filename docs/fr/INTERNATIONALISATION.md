@@ -10,7 +10,12 @@ d'une simple préférence d'affichage.
 
 ## Langues prises en charge
 
-Le texte source anglais fait foi. Les catalogues de présentation non anglais sont assistés par machine et peuvent contenir des erreurs même si leur couverture des clés et des tokens est validée. Comparez les décisions de sécurité, contractuelles, réglementaires et de moindre privilège au texte anglais. Consultez [`TRANSLATIONS.md`](../TRANSLATIONS.md) pour le processus distinct de publication des documents traduits.
+Le texte source anglais fait foi. Les catalogues de présentation non anglais
+sont assistés par machine et peuvent contenir des erreurs même si leur
+couverture des clés et des jetons est validée. Comparez les décisions de
+sécurité, contractuelles, réglementaires et de moindre privilège au texte
+anglais. Consultez [`TRANSLATIONS.md`](../TRANSLATIONS.md) pour connaître la
+portée et les limites des contenus traduits.
 
 | Valeur | Langue | Balise de paramètres régionaux utilisée dans les présentations générées |
 |---|---|---|
@@ -69,9 +74,12 @@ Les éléments suivants restent des jetons anglais canoniques dans chaque langue
 - les clés d'audit, clés TOML, clés de bundle, noms de types de base de données et méthodes d'indexation.
 
 Par conséquent, les scripts n'ont pas besoin de gérer des options ou valeurs
-propres à chaque langue, et un Blueprint généré avec `--lang ja` est identique
-octet pour octet à un Blueprint généré avec `--lang en` lorsque toutes les autres
-entrées déterministes sont identiques.
+propres à chaque langue, et le choix de la langue ne modifie aucun champ du
+Blueprint. Une comparaison interlangue identique octet pour octet exige en
+outre le même état de la source, les mêmes options, une valeur
+`--generated-at` figée, le même producteur et le même fichier protégé
+`--anonymization-key-file` ; des exécutions par défaut distinctes utilisent
+intentionnellement des clés différentes.
 
 ## Comportement strict des catalogues
 
@@ -88,31 +96,3 @@ jetons opérationnels altérés, le JSON non valide ou les caractères de contr�
 invisibles/bidirectionnels provoquent un refus d'exécution (`fail closed`) avec
 `DBP1010E`. Le programme ne remplace pas silencieusement une traduction
 manquante par l'anglais.
-
-## Flux de travail des responsables de maintenance
-
-La source canonique est constituée de l'aide Rust en anglais et des définitions
-de messages/interface utilisateur dans `src/i18n.rs`. Lorsqu'une expression
-visible par le client change :
-
-1. mettez à jour chaque catalogue de paramètres régionaux sous `locales/` dans le même commit ;
-2. conservez exactement tous les espaces réservés et les jetons opérationnels canoniques ;
-3. exécutez le test ciblé de couverture exacte ;
-4. ajoutez ou mettez à jour le cas correspondant à la limite opérateur dans
-   `tests/cli_errors.rs` lorsqu'un échec ou un avertissement change ;
-5. exécutez l'intégralité de la suite de tests et inspectez un échantillon représentatif de l'aide et des présentations ;
-6. obtenez une relecture technique native avant de considérer une nouvelle formulation comme définitive pour un contrat client, un dépôt réglementaire ou un support marketing public.
-
-Validation ciblée :
-
-```bash
-mkdir -p tmp/test-runtime
-TMPDIR="$PWD/tmp/test-runtime" \
-  cargo test --locked every_embedded_locale_exactly_covers_the_live_cli
-TMPDIR="$PWD/tmp/test-runtime" cargo test --locked --test i18n
-```
-
-Les tests d'intégration prouvent également que les jetons d'option sont
-identiques dans toutes les langues, que les codes DBP localisés restent stables,
-que le TOML émis ne dépend pas de la langue et que le texte des présentations
-générées porte les paramètres régionaux sélectionnés.

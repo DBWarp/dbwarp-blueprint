@@ -1,6 +1,6 @@
 [package]
 name = "dbwarp-blueprint"
-version = "1.5.0"
+version = "1.5.1"
 edition = "2021"
 rust-version = "1.94.0"
 authors = ["Paul Anderson <paul@paul-anderson.com>"]
@@ -55,8 +55,6 @@ default = []
 # (Gentoo: app-crypt/mit-krb5; Debian: libkrb5-dev libkrb5-3
 # libgssapi-krb5-2; RHEL: krb5-devel krb5-libs). Build with
 # `cargo build --release --features integrated-auth-gssapi`.
-# The binary's reproducible-build sha differs from the vanilla build;
-# document both in STATUS.md.
 integrated-auth-gssapi = ["tiberius/integrated-auth-gssapi"]
 # Windows SSPI auth via tiberius. SSPI is built into Windows so no
 # external prerequisite. Build with `--features winauth` on Windows

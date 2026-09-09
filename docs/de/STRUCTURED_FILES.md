@@ -4,7 +4,9 @@
 
 **Sprachen:** [English](../STRUCTURED_FILES.md) | **Deutsch** | [Français](../fr/STRUCTURED_FILES.md) | [Español](../es/STRUCTURED_FILES.md) | [Polski](../pl/STRUCTURED_FILES.md) | [日本語](../ja/STRUCTURED_FILES.md) | [中文](../zh/STRUCTURED_FILES.md)
 
-`dbwarp-blueprint` kann ein bereinigtes Blueprint-TOML aus lokalen Parquet- und Avro-Eingaben erstellen, wenn die Quelle bereits als Datei und nicht als Live-Datenbank vorliegt.
+`dbwarp-blueprint` kann ein begrenztes, anonymisiertes Blueprint-TOML aus
+lokalen Parquet- und Avro-Eingaben erstellen, wenn die Quelle bereits als Datei
+und nicht als Live-Datenbank vorliegt.
 
 Dies ist ein Offline-Modus:
 
@@ -13,7 +15,9 @@ Dies ist ein Offline-Modus:
 - keine Telemetrie;
 - keine Zeilenwerte in der Ausgabe;
 - Tabellen- und Spaltenbezeichner ausschließlich als `table-NNN` und `col-N`;
-- das Audit zeichnet nur lokale Ein-/Ausgabedateipfade und den Ausgabe-Hash auf.
+- das Audit zeichnet lokale Ein-/Ausgabepfade, den Ausgabe-Hash und normale
+  Betriebsnachweise wie Modus, Zeitablauf, Stichprobenarbeit und Warnungen auf;
+  in diesem Modus wird kein Datenbankendpunkt aufgezeichnet.
 
 ## Parquet
 
@@ -80,7 +84,7 @@ Rundreise des verschachtelten Schemas behaupten.
 
 Dateistämme, Parquet-Pfade, Avro-Feldnamen und `logical_table`-Bezeichnungen aus
 einem Batch werden nicht als Blueprint-Bezeichner geschrieben. Ein
-Mehrdatei-Datensatz gibt deterministische `table-NNN`-Bezeichner aus,
+Mehrdatei-Datensatz gibt geheimschlüsselbasierte `table-NNN`-Bezeichner aus,
 aggregiert Objektbytes, Partitionen, Row Groups, Codecs, Breiten, NULL-Anteile
 und kompatible Kompressionsherkunft und weist Dateien zurück, deren logische
 Spaltenverträge voneinander abweichen.
@@ -103,12 +107,17 @@ Dieselben Flags funktionieren mit `--from-avro`.
 Bei Aktivierung führt `dbwarp-blueprint` Folgendes aus:
 
 - dekodiert bis zu `--sample-rows` Datensätze aus der Datei;
-- kodiert Stichprobenwerte mit demselben Zeilenrahmen `dbwarp-blueprint-rowframe-v1`, der für die Blueprint-Erfassung aus Live-Datenbanken verwendet wird;
+- kodiert Stichprobenwerte mit derselben flüchtigen Darstellung
+  `blueprint-compression-probe-v2`, die für die Blueprint-Erfassung aus
+  Live-Datenbanken verwendet wird;
 - gibt Komprimierungszusammenfassungen für zstd-3 auf Tabellen- und Spaltenebene aus;
-- schreibt `sample_encoding = "dbwarp-blueprint-rowframe-v1"` in das erzeugte TOML;
+- schreibt `sample_encoding = "blueprint-compression-probe-v2"` in das erzeugte TOML;
 - hält beprobte Bytes ausschließlich im Arbeitsspeicher und schreibt niemals Zeilenwerte auf den Datenträger.
 
-`--measure-compression` erfordert `--yes`, weil dabei dekodierte Kundenwerte gelesen werden, obwohl nur aggregierte Verhältnisse dauerhaft gespeichert werden.
+`--measure-compression` erfordert `--yes`, weil dabei dekodierte Kundenwerte
+gelesen werden. Dauerhaft gespeichert werden aggregierte Komprimierungs-,
+NULL-Dichte-, Kardinalitäts-/Häufigkeits-, Längen- und Stilmessungen, niemals
+beprobte Werte.
 
 Der derzeitige Sampler verwendet eine deterministische First-N-Stichprobe. Sie ist reproduzierbar und kostengünstig, kann jedoch verzerrt sein, wenn eine Datei sortiert oder geclustert ist. Bevorzugen Sie für risikoreiche Schätzungen eine repräsentative Datei oder erzeugen Sie mehrere Blueprint-Dateien aus verschiedenen Shards. Eine zukünftige Version könnte eine nach Zeilengruppen/Blöcken geschichtete Stichprobennahme ergänzen.
 
@@ -117,7 +126,8 @@ Der derzeitige Sampler verwendet eine deterministische First-N-Stichprobe. Sie i
 Der Blueprint-Modus für strukturierte Dateien eignet sich für:
 
 - die Dimensionierung eines Parquet-/Avro-Imports vor einem DBWarp-Lauf;
-- die Erzeugung eines kundenneutralen synthetischen Testdatensatzes aus Dateimetadaten;
+- die Erzeugung eines repräsentativen synthetischen Testdatensatzes, ohne
+  Quellnamen oder Zeilenwerte zu kopieren;
 - die Planung von Abläufen Parquet/Avro -> DBWarp columnar -> Zieldatenbank.
 
 Er ersetzt keine Blueprint-Erfassung aus einer Live-Datenbank, wenn die tatsächliche Quelle eine unterstützte Datenbank ist, also PostgreSQL, MySQL oder SQL Server. Ein Datenbankkatalog enthält Details zu Indizes, Schlüsseln, Fremdschlüsseln, Aktualität von Statistiken und Engine-Layout, die in generischen Dateimetadaten nicht vorhanden sind.

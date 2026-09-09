@@ -52,7 +52,9 @@ Tabellenstruktur erlaubt, aber Nicht-Tabellenkataloge verbietet. Verwenden Sie
 
 Die Artefaktausgabe enthält nur begrenzte Metadaten aus geschlossenem Vokabular:
 
-- stabile anonyme IDs wie `view-001`, `function-002` und `schema-A`;
+- innerhalb eines Laufs konsistente anonyme IDs wie `view-001`, `function-002`
+  und `schema-A`; laufübergreifende Stabilität erfordert dieselbe geschützte
+  `--anonymization-key-file`;
 - geschlossene Tokens für Objektart, Unterart, Ebene, Sichtbarkeit und Sicherheitsmodus;
 - Abhängigkeiten ausschließlich über anonyme Artefakt- oder Tabellen-IDs;
 - Zahlen und begrenzte Klassen statt frei formuliertem Text;
@@ -156,7 +158,9 @@ Analyzerversion verwenden, ohne den äußeren Artefaktvertrag zu ändern.
 
 ## Empfohlener Prüfablauf
 
-1. `summary` zusammen mit der normalen Katalogprüfung ausführen.
+1. Die standardmäßige Stufe `summary` mit einer Artefaktkatalogprüfung
+   ausführen. Wenn die Richtlinie nur Tabellenkataloge erlaubt, stattdessen
+   `--artifact-detail none` verwenden und dieses Inventar auslassen.
 2. Zahlen, externe Klassen, Sichtbarkeit, unlesbare Kataloge und unmodellierte Familien prüfen.
 3. `graph` nur freigeben, wenn anonyme Abhängigkeitstopologie akzeptabel ist.
 4. `analyzed` nur freigeben, wenn vorübergehende Definitionszugriffe akzeptabel sind.

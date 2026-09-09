@@ -609,6 +609,7 @@ pub async fn run(
                                     column_lengths: pending.column_lengths,
                                     null_fractions: pending.null_fractions,
                                     cardinalities: pending.cardinalities,
+                                    payload_profiles: pending.payload_profiles,
                                 },
                             );
                         }
@@ -665,10 +666,31 @@ pub async fn run(
                     .and_then(|sample| sample.cardinalities.get(col_pos))
                     .cloned()
                     .flatten();
-                let (len_avg, len_p95) = if is_variable_length_mssql(&c.native_type) {
+                let payload_profile = compression_sample
+                    .as_ref()
+                    .and_then(|sample| sample.payload_profiles.get(col_pos))
+                    .map(String::as_str)
+                    .unwrap_or("");
+                let style = style_by_qual_ordinal
+                    .get(&(t.schema_name.clone(), t.table_name.clone(), c.ordinal))
+                    .copied()
+                    .filter(|label| !label.is_empty())
+                    .unwrap_or(payload_profile);
+                let retain_sampled_lengths = is_variable_length_mssql(&c.native_type)
+                    || dbwarp_blueprint_core::is_integer_type(&c.col_type)
+                    || dbwarp_blueprint_core::is_numeric_type(&c.col_type);
+                let (len_avg, len_p95) = if retain_sampled_lengths {
                     column_lengths.unwrap_or((0, 0))
                 } else {
                     (0, 0)
+                };
+                let length_sample_rows = if retain_sampled_lengths && column_lengths.is_some() {
+                    column_compression
+                        .as_ref()
+                        .map(|compression| compression.sample_rows)
+                        .unwrap_or(0)
+                } else {
+                    0
                 };
                 col_map.insert(
                     format::col_id(c.ordinal),
@@ -687,12 +709,15 @@ pub async fn run(
                         collation: c.collation.clone(),
                         len_avg,
                         len_p95,
+                        length_sample_rows,
+                        length_p95_sample_rows: length_sample_rows,
+                        length_sample_method: if length_sample_rows > 0 {
+                            "decoded bounded SQL sample".to_string()
+                        } else {
+                            String::new()
+                        },
                         source_semantics: c.source_semantics.clone(),
-                        style: style_by_qual_ordinal
-                            .get(&(t.schema_name.clone(), t.table_name.clone(), c.ordinal))
-                            .copied()
-                            .unwrap_or("")
-                            .to_string(),
+                        style: style.to_string(),
                         compression: column_compression,
                         cardinality: column_cardinality,
                         ..BlueprintColumn::default()
@@ -1393,6 +1418,7 @@ async fn list_columns(
             c.precision              AS [precision],
             c.scale                  AS scale,
             c.collation_name         AS collation_name,
+            CONVERT(int, COLLATIONPROPERTY(c.collation_name, 'CodePage')) AS code_page,
             c.is_nullable            AS is_nullable
         FROM sys.tables t
         JOIN sys.columns c ON c.object_id = t.object_id
@@ -1419,6 +1445,7 @@ async fn list_columns(
         let precision: u8 = r.get("precision").unwrap_or(0);
         let scale: u8 = r.get("scale").unwrap_or(0);
         let collation: &str = r.get("collation_name").unwrap_or("");
+        let code_page: i32 = r.get("code_page").unwrap_or(0);
         let is_nullable: bool = r.get("is_nullable").unwrap_or(true);
         // Format the type string with size/precision/scale where relevant.
         let col_type = format_mssql_type(type_name, max_length, precision, scale);
@@ -1446,16 +1473,26 @@ async fn list_columns(
             numeric_precision: u64::from(precision),
             numeric_scale: u64::from(scale),
             datetime_precision,
-            charset: if matches!(native_type.as_str(), "nvarchar" | "nchar" | "ntext") {
-                "utf-16le".to_string()
-            } else {
-                String::new()
-            },
+            charset: mssql_charset(&native_type, code_page),
             collation: collation.to_string(),
             source_semantics,
         });
     }
     Ok(out)
+}
+
+fn mssql_charset(native_type: &str, code_page: i32) -> String {
+    if matches!(native_type, "nvarchar" | "nchar" | "ntext") {
+        return "utf-16le".to_string();
+    }
+    if !matches!(native_type, "varchar" | "char" | "text") || code_page <= 0 {
+        return String::new();
+    }
+    match code_page {
+        65001 => "utf-8".to_string(),
+        1250..=1258 => format!("windows-{code_page}"),
+        other => format!("code-page-{other}"),
+    }
 }
 
 fn mssql_length_metadata(name: &str, max_length: i16) -> (u64, u64, String) {
@@ -1898,6 +1935,7 @@ struct CompressionSample {
     column_lengths: Vec<Option<(u64, u64)>>,
     null_fractions: Vec<Option<f64>>,
     cardinalities: Vec<Option<format::BlueprintCardinality>>,
+    payload_profiles: Vec<String>,
 }
 
 include!("engine_mssql_sampling.rs");

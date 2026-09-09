@@ -12,8 +12,8 @@ to granica bezpieczeństwa i automatyzacji, a nie tylko preferencja wyświetlani
 Angielski tekst źródłowy jest wiążący. Katalogi prezentacji w innych językach
 są wspomagane maszynowo i mogą zawierać błędy, mimo że ich pokrycie kluczy i
 tokenów jest sprawdzane. Decyzje dotyczące bezpieczeństwa, umów, przepisów i
-najmniejszych uprawnień porównuj z tekstem angielskim. Osobną bramkę publikacji
-przetłumaczonych dokumentów opisuje [`TRANSLATIONS.md`](../TRANSLATIONS.md).
+najmniejszych uprawnień porównuj z tekstem angielskim. Zakres i ograniczenia
+tłumaczonych materiałów opisuje [`TRANSLATIONS.md`](../TRANSLATIONS.md).
 
 | Wartość | Język | Tag ustawień regionalnych używany w generowanych prezentacjach |
 |---|---|---|
@@ -72,9 +72,11 @@ Poniższe elementy pozostają kanonicznymi tokenami angielskimi w każdym język
 - klucze audytu, klucze TOML, klucze pakietów, nazwy typów baz danych i metody indeksowania.
 
 Dzięki temu skrypty nie wymagają obsługi opcji ani wartości zależnej od języka,
-a Blueprint wygenerowany z `--lang ja` jest identyczny bajt w bajt z Blueprint
-wygenerowanym z `--lang en`, gdy wszystkie pozostałe deterministyczne dane
-wejściowe są takie same.
+a wybór języka nie zmienia pól Blueprint. Porównanie między językami identyczne
+bajt w bajt wymaga również tego samego stanu źródła, opcji, przypiętej wartości
+`--generated-at`, tego samego producenta i tego samego chronionego pliku
+`--anonymization-key-file`; oddzielne uruchomienia domyślne celowo używają
+różnych kluczy.
 
 ## Rygorystyczne zachowanie katalogu
 
@@ -91,29 +93,3 @@ Brakujące lub nadmiarowe wpisy, zmiany symboli zastępczych, zmienione tokeny
 operacyjne, nieprawidłowy JSON albo niewidoczne/dwukierunkowe znaki formatujące
 powodują zamknięcie z błędem `DBP1010E`. Program nie zastępuje po cichu
 brakującego tłumaczenia językiem angielskim.
-
-## Przepływ pracy opiekuna
-
-Kanonicznym źródłem jest angielska pomoc Rust oraz definicje komunikatów/UI
-w `src/i18n.rs`. Gdy zmienia się dowolny tekst widoczny dla klienta:
-
-1. zaktualizuj w tym samym commicie każdy katalog językowy w `locales/`;
-2. zachowaj dokładnie wszystkie symbole zastępcze i kanoniczne tokeny operacyjne;
-3. uruchom ukierunkowany test dokładnego pokrycia;
-4. dodaj lub zaktualizuj odpowiedni przypadek granicy operatorskiej w
-   `tests/cli_errors.rs`, gdy zmienia się awaria lub ostrzeżenie;
-5. uruchom pełny zestaw testów i sprawdź reprezentatywne dane wyjściowe pomocy/prezentacji;
-6. uzyskaj weryfikację techniczną przez osobę biegle posługującą się danym językiem, zanim nowe brzmienie zostanie uznane za ostateczne dla umowy z klientem, zgłoszenia regulacyjnego lub publicznego materiału marketingowego.
-
-Ukierunkowana walidacja:
-
-```bash
-mkdir -p tmp/test-runtime
-TMPDIR="$PWD/tmp/test-runtime" \
-  cargo test --locked every_embedded_locale_exactly_covers_the_live_cli
-TMPDIR="$PWD/tmp/test-runtime" cargo test --locked --test i18n
-```
-
-Testy integracyjne dowodzą również, że tokeny opcji są identyczne we wszystkich
-językach, zlokalizowane kody DBP pozostają stabilne, emitowany TOML nie zależy od
-języka, a treść wygenerowanej prezentacji zawiera wybrane ustawienia regionalne.

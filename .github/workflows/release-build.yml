@@ -196,6 +196,7 @@ jobs:
             translation_notice="public/MACHINE_TRANSLATIONS.md"
           fi
           cp README.md SECURITY.md TLS.md AUTH.md FORMAT.md AUDIT.md BUILD.md DECK.md STATUS.md \
+            CHANGELOG.md CONTRIBUTING.md SUPPORT.md \
             "$translation_notice" THIRD_PARTY_NOTICES.md LICENSE-APACHE LICENSE-MIT "$stage/"
           cp blueprint_format.py verify.sh "$stage/"
           mkdir -p "$stage/docs"
@@ -329,7 +330,7 @@ jobs:
             --toolchain 1.94.0 \
             --target source
           mkdir -p "$src/.cargo"
-          (cd "$src" && cargo vendor vendor-crates > .cargo/config.toml)
+          (cd "$src" && cargo vendor --locked vendor-crates > .cargo/config.toml)
           cat >> "$src/.cargo/config.toml" <<'TOML'
 
           [net]
@@ -422,13 +423,13 @@ jobs:
           dbwarp-blueprint ${package_version} release binaries.
 
           Release highlights:
-          - Blueprint schema v${schema_version} emits the canonical Blueprint contract, qualifies topology and dataset-scope completeness, and retains declared capacities separately from representative observed widths.
-          - The shared deterministic Blueprint core covers stable table selection, scaling, generated identities, relationship planning, dependency order, and bounded synthetic generation for DBWarp consumers.
-          - Parquet and Avro inspection now provide richer schema, sampling, compression, canonicalization, and multi-file/bundle behavior while preserving bounded execution and sanitized outputs.
-          - Batch and bundle workflows support selecting complete catalogs or bounded subsets without requiring one command per database, table, or structured file.
-          - PostgreSQL, MySQL, and SQL Server capture paths include stronger type, index, length, TLS, deadline, consent, and coded-error handling.
+          - Blueprint schema v${schema_version} is retained; compression sample encodings remain a separate compatibility boundary.
+          - Binary-payload measurement, precompressed-payload profiles, bounded compression probes, and statistics-freshness reporting are improved.
+          - Adaptive MySQL and SQL Server sampling retries respect the projected payload budget and record remaining prefix bias; MySQL truncation detection accounts for connection character-set conversion.
+          - Shared-core synthetic value-length, cardinality, distribution, and locality handling is improved.
+          - Source and operator bundles include CHANGELOG.md, SUPPORT.md and CONTRIBUTING.md alongside audit references and least-privilege scripts. See CHANGELOG.md for rollout caveats and version-specific changes.
           - Complete human-facing catalogs remain embedded for English, German, French, Spanish, Polish, Japanese, and Simplified Chinese.
-          - English customer documentation is authoritative. Machine-translated document sets, when separately included after the review gate, are explicitly non-authoritative and may contain errors.
+          - English customer documentation is authoritative. Included machine-translated documents are supplemental, may lag English corrections, and may contain errors; they are not a release gate.
           - Option names, accepted values, URI schemes, selectors, DBP codes, audit fields, anonymous identifiers, and emitted TOML/bundle schemas remain canonical English tokens.
 
           Trust paths:

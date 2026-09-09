@@ -46,10 +46,8 @@ English. Embedded catalogs are exact-coverage checked at startup and in tests;
 there is no silent English fallback for an advertised locale. See
 [`docs/INTERNATIONALISATION.md`](docs/INTERNATIONALISATION.md).
 
-English customer documentation is authoritative. Machine-translated document
-sets may be offered separately only after multiple independent reviews against
-the same English revision. They remain explicitly non-authoritative and may
-contain errors. See [`docs/TRANSLATIONS.md`](docs/TRANSLATIONS.md).
+English customer documentation is authoritative. See
+[`MACHINE_TRANSLATIONS.md`](MACHINE_TRANSLATIONS.md) for translation limitations.
 
 ## Build and downloads
 

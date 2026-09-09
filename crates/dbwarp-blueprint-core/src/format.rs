@@ -16,7 +16,24 @@ pub const LEGACY_IDENTIFIER_SCHEMA_VERSION: u32 = 5;
 pub const BUNDLE_SCHEMA_VERSION: u32 = 3;
 pub const BUNDLE_KIND: &str = "dbwarp-blueprint-bundle";
 pub const PREVIOUS_BUNDLE_SCHEMA_VERSION: u32 = 2;
-pub const SAMPLE_ENCODING_TAG: &str = "dbwarp-blueprint-rowframe-v1";
+pub const SAMPLE_ENCODING_TAG: &str = "blueprint-compression-probe-v2";
+/// Table-level ratios measured over a neutral, columnar transfer probe. The
+/// representation is distinct from per-column SAMPLE_ENCODING_TAG ratios.
+/// V1 used a pledged one-shot zstd operation over concatenated frames.
+pub const TRANSFER_SAMPLE_ENCODING_TAG: &str = "blueprint-columnar-transfer-probe-v1";
+/// Current table-level measurement: the same neutral frames as v1, compressed
+/// through one persistent zstd context with a flush after each frame. This
+/// measures streaming history and flush effects without defining a product
+/// wire format. The tag prevents old one-shot ratios being reinterpreted.
+pub const TRANSFER_SAMPLE_STREAMING_ENCODING_TAG: &str = "blueprint-columnar-transfer-probe-v2";
+/// Neutral v2 row-group encoding measured through a persistent zstd context
+/// with a flush at each 256 KiB probe compression chunk.
+pub const TRANSFER_SAMPLE_STREAMING_CHUNKED_ENCODING_TAG: &str =
+    "blueprint-columnar-transfer-probe-v3";
+pub const TRANSFER_PROBE_STREAMING_COMPRESSION_CHUNK_BYTES: usize = 256 * 1024;
+/// Input-only compatibility tag emitted by DBWarp Blueprint before the probe
+/// contract was given an engine-neutral public name. New output never emits it.
+pub const PREVIOUS_SAMPLE_ENCODING_TAG: &str = "dbwarp-blueprint-rowframe-v1";
 pub const LEGACY_BUNDLE_SCHEMA_VERSION: u32 = 1;
 pub const LEGACY_BUNDLE_KIND: &str = "dbwarp-shape-bundle";
 pub const LEGACY_SAMPLE_ENCODING_TAG: &str = "dbwarp-shape-rowframe-v1";
@@ -394,6 +411,20 @@ pub struct BlueprintIndex {
     pub cardinality_sample_method: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BlueprintSampleLayout {
+    #[default]
+    Unknown,
+    PrimaryKeyRangeWindows,
+}
+
+impl BlueprintSampleLayout {
+    fn is_unknown(&self) -> bool {
+        *self == Self::Unknown
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BlueprintCardinality {
@@ -419,6 +450,11 @@ pub struct BlueprintCardinality {
     pub frequency_max: u64,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub sample_method: String,
+    /// Machine-readable ordering/layout contract for the bounded sample.
+    /// Human provenance remains in `sample_method`; consumers must use this
+    /// enum when ordering affects generation semantics.
+    #[serde(default, skip_serializing_if = "BlueprintSampleLayout::is_unknown")]
+    pub sample_layout: BlueprintSampleLayout,
     #[serde(default)]
     pub sampled_with_bias: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]

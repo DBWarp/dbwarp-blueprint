@@ -9,6 +9,31 @@ Errores habituales de `dbwarp-blueprint` y pasos que debe seguir.
 Los errores que puede resolver el operador comienzan ahora con un código de mensaje estable `DBPnnnnS`, por ejemplo `DBP1001E`.
 Utilice el código para buscar en la documentación o abrir un ticket de soporte. Consulte [Códigos de mensajes para operadores](MESSAGES.md).
 
+## La compilación desde el código fuente termina con estado 2 o 3
+
+`build.sh` termina con estado 2 cuando el `rustc` instalado no coincide con la
+versión fijada en `rust-toolchain.toml` y no se ha aprobado explícitamente el
+acceso a la red. Instale esa versión exacta de Rust o, tras revisar el límite
+de descarga, permita que el script obtenga su programa de arranque fijado y
+verificado mediante suma de comprobación:
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
+`build.sh` termina con estado 3 cuando se establece
+`DBWARP_BLUEPRINT_OFFLINE=1` pero el árbol de fuentes no contiene el directorio
+`vendor-crates/`. Un checkout normal del código fuente no puede cumplir este
+modo. Descargue y verifique el archivo de fuentes con dependencias de la misma
+versión, extráigalo y ejecute la compilación dentro de ese árbol:
+
+```bash
+DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh
+```
+
+No copie dependencias entre versiones. Consulte [Compilar desde el código
+fuente](BUILD.md) para ver los procedimientos completos con y sin conexión.
+
 ## No se utiliza el idioma solicitado
 
 Utilice un valor admitido explícito al diagnosticar la selección de la configuración regional:

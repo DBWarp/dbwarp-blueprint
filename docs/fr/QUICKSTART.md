@@ -20,7 +20,7 @@ Sélectionnez explicitement une langue de présentation lorsque cela est nécess
 
 ```bash
 ./dbwarp-blueprint --lang fr --help
-./dbwarp-blueprint --lang pl --connect postgresql://db.internal/payments --dry-run
+./dbwarp-blueprint --lang pl --connect postgresql://db.internal/payments --schema app --dry-run
 ```
 
 Les valeurs prises en charge sont `en`, `de`, `fr`, `es`, `pl`, `ja` et `zh`.
@@ -30,13 +30,47 @@ noms d'options, les valeurs acceptées, les schémas d'URI, les sélecteurs, les
 codes DBP, les clés d'audit ou le TOML Blueprint. Consultez
 [`INTERNATIONALISATION.md`](INTERNATIONALISATION.md).
 
-## 2. Préparer les informations d'identification en toute sécurité
+## 2. Provisionner un compte dédié avec le minimum de privilèges
+
+Effectuez cette étape avant toute connexion réelle, y compris avant les
+exemples `--dry-run` destinés à devenir ensuite des captures. Ne commencez pas
+avec un compte propriétaire de l'application, administrateur, superutilisateur,
+`root`, `sa` ou `db_owner`.
+
+1. Identifiez précisément le moteur et sa version, la base de données et les
+   schémas approuvés.
+2. Choisissez le niveau de capture : `basic` pour les catalogues de tables
+   uniquement, `standard` pour un échantillon de lignes borné adapté à une
+   copie synthétique, ou `enhanced` pour inclure l'analyse des objets hors
+   tables.
+3. Demandez au DBA de copier le script correspondant sous
+   `sql/grants/<engine>/`, de modifier toutes les valeurs marquées de base de
+   données, schéma, principal, mot de passe et option de rôle, puis de
+   l'exécuter selon le processus normal de gestion des changements.
+4. Utilisez le compte dédié créé par le script et passez la même portée
+   approuvée avec une option `--schema NAME` par schéma dans chaque commande
+   réelle.
+5. Après la capture et la revue des preuves, demandez au DBA de vérifier puis
+   d'exécuter le script du moteur correspondant sous `sql/revoke/` afin de
+   supprimer le compte et ses autorisations.
+
+Les scripts distinguent volontairement les autorisations à portée précise des
+rôles intégrés plus pratiques et expliquent lorsqu'un rôle est plus large.
+Consultez [`../../sql/grants/README.md`](../../sql/grants/README.md) pour les
+scripts exécutables et
+[`../../sql/grants/DATABASE_PERMISSIONS.md`](../../sql/grants/DATABASE_PERMISSIONS.md)
+pour la justification tenant compte des versions destinée au DBA et à la
+sécurité. Le collecteur ne crée, n'élargit ni ne supprime lui-même aucun
+principal de base de données.
+
+## 3. Préparer les informations d'identification en toute sécurité
 
 Ne placez pas de mot de passe dans l'URI de connexion. L'outil refuse les mots de passe intégrés à l'URI pour éviter leur divulgation dans la liste des processus et l'historique du shell.
 
 Modèle recommandé avec fichier de mot de passe (le secret est saisi sans écho et n'apparaît pas dans l'historique du shell) :
 
 ```bash
+sudo install -d -m 700 -o "$USER" -g "$(id -gn)" /etc/dbwarp
 install -m 600 /dev/null /etc/dbwarp/db.pass
 read -rsp 'Database password: ' DBWARP_BP_PASSWORD; printf '\n'
 printf '%s' "$DBWARP_BP_PASSWORD" > /etc/dbwarp/db.pass
@@ -47,18 +81,19 @@ Si le nom d'utilisateur est difficile à encoder dans une URI, placez-le égalem
 
 ```bash
 install -m 600 /dev/null /etc/dbwarp/db.user
-printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
+printf '%s' 'DOMAIN\migration_user' > /etc/dbwarp/db.user
 ```
 
 Utilisez ensuite `--user-file /etc/dbwarp/db.user`.
 
-## 3. Commencer par une simulation
+## 4. Commencer par une simulation
 
 Une simulation valide les arguments et affiche l'action prévue sans établir de connexion :
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -77,15 +112,17 @@ Pour plusieurs sources client, simulez plutôt le manifeste de lot :
   --dry-run
 ```
 
-## 4. Exécuter le mode catalogue uniquement
+## 5. Exécuter le mode catalogue uniquement
 
 Le mode catalogue uniquement lit les métadonnées et les statistiques, mais aucun échantillon de ligne :
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out blueprint.catalog.toml \
@@ -95,7 +132,7 @@ Le mode catalogue uniquement lit les métadonnées et les statistiques, mais auc
 
 Utilisez ce mode lorsqu'une politique interdit l'échantillonnage de lignes ou lorsque vous souhaitez effectuer une première revue de sécurité.
 
-## 5. Choisir le niveau de détail des artefacts hors tables
+## 6. Choisir le niveau de détail des artefacts hors tables
 
 Par défaut, `--artifact-detail summary` lit les catalogues hors tables mais pas les définitions d'objets. Il émet des comptages bornés et des classes de prérequis externes. Utilisez `--artifact-detail none` si la politique interdit ces catalogues.
 
@@ -104,6 +141,7 @@ Pour une topologie de dépendances anonyme, utilisez `graph`. Pour des bandes bo
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --artifact-detail analyzed \
@@ -115,13 +153,16 @@ Pour une topologie de dépendances anonyme, utilisez `graph`. Pour des bandes bo
 
 La sortie ne contient jamais de noms d'objets, texte de définition, points de terminaison, secrets, clés, certificats ou binaires. Consultez [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md) avant d'approuver le mode graph ou analyzed.
 
-## 6. Exécuter la mesure de compression Tier 2
+## 7. Exécuter la mesure de compression Tier 2
 
-Le Tier 2 lit en mémoire des échantillons de lignes de taille limitée, les compresse localement, écrit uniquement des ratios récapitulatifs, puis supprime les octets échantillonnés :
+Le Tier 2 lit en mémoire des échantillons de lignes de taille limitée, calcule
+des mesures agrégées de compression, densité de valeurs NULL,
+cardinalité/fréquence, longueur et style, puis supprime les valeurs échantillonnées :
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -135,13 +176,14 @@ Le Tier 2 lit en mémoire des échantillons de lignes de taille limitée, les co
 
 Utilisez le Tier 2 lorsque cela est possible. Il permet à DBWarp de mieux estimer les octets transmis, le coût de sortie réseau et la génération de données texte/binaires synthétiques.
 
-## 7. Générer une présentation
+## 8. Générer une présentation
 
 Pendant l'exécution sur la base active :
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -159,7 +201,7 @@ Ou après la revue, sans connexion à la base de données :
 ./dbwarp-blueprint --from-toml blueprint.toml --deck blueprint.pptx
 ```
 
-## 8. Vérifier avant de partager
+## 9. Vérifier avant de partager
 
 Vérifiez :
 
@@ -179,9 +221,10 @@ Propriétés attendues :
 - identifiants anonymisés tels que `table-001`, `col-1` et `schema-A` ;
 - comptages d'artefacts bornés et, après approbation, identifiants d'artefacts anonymes ;
 - preuves explicites d'artefacts incomplets ou illisibles plutôt qu'une omission silencieuse ;
-- uniquement des ratios de compression facultatifs, et non les octets échantillonnés.
+- des mesures agrégées facultatives de compression, densité de valeurs NULL,
+  cardinalité/fréquence, longueur et style, jamais les valeurs échantillonnées.
 
-## 9. Transmettre à DBWarp
+## 10. Transmettre à DBWarp
 
 Transmission minimale :
 
@@ -202,12 +245,12 @@ Les métadonnées du bundle conservent les identifiants de source, les tags et l
 
 Utilisez `docs/BATCH_AND_BUNDLES.md` lorsque le client possède plusieurs bases de données, plusieurs jeux de données Parquet ou Avro, ou souhaite n'approuver que certaines sources/tables pour la génération du benchmark.
 
-Conservez ces éléments comme preuves locales à accès contrôlé par défaut :
+<a id="review-and-share"></a>
 
-```text
-blueprint.audit.txt
-blueprint.pptx
-command-used.txt
-```
+### Vérifier et partager
 
-Les audits et les commandes enregistrées peuvent contenir des points de terminaison de base de données, des identités authentifiées, des chemins locaux, des données de temps et des identifiants de source du manifeste. Ne les envoyez que pour un besoin de support précis via un canal sécurisé approuvé. N'envoyez pas les fichiers de mot de passe, les clés privées d'autorité de certification, les dumps du client ou les journaux de base de données.
+Par défaut, partagez uniquement le `blueprint.toml` vérifié ou le bundle empaqueté. Une présentation ne peut l’accompagner qu’après vérification de son contenu et de son niveau de confidentialité, puis approbation distincte conformément à la politique de votre organisation.
+
+Conservez localement, avec un accès contrôlé, les audits, commandes enregistrées, notes de revue et présentations non approuvées. Ils peuvent contenir des points de terminaison, identités authentifiées, chemins locaux, données temporelles et identifiants du manifeste. Envoyez les preuves opérationnelles uniquement pour un besoin précis d’assistance, via un canal sécurisé approuvé.
+
+L’outil ne crée pas `command-used.redacted.txt` ; il s’agit d’un enregistrement facultatif de l’opérateur, pas d’un élément standard du dossier. N’incluez jamais de fichiers de mots de passe ou de jetons, de clés d’anonymisation, de clés privées d’autorité de certification, de dumps du client ni de journaux de base de données.

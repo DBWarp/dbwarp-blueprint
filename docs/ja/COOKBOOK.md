@@ -16,6 +16,7 @@
 ./dbwarp-blueprint --lang ja \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full --tls-ca /etc/pki/internal-root.crt \
   --out pg-appdb.blueprint.toml --yes
 ```
@@ -132,6 +133,7 @@ chmod 600 "$TOKEN_FILE"
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out catalog-only.blueprint.toml \
@@ -141,7 +143,7 @@ chmod 600 "$TOKEN_FILE"
 
 これは、最も手間の少ないレビューモードです。行サンプリングを回避しますが、後段の圧縮とエグレスの推定精度は低下します。
 
-## 非テーブル移行の複雑度を評価する
+## レシピ: 非テーブル移行の複雑度を評価する
 
 定義を読まずに件数と外部前提条件を収集するには、既定のサマリーから始めます:
 
@@ -340,16 +342,12 @@ tags = ["lake", "events"]
 
 ## レシピ: バッチ引き渡しパッケージ
 
-次のようなディレクトリを作成します:
+[引き渡し方針](QUICKSTART.md#review-and-share)に従ってください。作業用マニフェスト、監査、コマンド記録、レビューメモはローカルに保管し、レビュー済みのパックされた Blueprint だけで別のディレクトリを作成してください。
 
 ```text
 customer-blueprint-handoff/
   customer-blueprint-bundle.packed.toml
-  customer.batch.toml.redacted
-  reviewer-notes.md       # optional
 ```
-
-レビュー済みのコピーから、この別ディレクトリを構築してください。作業用の `bundle.toml`、`blueprints/`、`audits/`、および `errors.txt` はローカルに置き、アクセス制御してください。`customer.batch.toml.redacted` に含めるのは、承認済みのソース ID、種別、タグ、データセットモードだけです。シークレット、プライベートホスト名、パスワードファイル、トークンファイル、秘密鍵、データベースログ、デコードされた行サンプルを含めないでください。
 
 ## レシピ: レビュー済み TOML からのオフラインデッキ
 
@@ -363,30 +361,38 @@ customer-blueprint-handoff/
 
 ## レシピ: バイト単位で同一の再現性
 
-タイムスタンプを固定します:
+タイムスタンプを固定し、同じ保護された顧客管理の匿名化キーを再利用します:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal/appdb \
   --password-file /etc/dbwarp/pg.pass \
+  --anonymization-key-file /etc/dbwarp/anonymization.key \
   --generated-at "2026-04-26T00:00:00Z" \
   --out blueprint.toml \
   --audit-log audit.txt \
   --yes
 ```
 
-フォレンジックレビュー、スナップショット比較、または決定論的なデッキ生成に使用してください。
+キーファイルは正確に 32 raw byte または 64 文字の 16 進数でなければならず、
+Unix ではグループやその他から読み取り可能にせず、引き渡しに含めてはいけません。
+このオプションがない場合、実行ごとに新しい OS random key が匿名ラベルの順序を
+意図的に変えます。`--generated-at` だけを固定しても不十分です。承認済みの
+フォレンジックスナップショットには完全なレシピを使用してください。同じレビュー済み
+Blueprint から 2 回生成したデッキは、タイムスタンプと言語が同じならバイト単位で
+同一のままです。
 
 ## レシピ: DBWarp への引き渡しパッケージ
 
-次のようなディレクトリを作成します:
+[引き渡し方針](QUICKSTART.md#review-and-share)に従ってください。
 
 ```text
 customer-blueprint-handoff/
   blueprint.toml
-  blueprint.pptx              # optional
-  command-used.redacted.txt
-  reviewer-notes.md           # optional
 ```
 
-`command-used.redacted.txt` には、承認済みのフラグとサンプリング予算を記録できますが、認証情報、トークン、プライベートホスト名、ローカルパスは削除してください。`audit.txt` はアクセス制御された運用証拠としてローカルに保持してください。特定のサポート上の必要性がある場合に限り、承認済みの安全なチャネルを通じて含めます。パスワードファイル、トークンファイル、秘密鍵、データベースログを含めないでください。
+既定では、レビュー済みの `blueprint.toml` またはパック済みバンドルのみを共有してください。デッキ `blueprint.pptx` は、内容と機密区分を確認し、組織の方針に従って別途承認した場合に限り添付できます。
+
+監査、コマンド記録、レビューメモ、未承認のデッキは、アクセス制御されたローカル証拠として保管してください。これらにはエンドポイント、認証済みの主体、ローカルパス、時間情報、マニフェストの識別子が含まれる場合があります。運用証拠は、特定のサポート上の必要がある場合に限り、承認された安全な経路で送信してください。
+
+ツールは `command-used.redacted.txt` を作成しません。これはオペレーターが任意で作成する記録であり、標準の引き渡し成果物ではありません。パスワードやトークンのファイル、匿名化キー、CA 秘密鍵、顧客データのダンプ、データベースログは絶対に含めないでください。

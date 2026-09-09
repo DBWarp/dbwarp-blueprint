@@ -139,14 +139,21 @@ The Blueprint file is designed to be human-readable and reviewable:
 - row values are never emitted
 - compression samples, when enabled, are compressed locally and discarded
 
-Live Tier 2 applies a hard 16 MiB projected payload ceiling per table before
-the database driver receives row data. It reduces the requested row count for
-extremely wide tables and projects variable-width cells through engine-native
-server-side truncation. Style probes are separately capped in their SQL
-projection. The local row-frame encoder independently enforces the same table
-ceiling. This prevents a small `--sample-rows` value from transferring an
-unbounded LOB payload; it also means very large values contribute only their
-bounded prefixes to compression and length estimates.
+Live Tier 2 budgets at most 16 MiB of projected sample-value payload per table.
+It reduces the requested row count for extremely wide tables and projects
+variable-width cells through engine-native server-side truncation, including
+on adaptive MySQL and SQL Server retries. Style probes are separately capped
+in their SQL projection. The local probe encoder independently enforces its
+table ceiling.
+
+This is not a 16 MiB cap on network traffic or process memory: protocol
+framing, separately returned original-length metadata, PostgreSQL hexadecimal
+binary representation, retries and driver buffers add overhead. Very large
+values can contribute only bounded prefixes to compression and value-summary
+measurements. The collector separately obtains original sampled-value lengths
+on the server and applies the selected length-fidelity policy to those lengths,
+not just to the returned prefix lengths. Sampling provenance records the
+applicable limitations; bounded output is not proof of a full-value measurement.
 
 Table, schema, index, and non-table-object ordering uses domain-separated
 HMAC-SHA256. By default the tool obtains a fresh process-local key from the

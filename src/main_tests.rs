@@ -1057,14 +1057,19 @@ path = "erp.parquet"
     }
 
     #[test]
-    fn exact_length_mode_rejects_non_mysql_live_capture() {
+    fn exact_length_mode_supports_postgres_and_rejects_sql_server() {
         let mut cli = empty_cli();
         cli.preserve_exact_lengths = true;
         cli.yes = true;
         cli.dry_run = true;
         let mut audit = AuditLog::new("blueprint", 1_000);
+        run_with_audit(&cli, &mut audit)
+            .expect("exact length mode must be accepted for PostgreSQL");
+
+        cli.connect = Some("sqlserver://app@localhost/db".to_string());
+        let mut audit = AuditLog::new("blueprint", 1_000);
         let err = run_with_audit(&cli, &mut audit)
-            .expect_err("exact length mode must not silently no-op for PostgreSQL");
+            .expect_err("exact length mode must not silently no-op for SQL Server");
         assert!(err.to_string().contains("DBP1007E"));
     }
 

@@ -44,10 +44,8 @@ can show you.
 
 # dbwarp-blueprint
 
-**Documentation language:** English is authoritative. Machine-translated
-document sets may be offered separately after multiple independent reviews;
-they may still contain errors. See [`MACHINE_TRANSLATIONS.md`](MACHINE_TRANSLATIONS.md)
-and [`docs/TRANSLATIONS.md`](docs/TRANSLATIONS.md).
+**Documentation language:** English is authoritative. See
+[`MACHINE_TRANSLATIONS.md`](MACHINE_TRANSLATIONS.md) for translation limitations.
 
 `dbwarp-blueprint` is the customer-side Blueprint collector for DBWarp. Run it inside the customer's own environment to produce a bounded, anonymized, reviewable `blueprint.toml` file that DBWarp can use for migration sizing, synthetic fixture generation, and pre-flight planning without receiving database access, dumps, schema names, or row data.
 
@@ -127,13 +125,21 @@ The trust-first path is to build from source. The normal repository stays small 
 
 ## Quick Start
 
+Before any live run, have a DBA provision a dedicated least-privilege
+collector account with the matching engine/version/tier script under
+[`sql/grants/`](sql/grants/), and approve the exact schema scope. Never start
+with an application-owner or administrator account. Pass each approved schema
+with `--schema`, then remove the dedicated account after capture with the
+matching [`sql/revoke/`](sql/revoke/) script. The complete first-run procedure
+is in [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
+
 Choose a presentation language when useful. English is the default; complete
 catalogs are embedded for German, French, Spanish, Polish, Japanese, and
 Simplified Chinese:
 
 ```bash
 ./dbwarp-blueprint --lang ja --help
-./dbwarp-blueprint --lang de --connect postgresql://db.internal/payments --dry-run
+./dbwarp-blueprint --lang de --connect postgresql://db.internal/payments --schema app --dry-run
 ```
 
 Only human-facing help, prompts, diagnostics, progress, and PowerPoint deck
@@ -148,8 +154,16 @@ Before connecting to a database, inspect the checked-in examples under
 to review. After obtaining a binary, an offline first run can render one as a
 deck without any database or network access:
 
+Start with the small schema-v6 examples described in
+[`samples/README.md`](samples/README.md): PostgreSQL catalog-only, MySQL sampled,
+and SQL Server sampled with analyzed artifacts. These are hand-authored
+synthetic illustrations, not customer captures or qualification results.
+The larger schema-v1 examples remain compatibility fixtures. Use
+[`FORMAT.md`](FORMAT.md) to review the complete output surface before approving
+a customer capture; no example covers every optional field.
+
 ```bash
-./dbwarp-blueprint --from-toml samples/saas-medium.toml --deck sample.pptx
+./dbwarp-blueprint --from-toml samples/sqlserver-v6-analyzed.toml --deck sample.pptx
 ```
 
 Dry-run first. It prints the plan without connecting:
@@ -157,6 +171,7 @@ Dry-run first. It prints the plan without connecting:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --dry-run
 ```
 
@@ -165,6 +180,7 @@ Recommended production-style run with TLS, audit log, and compression measuremen
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -179,7 +195,12 @@ With `--measure-compression --yes`, the output includes table-level
 zstd ratios and per-column compression projections. The per-column
 blocks are computed from the same bounded sample as the table-level
 ratio; they are intended for DBWarp fixture estimation and do not
-write sampled values to disk. Schema v3 and newer also emit bounded, name-free
+write sampled values to disk. A materially dominant binary sample with
+recognized standard compressed-container signatures receives only the coarse
+`style = "precompressed"` label; no file type, signature, or sampled value is
+serialized. Generated twins turn that label into neutral deterministic
+compressed-container fixtures instead of claiming the customer's original
+content type. Schema v3 and newer also emit bounded, name-free
 per-column cardinality/skew aggregates and inferred index-prefix/relationship
 summaries. Temporary per-value hashes are bounded in memory and discarded;
 sampled values and per-value hashes never appear in the Blueprint TOML, while
@@ -195,6 +216,7 @@ application:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --artifact-detail analyzed \
   --out blueprint.toml \
@@ -217,6 +239,7 @@ preserved exactly). This keeps a normally 9-character `VARCHAR(3000)` key near
 ```bash
 ./dbwarp-blueprint \
   --connect mysql://mysql-primary.internal:3306/appdb \
+  --schema appdb \
   --password-file /etc/dbwarp/mysql-blueprint.pass \
   --measure-compression --yes \
   --out mysql-appdb.blueprint.toml
@@ -227,6 +250,7 @@ Use exact sampled statistics only when policy permits the additional precision:
 ```bash
 ./dbwarp-blueprint \
   --connect mysql://mysql-primary.internal:3306/appdb \
+  --schema appdb \
   --password-file /etc/dbwarp/mysql-blueprint.pass \
   --measure-compression \
   --length-fidelity exact --yes \
@@ -262,10 +286,9 @@ less blueprint.toml
 less audit.txt
 ```
 
-If acceptable under your policy, share `blueprint.toml` with DBWarp. A deck may
-also be shared after review. Keep the audit log as access-controlled operational
-evidence unless a specific support case requires it through an approved secure
-channel; it contains endpoint, identity, path, and timing details.
+Follow the [handoff policy](docs/QUICKSTART.md#review-and-share) before sending
+any artifact. Share only approved Blueprint content and, if separately reviewed
+and approved, a deck; keep operational evidence local by default.
 
 ## Structured File Mode
 
@@ -287,8 +310,8 @@ If the source is already a local structured file, generate Blueprint TOML withou
 
 Parquet mode reads footer and row-group metadata. Avro object containers do not have an equivalent footer row count, so Avro mode walks the container to count records and uses the writer schema for column shape. Neither mode connects to a database or reads credential flags.
 
-If your policy permits decoded sampling, file mode can also estimate DBWarp
-transport-style compression from bounded local samples:
+If your policy permits decoded sampling, file mode can also measure bounded
+local compressibility for downstream planning:
 
 ```bash
 ./dbwarp-blueprint \
@@ -300,7 +323,7 @@ transport-style compression from bounded local samples:
 ```
 
 The same flags work with `--from-avro`. Sampled values are encoded in memory as
-`dbwarp-blueprint-rowframe-v1`; the Blueprint stores aggregate compression,
+`blueprint-compression-probe-v2`; the Blueprint stores aggregate compression,
 null-density, cardinality/frequency, length, and style measurements, never
 sampled values.
 
@@ -345,6 +368,7 @@ PostgreSQL:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -357,6 +381,7 @@ MySQL:
 ```bash
 ./dbwarp-blueprint \
   --connect mysql://app@db.internal/payments \
+  --schema payments \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -369,6 +394,7 @@ SQL Server:
 ```bash
 ./dbwarp-blueprint \
   --connect sqlserver://dbwarp_user@db.internal,1433/payments \
+  --schema dbo \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -386,6 +412,7 @@ If policy permits only table/column/index/FK catalogs, omit
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --artifact-detail none \
   --tls-mode verify-full \
@@ -427,8 +454,8 @@ index_bytes = 1100000000
 
 [tables.table-001]
 rows = 12500000
-table_bytes = 4200000000
-index_bytes = 1100000000
+table_bytes = 4194304000
+index_bytes = 1048576000
 schema = "schema-A"
 has_clustered_index = false
 
@@ -453,6 +480,7 @@ Generate a deck during the live run:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \

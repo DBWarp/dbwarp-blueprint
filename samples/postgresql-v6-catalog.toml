@@ -1,0 +1,88 @@
+# DBWarp Blueprint schema-v6 illustrative catalog-only example.
+# Hand-authored synthetic metadata, not a customer capture or benchmark result.
+# No row samples, source object names, SQL definitions, endpoints or credentials.
+
+schema_version = 6
+generated_at = "2026-09-07T00:00:00Z"
+engine = "postgresql"
+engine_version = "18.0"
+source_kind = "synthetic"
+length_metadata = "hybrid-v2"
+declared_length_fidelity = "exact"
+index_length_fidelity = "exact"
+observed_length_fidelity = "relative-rounded-v2"
+
+[totals]
+table_count = 1
+row_count = 1000
+table_bytes = 81920
+index_bytes = 16384
+
+[database_topology]
+contract = "dbwarp-blueprint-topology/v1"
+deployment = "unknown"
+local_role = "unknown"
+visibility = "unknown"
+member_count = 0
+identifiers_redacted = true
+
+[dataset_scope]
+contract = "dbwarp-blueprint-dataset-scope/v1"
+layout = "full-copy"
+table_inventory_completeness = "complete"
+row_count_completeness = "complete"
+size_completeness = "complete"
+row_count_method = "postgres-planner-estimate"
+size_method = "postgres-local-relation-size"
+limitations = ["row-counts-statistical", "selection-limited", "statistics-stale", "topology-visibility-unknown"]
+
+[tables.table-001]
+rows = 1000
+table_bytes = 81920
+index_bytes = 16384
+schema = "schema-A"
+has_clustered_index = false
+stats_freshness = "stale"
+
+[tables.table-001.cols.col-1]
+ordinal = 1
+type = "integer"
+nullable = false
+native_type = "int8"
+declared_max_bytes = 8
+len_avg = 8
+len_p95 = 8
+
+[tables.table-001.cols.col-2]
+ordinal = 2
+type = "text"
+nullable = true
+native_type = "varchar"
+declared_max_chars = 64
+declared_max_bytes = 256
+len_avg = 32
+len_p95 = 0
+
+[tables.table-001.idxs.idx-1]
+type = "btree"
+primary = true
+unique = true
+cols = [1]
+
+# Catalog-only does not imply artifact-detail none: summary is the default.
+[artifact_inventory]
+contract = "dbwarp-blueprint-artifacts/v1"
+detail = "summary"
+visibility = "privilege_filtered"
+inventory_complete = false
+dependencies_complete = false
+analysis_complete = false
+object_count = 2
+dependency_edge_count = 0
+external_prerequisite_count = 0
+catalogs_read = ["pg_catalog.pg_class"]
+families_not_inventoried = ["functions"]
+
+[artifact_inventory.counts_by_kind]
+sequence = 1
+view = 1

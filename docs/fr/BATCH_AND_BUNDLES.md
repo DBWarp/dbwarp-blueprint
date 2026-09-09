@@ -188,7 +188,7 @@ après normalisation.
 Pour les sources Parquet et Avro :
 
 - `single_file` exige exactement un fichier résolu et le conserve sous la forme d'une table logique unique.
-- `one_table_per_file` associe chaque fichier à une table assainie distincte dans un fichier Blueprint enfant unique.
+- `one_table_per_file` associe chaque fichier à une table distincte portant un libellé anonyme dans un fichier Blueprint enfant unique.
 - `merge_same_schema` fusionne de nombreux fichiers en une table logique lorsque le nombre de colonnes correspond.
 - `partitioned_dataset` utilise actuellement le même comportement de fusion que `merge_same_schema` ; il réserve la distinction sémantique à la découverte des partitions de style Hive.
 
@@ -259,8 +259,11 @@ Un bundle est une entrée Blueprint portable et vérifiable. Avant de l'accepter
 
 Un bundle n'assouplit pas le modèle de confidentialité :
 
-- les sources de bases de données actives continuent d'émettre des identifiants assainis de table, colonne et index ;
-- les valeurs des fichiers structurés ne sont décodées que lorsque `--measure-compression --yes` est activé ;
+- les sources de bases de données actives continuent d'émettre des identifiants anonymes de table, colonne et index protégés par une clé secrète ;
+- les valeurs Parquet ne sont décodées qu’avec `--measure-compression --yes` ;
+  la capture Avro parcourt toujours les enregistrements du conteneur pour en
+  déduire les comptages, les longueurs et les fractions NULL, même sans mesure
+  de compression ;
 - les échantillons décodés restent en mémoire ;
 - les métadonnées du bundle utilisent les identifiants de source et balises choisis par le client ;
 - aucune commande de bundle n'envoie de télémétrie ni ne téléverse de fichier.

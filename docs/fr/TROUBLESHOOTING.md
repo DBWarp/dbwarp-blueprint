@@ -9,6 +9,31 @@
 Les échecs relevant de l'opérateur commencent désormais par un code de message stable `DBPnnnnS`, par exemple `DBP1001E`.
 Utilisez ce code pour rechercher dans la documentation ou ouvrir un ticket de support. Consultez les [codes de message opérateur](MESSAGES.md).
 
+## La compilation depuis les sources se termine avec l'état 2 ou 3
+
+`build.sh` se termine avec l'état 2 lorsque le `rustc` installé ne correspond
+pas à la version fixée dans `rust-toolchain.toml` et que l'accès réseau n'a pas
+été explicitement approuvé. Installez cette version exacte de Rust ou, après
+avoir examiné la limite de téléchargement, autorisez le script à récupérer son
+programme d'amorçage figé et vérifié par somme de contrôle :
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
+`build.sh` se termine avec l'état 3 lorsque `DBWARP_BLUEPRINT_OFFLINE=1` est
+défini mais que l'arborescence des sources ne contient pas de répertoire
+`vendor-crates/`. Un checkout de sources normal ne peut pas satisfaire ce mode.
+Téléchargez et vérifiez l'archive de sources avec dépendances de la même
+version, extrayez-la, puis lancez la compilation dans cette arborescence :
+
+```bash
+DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh
+```
+
+Ne copiez pas de dépendances entre les versions. Consultez [Compiler depuis les
+sources](BUILD.md) pour les procédures complètes en ligne et hors ligne.
+
 ## La langue demandée n'est pas utilisée
 
 Pour diagnostiquer la sélection des paramètres régionaux, utilisez explicitement une valeur prise en charge :

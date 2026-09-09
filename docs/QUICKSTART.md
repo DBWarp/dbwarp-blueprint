@@ -16,7 +16,7 @@ Select a presentation language explicitly when required:
 
 ```bash
 ./dbwarp-blueprint --lang fr --help
-./dbwarp-blueprint --lang pl --connect postgresql://db.internal/payments --dry-run
+./dbwarp-blueprint --lang pl --connect postgresql://db.internal/payments --schema app --dry-run
 ```
 
 Supported values are `en`, `de`, `fr`, `es`, `pl`, `ja`, and `zh`. The
@@ -25,7 +25,32 @@ deck prose. It never changes option names, accepted values, URI schemes,
 selectors, DBP codes, audit keys, or Blueprint TOML. See
 [`INTERNATIONALISATION.md`](INTERNATIONALISATION.md).
 
-## 2. Prepare Credentials Safely
+## 2. Provision a Dedicated Least-Privilege Account
+
+Do this before any live connection, including `--dry-run` examples that will
+later be turned into captures. Do not begin with an application owner,
+administrator, superuser, `root`, `sa`, or `db_owner` account.
+
+1. Identify the exact engine/version, database, and approved schema or schemas.
+2. Choose the capture tier: `basic` for table catalogs only, `standard` for a
+   synthetic-copy-ready bounded row sample, or `enhanced` for non-table object
+   analysis as well.
+3. Have the DBA copy the matching script under `sql/grants/<engine>/`, edit all
+   marked database, schema, principal, password, and role-toggle values, and
+   run it through the normal change-control process.
+4. Use the dedicated account it creates and pass the same approved scope with
+   one `--schema NAME` option per schema on every live command.
+5. After the capture and evidence review, have the DBA review and run the
+   matching engine script under `sql/revoke/` to remove the account and grants.
+
+The scripts deliberately distinguish literal scoped grants from convenient
+built-in roles and explain where a role is broader. Read
+[`../sql/grants/README.md`](../sql/grants/README.md) for the runnable scripts
+and [`../sql/grants/DATABASE_PERMISSIONS.md`](../sql/grants/DATABASE_PERMISSIONS.md)
+for the version-aware DBA/security rationale. The collector does not create,
+broaden, or remove database principals itself.
+
+## 3. Prepare Credentials Safely
 
 Do not put passwords in the connection URI. The tool refuses URI-embedded passwords to avoid process-list and shell-history leaks.
 
@@ -44,18 +69,19 @@ If the username is awkward to URI-encode, place it in a file too:
 
 ```bash
 install -m 600 /dev/null /etc/dbwarp/db.user
-printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
+printf '%s' 'DOMAIN\migration_user' > /etc/dbwarp/db.user
 ```
 
 Then use `--user-file /etc/dbwarp/db.user`.
 
-## 3. Dry-Run First
+## 4. Dry-Run First
 
 A dry run validates arguments and prints the planned action without connecting:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -74,7 +100,7 @@ For multiple customer sources, dry-run the batch manifest instead:
   --dry-run
 ```
 
-## 4. Run Catalog-Only Mode
+## 5. Run Catalog-Only Mode
 
 This strict catalog-only mode reads table metadata and statistics, but no row
 samples or non-table object catalogs:
@@ -82,6 +108,7 @@ samples or non-table object catalogs:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --artifact-detail none \
@@ -94,7 +121,7 @@ samples or non-table object catalogs:
 
 Use this when a policy forbids row sampling or when you want a first security-review pass.
 
-## 5. Choose Non-Table Artifact Detail
+## 6. Choose Non-Table Artifact Detail
 
 The default `--artifact-detail summary` reads non-table catalogs but not object
 definitions. It emits bounded counts and external-prerequisite classes. Use
@@ -106,6 +133,7 @@ and complexity bands, use `analyzed`. Both require explicit consent:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --artifact-detail analyzed \
@@ -119,7 +147,7 @@ keys, certificates, or binaries. See
 [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md) before approving graph or
 analyzed mode.
 
-## 6. Run Tier 2 Compression Measurement
+## 7. Run Tier 2 Compression Measurement
 
 Tier 2 reads bounded row samples into memory, computes aggregate compression,
 null-density, cardinality/frequency, length, and style measurements, and
@@ -128,6 +156,7 @@ discards the sampled values:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -141,13 +170,14 @@ discards the sampled values:
 
 Use Tier 2 when possible. It gives DBWarp better estimates of wire bytes, egress cost, and synthetic text/binary data generation.
 
-## 7. Generate a Deck
+## 8. Generate a Deck
 
 During the live run:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -165,7 +195,7 @@ Or after review, with no database connection:
 ./dbwarp-blueprint --from-toml blueprint.toml --deck blueprint.pptx
 ```
 
-## 8. Review Before Sharing
+## 9. Review Before Sharing
 
 Review:
 
@@ -188,7 +218,7 @@ Expected properties:
 - optional aggregate compression, null-density, cardinality/frequency, length,
   and style measurements, never sampled values.
 
-## 9. Handoff to DBWarp
+## 10. Handoff to DBWarp
 
 Minimum handoff:
 
@@ -211,17 +241,17 @@ the batch manifest. Use anonymous values and review them before transfer.
 
 Use `docs/BATCH_AND_BUNDLES.md` when the customer has multiple databases, multiple Parquet or Avro datasets, or wants to approve only selected sources/tables for benchmark generation.
 
-Keep these as access-controlled local evidence by default:
+### Review and share
 
-```text
-blueprint.audit.txt
-blueprint.pptx
-command-used.redacted.txt   # optional; created and reviewed by the operator
-```
+Share only the reviewed `blueprint.toml` or packed bundle by default. A deck
+may accompany it only after its content and confidentiality label have been
+reviewed and separately approved under your organization's policy.
 
-The tool does not create `command-used.redacted.txt`; include it only if the
-operator deliberately records and redacts the approved invocation. Audits and
-saved commands can contain database endpoints, authenticated
-principals, local paths, timing data, and manifest source ids. Send them only
-for a specific support need through an approved secure channel. Do not send
-password files, CA private keys, customer dumps, or database logs.
+Keep audits, command records, reviewer notes, and unapproved decks as
+access-controlled local evidence. They may contain endpoints, authenticated
+principals, local paths, timing data, and manifest identifiers. Send operational
+evidence only for a specific support need through an approved secure channel.
+The tool does not create `command-used.redacted.txt`; that is an optional
+operator-authored record, not a standard handoff artifact. Never include
+password or token files, anonymization keys, CA private keys, customer dumps,
+or database logs in a Blueprint handoff.

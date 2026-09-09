@@ -20,6 +20,17 @@ Le binaire est écrit dans :
 target/release/dbwarp-blueprint
 ```
 
+Tous les autres exemples utilisent `./dbwarp-blueprint`. Après une compilation
+depuis les sources, exécutez directement `target/release/dbwarp-blueprint` ou
+copiez ce fichier vers `./dbwarp-blueprint` avant de les suivre.
+
+Si la chaîne Rust épinglée n'est pas installée et qu'un accès réseau examiné est
+autorisé, donnez votre accord explicitement :
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
 ## Fonctionnement du script de compilation
 
 `build.sh` est volontairement prudent :
@@ -46,6 +57,13 @@ Des binaires précompilés sont disponibles sur la page Releases :
 
 Ils sont fournis par commodité. Figez un tag de version exact et vérifiez son SHA-256 avant utilisation ; n'utilisez pas d'URL de téléchargement modifiable pour une exécution reproductible. Si votre politique impose une revue des sources, compilez localement depuis le même tag.
 
+Les archives binaires de plateforme sont des bundles opérateur, pas des
+arborescences de sources, et ne peuvent pas être reconstruites sur place. Leur
+copie de ce guide et `verify.sh` décrit le parcours de vérification avec les
+sources correspondantes. Utilisez une copie du tag de version exact ou
+l'archive de sources avec dépendances de la version lorsque vous avez besoin de
+`build.sh`, des sources Cargo ou d'une compilation locale de comparaison.
+
 Fichiers de version :
 
 | Plateforme | Fichier |
@@ -57,11 +75,19 @@ Fichiers de version :
 
 ## Vérifier une archive téléchargée
 
-Linux/macOS :
+Linux :
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
+
+macOS :
+
+```bash
+shasum -a 256 dbwarp-blueprint-macos-arm64.tar.gz
+```
+
+Comparez la valeur affichée à la ligne correspondante de `SHA256SUMS.txt`.
 
 Windows PowerShell :
 
@@ -103,6 +129,28 @@ Compilation Kerberos sous Linux :
 ```bash
 cargo build --release --locked --features integrated-auth-gssapi
 ```
+
+## Reproduire un binaire de release
+
+`./build.sh` prouve que les sources examinées se compilent ; l'identité octet
+par octet exige aussi tous les paramètres natifs de la release. Utilisez la
+révision exacte indiquée dans `PROVENANCE.json`, sa cible et ses fonctionnalités,
+la chaîne Rust épinglée, le compilateur/éditeur de liens natif enregistré,
+l'horodatage du commit comme `SOURCE_DATE_EPOCH`, ainsi que les options de
+remappage de chemins et d'édition de liens du workflow. Les releases Windows
+emploient aussi `clang-cl` et `/Brepro`.
+
+Après avoir reproduit ces paramètres, comparez le binaire extrait au résultat local :
+
+```bash
+SOURCE_BIN=target/release/dbwarp-blueprint \
+  ./verify.sh /path/to/extracted/dbwarp-blueprint
+```
+
+Si les condensats diffèrent, ne considérez pas les binaires comme équivalents.
+La CI de release compile deux fois sur le même runner dans des répertoires Cargo
+distincts et refuse toute différence ; `PROVENANCE.json` consigne les éléments
+nécessaires à l'évaluation d'une reproduction locale.
 
 ## Dépendances embarquées
 

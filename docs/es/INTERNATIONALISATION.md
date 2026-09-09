@@ -9,7 +9,12 @@ límite de seguridad y automatización, no solo de una preferencia de visualizac
 
 ## Idiomas admitidos
 
-El texto fuente en inglés es la referencia autoritativa. Los catálogos de presentación en otros idiomas están asistidos por máquina y pueden contener errores aunque se valide su cobertura de claves y tokens. Compare con el texto en inglés las decisiones de seguridad, contractuales, normativas y de mínimo privilegio. Consulte [`TRANSLATIONS.md`](../TRANSLATIONS.md) para conocer el proceso independiente de publicación de documentos traducidos.
+El texto fuente en inglés es la referencia autoritativa. Los catálogos de
+presentación en otros idiomas están asistidos por máquina y pueden contener
+errores aunque se valide su cobertura de claves y tokens. Compare con el texto
+en inglés las decisiones de seguridad, contractuales, normativas y de mínimo
+privilegio. Consulte [`TRANSLATIONS.md`](../TRANSLATIONS.md) para conocer el
+alcance y las limitaciones del material traducido.
 
 | Valor | Idioma | Etiqueta de configuración regional utilizada en las presentaciones generadas |
 |---|---|---|
@@ -67,9 +72,13 @@ Los siguientes elementos se mantienen como tokens canónicos en inglés en todos
 - identificadores anonimizados como `table-001`, `col-1` y `schema-A`;
 - claves de auditoría, claves TOML, claves de paquetes, nombres de tipos de bases de datos y métodos de índices.
 
-Por lo tanto, los scripts no necesitan un tratamiento específico por idioma de las opciones o los valores,
-y un Blueprint generado con `--lang ja` es idéntico byte a byte a otro generado
-con `--lang en` cuando todas las demás entradas deterministas son iguales.
+Por lo tanto, los scripts no necesitan tratar las opciones o los valores de
+forma específica por idioma, y el idioma elegido no modifica los campos del
+Blueprint. Una comparación entre idiomas idéntica byte a byte requiere además
+el mismo estado de origen, las mismas opciones, un valor de `--generated-at`
+fijado, el mismo productor y el mismo archivo protegido
+`--anonymization-key-file`; las ejecuciones predeterminadas separadas usan
+intencionadamente claves distintas.
 
 ## Comportamiento estricto de los catálogos
 
@@ -84,30 +93,3 @@ que cada configuración regional no inglesa anunciada cubra exactamente:
 Las entradas ausentes o adicionales, los cambios de marcadores de posición, los tokens operativos alterados,
 el JSON no válido o los controles de formato invisibles o bidireccionales hacen que el programa se detenga y
 rechace el catálogo con `DBP1010E`. El programa no sustituye silenciosamente por inglés una traducción ausente.
-
-## Flujo de trabajo de mantenimiento
-
-La fuente canónica es la ayuda en inglés de Rust y las definiciones de mensajes e interfaz de usuario
-en `src/i18n.rs`. Cuando cambia cualquier frase visible para el cliente:
-
-1. actualice cada catálogo de configuración regional bajo `locales/` en el mismo commit;
-2. conserve exactamente todos los marcadores de posición y tokens operativos canónicos;
-3. ejecute la prueba específica de cobertura exacta;
-4. añada o actualice el caso pertinente del límite del operador en
-   `tests/cli_errors.rs` cuando cambie un error o una advertencia;
-5. ejecute todo el conjunto de pruebas e inspeccione resultados representativos de ayuda y presentaciones;
-6. obtenga una revisión técnica por una persona nativa antes de considerar definitivo el nuevo texto para un
-   contrato de cliente, una presentación reglamentaria o material público de marketing.
-
-Validación específica:
-
-```bash
-mkdir -p tmp/test-runtime
-TMPDIR="$PWD/tmp/test-runtime" \
-  cargo test --locked every_embedded_locale_exactly_covers_the_live_cli
-TMPDIR="$PWD/tmp/test-runtime" cargo test --locked --test i18n
-```
-
-Las pruebas de integración también demuestran que los tokens de opciones son idénticos en todos los
-idiomas, que los códigos DBP localizados se mantienen estables, que el TOML emitido no varía según el idioma
-y que el contenido generado de la presentación lleva la configuración regional seleccionada.

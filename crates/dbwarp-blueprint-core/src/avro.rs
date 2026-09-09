@@ -317,7 +317,7 @@ fn avro_blueprint_from_path_metadata(
         measured: table.storage_bytes > 0 || table.table_bytes > 0,
         sample_rows: row_count,
         sample_bytes: table.table_bytes,
-        sample_method: "avro-container-versus-decoded-rowframe".to_string(),
+        sample_method: "avro-container-versus-decoded-probe-stream".to_string(),
         ratio_storage: compression_ratio(table.table_bytes, table.storage_bytes),
         sample_encoding: "avro-container".to_string(),
         ..Default::default()
@@ -418,16 +418,22 @@ fn apply_avro_decoded_compression(
         sampled_with_bias,
         bias_reason,
     );
-    for ((((name, _tag, _scale), compression), statistics), cardinality) in ordered
-        .iter()
-        .zip(column_compressions.into_iter())
-        .zip(column_statistics.into_iter())
-        .zip(column_cardinalities.into_iter())
+    let column_payload_profiles = acc.column_payload_profiles();
+    for (((((name, _tag, _scale), compression), statistics), cardinality), payload_profile) in
+        ordered
+            .iter()
+            .zip(column_compressions.into_iter())
+            .zip(column_statistics.into_iter())
+            .zip(column_cardinalities.into_iter())
+            .zip(column_payload_profiles.into_iter())
     {
         deadline.check("applying Avro sample column compression")?;
         if let Some(column) = table.cols.get_mut(name) {
             if let Some(compression) = compression {
                 column.compression = Some(compression);
+            }
+            if column.style.is_empty() && !payload_profile.is_empty() {
+                column.style = payload_profile;
             }
             column.len_avg = statistics.len_avg;
             column.len_p95 = statistics.len_p95;

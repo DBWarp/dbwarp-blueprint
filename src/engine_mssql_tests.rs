@@ -297,4 +297,126 @@ mod tests {
             (0, 0, "unbounded-lob".to_string())
         );
     }
+
+    #[test]
+    fn mssql_charset_preserves_unicode_and_varchar_code_pages() {
+        assert_eq!(mssql_charset("nvarchar", 1252), "utf-16le");
+        assert_eq!(mssql_charset("varchar", 65001), "utf-8");
+        assert_eq!(mssql_charset("varchar", 1252), "windows-1252");
+        assert_eq!(mssql_charset("varchar", 932), "code-page-932");
+        assert_eq!(mssql_charset("varbinary", 0), "");
+    }
+
+    fn sample_column(name: &str, native_type: &str, declared_max_bytes: u64) -> ColumnRow {
+        ColumnRow {
+            schema_name: "dbo".to_string(),
+            table_name: "sample".to_string(),
+            col_name: name.to_string(),
+            ordinal: 1,
+            col_type: if matches!(native_type, "binary" | "varbinary" | "image") {
+                "binary".to_string()
+            } else {
+                "text".to_string()
+            },
+            native_type: native_type.to_string(),
+            is_nullable: true,
+            declared_max_chars: declared_max_bytes / 2,
+            declared_max_bytes,
+            numeric_precision: 0,
+            numeric_scale: 0,
+            datetime_precision: 0,
+            charset: String::new(),
+            collation: String::new(),
+            source_semantics: String::new(),
+        }
+    }
+
+    #[test]
+    fn mssql_initial_sample_plan_bounds_driver_rows_and_payload() {
+        let columns = (0..16)
+            .map(|index| sample_column(format!("c{index}").as_str(), "nvarchar", 1024))
+            .collect::<Vec<_>>();
+        let (rows, limits) = mssql_sample_projection_budget(131_072, &columns).unwrap();
+        assert_eq!(rows, MSSQL_INITIAL_SAMPLE_MAX_ROWS);
+        assert_eq!(limits.len(), columns.len());
+        assert!(limits.iter().all(|limit| limit.byte_limit > 0));
+        assert!(limits.iter().all(|limit| limit.char_limit > 0));
+        let projected_payload = rows.saturating_mul(
+            limits
+                .iter()
+                .map(|limit| limit.byte_limit as u64)
+                .sum::<u64>(),
+        );
+        assert!(
+            projected_payload
+                <= (dbwarp_blueprint_core::TRANSFER_PROBE_MAX_SAMPLE_BYTES
+                    / MSSQL_INITIAL_SAMPLE_PAYLOAD_DIVISOR) as u64
+        );
+    }
+
+    #[test]
+    fn mssql_sample_projection_carries_sampled_and_original_byte_lengths() {
+        let columns = vec![
+            sample_column("unicode]text", "nvarchar", 1024),
+            sample_column("payload", "varbinary", 2048),
+        ];
+        let limits = vec![
+            MssqlSampleProjectionLimit {
+                byte_limit: 128,
+                char_limit: 32,
+            },
+            MssqlSampleProjectionLimit {
+                byte_limit: 256,
+                char_limit: 64,
+            },
+        ];
+        let projection = mssql_sample_projection(&columns, &limits);
+        assert!(projection.contains("LEFT([unicode]]text], 32)"));
+        assert!(projection.contains("SUBSTRING(CONVERT(varbinary(max), [payload]), 1, 256)"));
+        assert_eq!(projection.matches("DATALENGTH(").count(), 4);
+    }
+
+    #[test]
+    fn mssql_adaptive_projection_caps_single_and_combined_oversized_values() {
+        let ceiling = dbwarp_blueprint_core::TRANSFER_PROBE_MAX_SAMPLE_BYTES as u64;
+        for native in ["varbinary", "nvarchar", "varchar", "xml"] {
+            for width in [1, ceiling - 4096, ceiling, ceiling + 4096, u64::MAX] {
+                for count in [1, 2, 32] {
+                    let columns = vec![sample_column("payload", native, 0); count];
+                    for requested in [1, 32, u64::MAX] {
+                        let (rows, limits) = mssql_adaptive_projection_budget(
+                            &columns,
+                            &vec![width; count],
+                            requested,
+                        )
+                        .unwrap();
+                        let row_bytes = limits
+                            .iter()
+                            .map(|limit| {
+                                let payload = if native == "varbinary" {
+                                    limit.byte_limit
+                                } else {
+                                    limit.char_limit * 4
+                                };
+                                assert!(payload <= limit.byte_limit);
+                                payload as u64
+                                    + dbwarp_blueprint_core::TRANSFER_PROBE_CELL_OVERHEAD_BYTES
+                            })
+                            .sum::<u64>();
+                        assert!(rows > 0 && rows <= requested);
+                        assert!(rows * row_bytes <= ceiling);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mssql_text_retry_bounds_supplementary_characters_in_changed_rows() {
+        let columns = [sample_column("payload", "nvarchar", 0)];
+        let (rows, limits) = mssql_adaptive_projection_budget(&columns, &[1024], 32).unwrap();
+        assert_eq!(rows, 32);
+        assert_eq!(limits[0].char_limit, 1024);
+        assert_eq!(limits[0].byte_limit, 4096);
+    }
 }

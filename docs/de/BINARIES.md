@@ -25,13 +25,27 @@ Wählen Sie einen exakten Release-Tag, zum Beispiel `https://github.com/DBWarp/d
 
 Jedes Release enthält außerdem `SHA256SUMS.txt`.
 
+Die Plattformarchive sind sofort ausführbare Betreiberpakete und keine
+Quellcodebäume. Sie enthalten Betriebs- und Auditreferenzen, können jedoch nicht
+an Ort und Stelle neu gebaut werden. Verwenden Sie für ein Quellcode-Audit oder
+einen Vergleichs-Build das exakte Release-Tag oder das Asset
+`dbwarp-blueprint-source-vendored.tar.gz` aus demselben Release.
+
 ## Download verifizieren
 
-Linux/macOS:
+Linux:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
+
+macOS:
+
+```bash
+shasum -a 256 dbwarp-blueprint-macos-arm64.tar.gz
+```
+
+Vergleichen Sie den ausgegebenen Wert mit der passenden Zeile in `SHA256SUMS.txt`.
 
 Windows PowerShell:
 

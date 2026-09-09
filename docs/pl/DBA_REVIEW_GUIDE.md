@@ -19,7 +19,9 @@ Użyj dedykowanego konta o niskich uprawnieniach, mającego dostęp do odczytu m
 Zalecane właściwości:
 
 - brak uprawnień do zapisu;
-- brak uprawnień DDL;
+- brak uprawnień DDL, chyba że przegląd jawnie zatwierdzi rozszerzone
+  przechwytywanie MySQL, którego uprawnienia metadanych `TRIGGER` i `EVENT`
+  pozwalają na operacje DDL;
 - brak roli superużytkownika lub administratora;
 - dostęp do odczytu ograniczony do ocenianej bazy danych;
 - hasło lub token przekazywane przez plik albo monit, bez osadzania w URI.
@@ -32,7 +34,7 @@ przechwyceniu usuń dedykowane konto kolektora za pomocą odpowiedniego skryptu 
 `sql/revoke/`; przed wykonaniem sprawdź dokładną bazę danych, wzorzec hosta,
 rolę i docelowe loginy.
 
-## Poziom 1: tylko katalog
+## Poziom 1: tylko metadane (bez próbkowania wierszy)
 
 Poziom 1 jest domyślny, gdy nie podano `--measure-compression`.
 
@@ -45,6 +47,8 @@ Odczytuje:
 - rodziny typów kolumn, możliwość występowania wartości NULL oraz zaokrąglone statystyki długości, jeśli są dostępne;
 - typ indeksu, unikatowość i zanonimizowane numery porządkowe kolumn;
 - strukturę grafu kluczy obcych, jeśli jest dostępny;
+- ograniczone liczniki obiektów innych niż tabele i wymagań zewnętrznych z
+  katalogów obiektów przy domyślnym `--artifact-detail summary` (bez definicji);
 - opcjonalny pomiar RTT po stronie klienta, chyba że ustawiono `--no-rtt-probe`.
 
 Nie odczytuje wartości wierszy.
@@ -67,7 +71,11 @@ Poziom 2 jest włączany wyłącznie przez jawną parę:
 --measure-compression --yes
 ```
 
-Poziom 2 dodatkowo odczytuje ograniczone próbki wierszy do pamięci procesu. Bajty próbki są kodowane w wewnętrznym buforze ramek wierszy, kompresowane lokalnie przez zstd na poziomie 3, podsumowywane w postaci zaokrąglonych współczynników, a następnie usuwane.
+Poziom 2 dodatkowo odczytuje ograniczone próbki wierszy do pamięci procesu.
+Bajty próbki są kodowane w wewnętrznym buforze ramek wierszy i używane do
+wyprowadzenia zagregowanych pomiarów kompresji, udziału NULL,
+kardynalności/częstotliwości, długości i stylu, po czym wartości i tymczasowe
+odciski są odrzucane.
 
 Bajty próbek:
 
@@ -93,9 +101,19 @@ Wyłącz go za pomocą:
 
 ## Odczytywane pliki
 
-Podczas działania narzędzie odczytuje tylko pliki jawnie wskazane w wierszu poleceń, takie jak pliki haseł, pliki użytkownika, pliki CA/certyfikatów/kluczy TLS, pliki tokenów Entra albo plik wejściowy `--from-toml`.
+Podczas działania narzędzie odczytuje tylko pliki jawnie wybrane w wierszu
+poleceń albo wskazane przez jawnie wybrany manifest wsadowy lub pakiet. Mogą to
+być pliki haseł, użytkowników i kluczy anonimizacji, pliki
+CA/certyfikatów/kluczy TLS, pliki tokenów Entra, wejścia plików strukturalnych
+oraz wejścia Blueprint lub pakietu.
 
 Celowo nie odczytuje typowych niejawnych lokalizacji poświadczeń, takich jak `~/.pgpass`, `~/.my.cnf`, pliki poświadczeń chmurowych, klucze SSH, historia powłoki ani domyślne zmienne środowiskowe haseł.
+
+To stwierdzenie dotyczy wykrywania poświadczeń kontrolowanego przez aplikację.
+Biblioteki bazy danych, TLS, DNS i zintegrowanego uwierzytelniania mogą
+korzystać z magazynów zaufania, konfiguracji i pamięci podręcznych poświadczeń
+systemu operacyjnego. Gdy wymaga tego polityka hosta, sprawdź lub prześledź te
+zależności platformowe oddzielnie.
 
 Pełna lista znajduje się w [`AUDIT.md`](AUDIT.md).
 
@@ -126,8 +144,11 @@ Przed udostępnieniem `blueprint.toml` sprawdź:
 - nie występują rzeczywiste nazwy tabel, kolumn, indeksów, schematów ani użytkowników;
 - nie ma nazw obiektów innych niż tabele, tekstu definicji, ciągów punktów końcowych, poświadczeń, materiału kluczy/certyfikatów, nazw pakietów ani plików binarnych;
 - nie występują wartości wierszy;
-- wartości liczbowe są zaokrąglane zgodnie z opisem w [`FORMAT.md`](FORMAT.md);
-- opcjonalne sekcje kompresji zawierają tylko współczynniki i metadane próbek.
+- wartości liczbowe używają dokładnej lub zaokrąglonej precyzji opisanej w
+  [`FORMAT.md`](FORMAT.md); dokładne pola opcjonalne traktuj jako bardziej wrażliwe;
+- opcjonalne sekcje pochodzące z próbek zawierają zagregowane metadane
+  kompresji, udziału NULL, kardynalności/częstotliwości, długości, stylu i
+  pochodzenia próbki, nigdy próbkowane wartości.
 - pola kompletności artefaktów ujawniają filtrowaną widoczność, nieczytelne katalogi i znane niezamodelowane rodziny.
 
 Domyślne zrównoważone dane wyjściowe MySQL zawierają dokładne zadeklarowane
@@ -139,8 +160,8 @@ znaczników wierności oznacza dane starsze lub nieznane i nie może być uznawa
 za metadane gotowe do benchmarku.
 
 Znacznik nie stwierdza, że próbkowanie objęło każdą tabelę. Pakiet przekazywany
-do benchmarku musi również wykazać w manifeście estymatora brak niepróbkowanych
-kolumn indeksowanych o zmiennej szerokości; jeśli ta bramka zawiedzie, zwiększ
+do benchmarku musi również wykazać w manifeście estymatora brak niepustych,
+niepróbkowanych kolumn indeksowanych o zmiennej szerokości; jeśli ta bramka zawiedzie, zwiększ
 `--max-wall-secs` i ponownie wykonaj przechwycenie.
 
 ## Bezpieczeństwo operacyjne

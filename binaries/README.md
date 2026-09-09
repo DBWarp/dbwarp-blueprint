@@ -24,6 +24,11 @@ the archive and `SHA256SUMS.txt` from that same tag. Do not use a mutable
 
 Each release also includes `SHA256SUMS.txt`.
 
+The platform archives are ready-to-run operator bundles, not source trees.
+They include operating and audit references, but they cannot be rebuilt in
+place. For a source audit or comparison build, use the exact release tag or the
+`dbwarp-blueprint-source-vendored.tar.gz` asset from the same release.
+
 ## Verify the download
 
 Linux:

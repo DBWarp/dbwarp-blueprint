@@ -15,6 +15,7 @@ Wählen Sie einen der vollständigen eingebetteten Sprachkataloge aus, während 
 ./dbwarp-blueprint --lang ja \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full --tls-ca /etc/pki/internal-root.crt \
   --out pg-appdb.blueprint.toml --yes
 ```
@@ -122,6 +123,7 @@ chmod 600 "$TOKEN_FILE"
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out catalog-only.blueprint.toml \
@@ -335,21 +337,12 @@ freigegebenen Kanal.
 
 ## Rezept: Batch-Übergabepaket
 
-Erstellen Sie ein Verzeichnis wie dieses:
+Befolgen Sie die [Übergaberichtlinie](QUICKSTART.md#review-and-share). Bewahren Sie Arbeitsmanifest, Audits, Befehlsaufzeichnungen und Prüfnotizen lokal auf. Erstellen Sie dieses separate Verzeichnis nur aus dem geprüften gepackten Blueprint.
 
 ```text
 customer-blueprint-handoff/
   customer-blueprint-bundle.packed.toml
-  customer.batch.toml.redacted
-  reviewer-notes.md       # optional
 ```
-
-Erstellen Sie dieses separate Verzeichnis aus geprüften Kopien. Bewahren Sie
-das Arbeits-`bundle.toml`, `blueprints/`, `audits/` und alle `errors.txt` lokal
-und zugriffsgeschützt auf. `customer.batch.toml.redacted` sollte nur
-freigegebene Quell-IDs, Arten, Tags und Datensatzmodi enthalten. Nehmen Sie
-keine Geheimnisse, privaten Hostnamen, Passwortdateien, Tokendateien, privaten
-Schlüssel, Datenbankprotokolle oder dekodierten Zeilenstichproben auf.
 
 ## Rezept: Offline-Präsentation aus geprüftem TOML
 
@@ -363,35 +356,40 @@ Dieser Modus liest nur die TOML-Datei und schreibt die Präsentation. Er lehnt O
 
 ## Rezept: Byte-identische Reproduzierbarkeit
 
-Schreiben Sie den Zeitstempel fest:
+Schreiben Sie den Zeitstempel fest und verwenden Sie denselben geschützten,
+kundenseitig verwahrten Anonymisierungsschlüssel erneut:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal/appdb \
   --password-file /etc/dbwarp/pg.pass \
+  --anonymization-key-file /etc/dbwarp/anonymization.key \
   --generated-at "2026-04-26T00:00:00Z" \
   --out blueprint.toml \
   --audit-log audit.txt \
   --yes
 ```
 
-Verwenden Sie dies für forensische Prüfungen, Snapshot-Vergleiche oder die deterministische Präsentationserzeugung.
+Die Schlüsseldatei muss genau 32 Rohbytes oder 64 Hexadezimalzeichen enthalten,
+darf unter Unix nicht für Gruppe/Andere lesbar sein und darf niemals in die
+Übergabe aufgenommen werden. Ohne diese Option ändert ein neuer zufälliger
+Betriebssystemschlüssel bei jedem Lauf absichtlich die anonyme Reihenfolge.
+Nur `--generated-at` festzuschreiben reicht nicht. Verwenden Sie das vollständige
+Rezept für genehmigte forensische Snapshots; eine aus exakt demselben geprüften
+Blueprint erzeugte Präsentation bleibt bei unverändertem Zeitstempel und
+unveränderter Sprache byteidentisch.
 
 ## Rezept: Übergabepaket für DBWarp
 
-Erstellen Sie ein Verzeichnis wie dieses:
+Befolgen Sie die [Übergaberichtlinie](QUICKSTART.md#review-and-share).
 
 ```text
 customer-blueprint-handoff/
   blueprint.toml
-  blueprint.pptx              # optional
-  command-used.redacted.txt
-  reviewer-notes.md           # optional
 ```
 
-`command-used.redacted.txt` darf die freigegebenen Optionen und
-Stichprobenbudgets dokumentieren, muss aber Anmeldedaten, Token, private
-Hostnamen und lokale Pfade entfernen. Bewahren Sie `audit.txt` lokal als
-zugriffsgeschützten Betriebsnachweis auf. Fügen Sie es nur für einen benannten
-Supportbedarf über einen freigegebenen sicheren Kanal bei. Nehmen Sie keine
-Passwortdateien, Tokendateien, privaten Schlüssel oder Datenbankprotokolle auf.
+Teilen Sie standardmäßig nur die geprüfte `blueprint.toml` oder das gepackte Bundle. Die Präsentation `blueprint.pptx` darf nur nach gesonderter Prüfung ihres Inhalts und ihrer Vertraulichkeitskennzeichnung sowie ausdrücklicher Freigabe gemäß Ihrer Organisationsrichtlinie beigefügt werden.
+
+Bewahren Sie Audits, Befehlsaufzeichnungen, Prüfnotizen und nicht freigegebene Präsentationen lokal mit Zugriffsschutz auf. Diese können Endpunkte, authentifizierte Identitäten, lokale Pfade, Zeitangaben und Manifest-IDs enthalten. Senden Sie Betriebsnachweise nur für einen konkreten Supportbedarf über einen genehmigten sicheren Kanal.
+
+Das Werkzeug erstellt `command-used.redacted.txt` nicht; dies ist eine optionale Aufzeichnung des Operators, kein regulärer Bestandteil der Übergabe. Legen Sie niemals Passwort- oder Tokendateien, Anonymisierungsschlüssel, private CA-Schlüssel, Kundendumps oder Datenbankprotokolle bei.

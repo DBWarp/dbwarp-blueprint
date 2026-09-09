@@ -705,3 +705,18 @@ fn dry_run_describes_but_does_not_read_username_sources() {
         );
     }
 }
+#[test]
+fn pg_partial_sampling_warning_cannot_accept_source_identifiers_or_driver_errors() {
+    let source = include_str!("../src/engine_pg_sampling.rs");
+    let warning = source
+        .split("fn record_pg_partial_sample_warning(")
+        .nth(1)
+        .unwrap()
+        .split("#[cfg(test)]")
+        .next()
+        .unwrap();
+    assert!(warning.contains("audit.record_warning(\"DBP1407W\", detail)"));
+    assert!(!warning.contains("qname"));
+    assert!(!warning.contains("fallback_error"));
+    assert!(!warning.contains("schema_name"));
+}

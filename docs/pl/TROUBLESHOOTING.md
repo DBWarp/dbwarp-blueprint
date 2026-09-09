@@ -9,6 +9,31 @@ Typowe awarie `dbwarp-blueprint` i zalecane dalsze działania.
 Awarie pod kontrolą operatora zaczynają się teraz od stabilnego kodu komunikatu `DBPnnnnS`, na przykład `DBP1001E`.
 Używaj tego kodu podczas przeszukiwania dokumentacji lub otwierania zgłoszenia do pomocy technicznej. Zobacz [Kody komunikatów operatorskich](MESSAGES.md).
 
+## Budowanie ze źródeł kończy się statusem 2 lub 3
+
+`build.sh` kończy się statusem 2, gdy zainstalowany `rustc` nie odpowiada
+wersji przypiętej w `rust-toolchain.toml`, a dostęp do sieci nie został jawnie
+zatwierdzony. Zainstaluj dokładnie tę wersję Rust albo — po sprawdzeniu granicy
+pobierania — pozwól skryptowi pobrać przypięty i zweryfikowany sumą kontrolną
+program rozruchowy:
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
+`build.sh` kończy się statusem 3, gdy ustawiono
+`DBWARP_BLUEPRINT_OFFLINE=1`, ale drzewo źródeł nie zawiera katalogu
+`vendor-crates/`. Zwykły checkout źródeł nie może spełnić wymagań tego trybu.
+Pobierz i zweryfikuj pakiet źródeł z zależnościami z tego samego wydania,
+rozpakuj go i uruchom budowanie w rozpakowanym drzewie:
+
+```bash
+DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh
+```
+
+Nie kopiuj zależności między wersjami. Pełne procedury online i offline opisuje
+[Budowanie ze źródeł](BUILD.md).
+
 ## Żądany język nie jest używany
 
 Podczas diagnozowania wyboru ustawień regionalnych użyj jawnej obsługiwanej wartości:

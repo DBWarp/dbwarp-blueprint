@@ -7,7 +7,7 @@
 Menschenlesbar. Diff-fähig. Forensisch prüfbar.
 
 > **Dieses Format reduziert das Risiko verdeckter Kanäle und direkter Offenlegung
-> durch ein begrenztes Schema, deterministische Bezeichner und dokumentierte
+> durch ein begrenztes Schema, mit geheimem Schlüssel erzeugte Bezeichner und dokumentierte
 > numerische Genauigkeit. Anonyme Graphstrukturen und exakte Opt-in-Felder können
 > weiterhin einen Workload identifizieren; prüfen Sie die Datei daher gemäß Ihrer
 > eigenen Datenklassifizierungsrichtlinie.**
@@ -24,16 +24,16 @@ Wörtlich, Byte für Byte:
 
 ```
 
-Die Leerzeile ist Teil des Vertrags. Das Werkzeug gibt exakt diesen Dateikopf und keine weiteren Kommentare aus. Dadurch lassen sich unerwartete Kommentarinhalte leicht erkennen; es ist keine Zusage, dass die verbleibenden strukturierten Felder kein unverwechselbares Schema oder keinen Abhängigkeitsgraphen identifizieren können.
+Die Leerzeile ist Teil des kanonischen Dateikopfs. Der Rust-Collector gibt exakt diesen Dateikopf und keine weiteren Kommentare aus. Der SQL-Fallback-Normalisierer behält ihn wörtlich bei und fügt anschließend genau einen festen Kommentar `Producer: blueprint_format.py SQL fallback` mit der Schlüsselquelle hinzu, damit Empfänger den Producer unterscheiden können. Dies ist keine Zusage, dass die verbleibenden strukturierten Felder kein unverwechselbares Schema oder keinen Abhängigkeitsgraphen identifizieren können.
 
 ## Felder auf oberster Ebene
 
 | Feld | Typ | Beschreibung |
 |---|---|---|
 | `schema_version` | int | Formatversion. Derzeit `6`; Versionen 1 bis 5 bleiben lesbar. |
-| `generated_at` | ISO-8601 string | UTC-Zeitstempel mit Sekundengenauigkeit ohne Nachkommastellen. Für byteidentische Reproduzierbarkeitsläufe über das CLI-Flag `--generated-at "2026-04-26T00:00:00Z"` **festschreibbar**. Das Auditprotokoll zeichnet bei gesetztem Flag stets `generated_at_pin: ...` auf, sodass die Festschreibung forensisch sichtbar ist. Nur mit diesem Flag kann der Wert festgeschrieben werden; es wird niemals eine Umgebungsvariable gelesen. Dies entspricht dem Vertrauensvertrag aus dem README, nach dem standardmäßig keine Umgebungsvariablen gelesen werden. |
-| `engine` | string | `"postgresql"`, `"mysql"` oder `"sqlserver"`. |
-| `engine_version` | string | Von der Datenbank-Engine zurückgegebene Versionszeichenfolge. |
+| `generated_at` | ISO-8601 string | UTC-Zeitstempel mit Sekundengenauigkeit ohne Nachkommastellen. Über das CLI-Flag `--generated-at "2026-04-26T00:00:00Z"` **festschreibbar**. Byteidentische Live-Erfassungen erfordern außerdem denselben geschützten `--anonymization-key-file`, Quellzustand, dieselben Optionen und denselben Producer. Das Auditprotokoll zeichnet bei gesetztem Flag stets `generated_at_pin: ...` auf, sodass die Festschreibung forensisch sichtbar ist. Keine Umgebungsvariable schreibt diesen Wert fest. |
+| `engine` | string | `"postgresql"`, `"mysql"`, `"sqlserver"`, `"parquet"` oder `"avro"`. |
+| `engine_version` | string | Schmale numerische Produktversion für versionsabhängige Erfassung und Generierung aus Live-Datenbanken; bei strukturierten Dateiquellen leer. Producer- und Distributionsbanner sind ausgeschlossen. |
 | `source_kind` | string | Einer der Werte `"production"`, `"staging"`, `"scrubbed-replica"`, `"synthetic"`. Vom Kunden angegeben. |
 | `length_metadata` | string | Legacy-Kompatibilitätskennzeichnung: `"hybrid-v2"`, `"exact"`, `"rounded"` oder `"not-captured"`. Neue Verbraucher müssen die drei nachfolgenden Felder verwenden. |
 | `declared_length_fidelity` | string | `"exact"` für deklarierte PostgreSQL-Zeichenkapazitäten und die standardmäßigen ausgewogenen/exakten MySQL-Modi, `"coarse-rounded-v1"` für strikten MySQL-Datenschutz oder `"not-captured"`, wenn nicht verfügbar. |
@@ -41,11 +41,11 @@ Die Leerzeile ist Teil des Vertrags. Das Werkzeug gibt exakt diesen Dateikopf un
 | `observed_length_fidelity` | string | Standardmäßig `"relative-rounded-v2"`, wenn beprobt, `"exact"` im exakten Modus, `"coarse-rounded-v1"` im strikten Modus oder `"not-sampled"`. Die Stichprobenabdeckung bleibt eine separate Anforderung je Spalte. |
 | `[totals]` | inline table | Aggregierte Anzahlen (siehe unten). |
 | `[network]` | table | Optionaler Nachweis für Client-zu-Datenbank-Verbindung und Abfrage-RTT. |
-| `[database_topology]` | table | Für Datenbankquellen mit Schema v6 erforderlich. Datenschutzgerechte Angaben zu Deployment, lokaler Rolle, Sichtbarkeit und Katalognachweisen. Bei strukturierten Dateien nicht vorhanden. |
+| `[database_topology]` | table | Für Datenbankquellen mit Schema v6 erforderlich. Begrenzte, namenfreie Angaben zu Deployment, lokaler Rolle, Sichtbarkeit und Katalognachweisen. Bei strukturierten Dateien nicht vorhanden. |
 | `[dataset_scope]` | table | Für jede Blueprint mit Schema v6 erforderlich. Gibt an, was die Summen abdecken und ob Tabellen-, Zeilen- und Byteabdeckung vollständig sind. |
 | `[tables.X]` | tables | Eine je Tabelle, mit anonymisierter ID. |
 | `[fk_edges]` | inline table | Fremdschlüsselgraph zwischen anonymisierten Tabellen. Optional. |
-| `[artifact_inventory]` | table | Datenschutzgerechte Anzahlen von Nicht-Tabellenobjekten, optionaler anonymer Abhängigkeitsgraph, externe Voraussetzungen und optionale begrenzte Sprachanalyse. Nur für Datenbankquellen. |
+| `[artifact_inventory]` | table | Begrenzte, namenfreie Anzahlen von Nicht-Tabellenobjekten, optionaler anonymer Abhängigkeitsgraph, externe Voraussetzungen und optionale begrenzte Sprachanalyse. Nur für Datenbankquellen. |
 
 ## `[totals]`
 
@@ -168,7 +168,7 @@ Vergleichsläufe hinweg erhalten.
 | `counted_in_totals` | bool | Schema v6. Nicht vorhanden bedeutet Einbeziehung in alle Gesamtsummen. `external` erfordert explizites `false`; die Tabelle wird dadurch aus `table_count`, `row_count`, `table_bytes` und `index_bytes` ausgeschlossen. Kein anderer expliziter Wert ist kanonisch. |
 | `check_count` | int | Optionale exakte strukturelle Anzahl von CHECK-Constraints in Schema v6. Nicht vorhanden bedeutet unbekannt; `0` bedeutet, dass der relevante Katalog keine gefunden hat. |
 | `has_clustered_index` | bool | für PostgreSQL immer `false` |
-| `stats_freshness` | string | `"fresh"` / `"stale"` / `"never_analyzed"` (PG); leer beim SQL-Fallback |
+| `stats_freshness` | string | `"fresh"` / `"stale"` / `"never_analyzed"` für PostgreSQL, abgeleitet aus den Analysezeitstempeln in `pg_stat_all_tables`; leer für MySQL, SQL Server, strukturierte Dateien und SQL-Fallback-Pfade, die die Statistikaktualität ohne weitergehende Zugriffsrechte nicht feststellen können. MySQL `UPDATE_TIME` wird bewusst nicht verwendet, da es Änderungen an den Quelldaten beschreibt, nicht den Zeitpunkt von `ANALYZE TABLE`. |
 | `[tables.<id>.cols.<cid>]` | sub-tables | eine je Spalte |
 | `[tables.<id>.idxs.<iid>]` | sub-tables | eine je Index |
 | `[tables.<id>.compression]` | sub-table | nur bei Tier 2 |
@@ -191,14 +191,14 @@ Der Bezeichner lautet `col-N`, wobei `N` die natürliche Attributreihenfolge der
 | `hidden`, `masked`, `encrypted`, `sparse` | bool | Optionale Katalogbeobachtungen in Schema v6. Nicht vorhanden bedeutet unbekannt; explizites `false` bedeutet, dass der Katalog die Eigenschaft als nicht vorhanden bestätigt hat. |
 | `has_check` | bool | Optionale Beobachtung eines einspaltigen CHECK in Schema v6. Jedes explizite `true` wird durch `check_count` der Tabelle abgedeckt. |
 | `null_fraction` | float | Optionaler beobachteter NULL-Anteil von `0.0` bis `1.0`. Nur das gerundete Aggregat wird beibehalten; es wird keine NULL-Bitmap gespeichert. |
-| `native_type` | string | Optionaler bereinigter Engine-Basistyp wie `varchar` oder `longtext`; keine Bezeichner, Enum-Mitglieder, Standardwerte oder Ausdrücke. Wird derzeit von der korrigierten MySQL-Erfassung ausgegeben. |
+| `native_type` | string | Optionaler bereinigter Engine-Basistyp wie `varchar` oder `longtext`; keine Bezeichner, Enum-Mitglieder, Standardwerte oder Ausdrücke. Wird von den nativen MySQL- und SQL-Server-Collectors ausgegeben. |
 | `declared_max_chars` | int | Optional deklarierte Zeichenkapazität. Exakt für Katalogwerte von PostgreSQL `character`/`character varying` und in den standardmäßigen ausgewogenen/exakten MySQL-Modi; nur bei MySQL mit `--length-fidelity strict` grob gerundet. |
 | `declared_max_bytes` | int | Optional deklarierte Bytekapazität. Exakt in den standardmäßigen ausgewogenen/exakten MySQL-Modi; nur bei `--length-fidelity strict` grob gerundet. |
 | `numeric_precision`, `numeric_scale`, `datetime_precision` | int | Optional von der Engine deklarierte skalare Genauigkeit. |
-| `charset`, `collation` | string | Optionale bereinigte MySQL-Zeichenmetadaten. Hierbei handelt es sich um Katalognamen, niemals um Kundenbezeichner oder -werte. |
+| `charset`, `collation` | string | Optionale bereinigte Zeichenmetadaten. MySQL gibt die Katalognamen für Zeichensatz und Sortierung aus. SQL Server gibt `utf-16le` für `nchar`/`nvarchar`/`ntext`, `utf-8` für Codepage 65001, `windows-N` für Windows-Codepages 1250–1258 oder `code-page-N` für eine andere positive Katalog-Codepage sowie den Katalognamen der Sortierung aus. Dies sind Kodierungsfakten und Katalognamen, niemals Kundenbezeichner oder -werte. |
 | `len_avg` | int | Beprobte durchschnittliche Byteanzahl variabler Werte. Die standardmäßigen relativen Buckets haben einen maximalen Fehler von ungefähr 3,2 % und bewahren Werte bis 32 Byte exakt; exakt mit `--length-fidelity exact --yes`; grobe Rundung auf die nächsten 10 nur im strikten Modus. 0 = feste Länge oder nicht gemessen. |
 | `len_p95` | int | Beprobtes 95. Perzentil mit denselben standardmäßigen relativen Buckets; exakt mit `--length-fidelity exact --yes`; grobe Rundung auf die nächsten 100 nur im strikten Modus. 0 = nicht gemessen. |
-| `style` | string | Nur Tier 2. Einer der Werte `"json"`, `"xml"`, `"natural-text"`, `"base64"`, `"hex"`, `"numeric-text"`, `"mixed"`; leer, wenn nicht klassifiziert. |
+| `style` | string | Nur Tier 2. Einer der Werte `"json"`, `"xml"`, `"natural-text"`, `"base64"`, `"hex"`, `"numeric-text"`, `"mixed"` oder `"precompressed"`; leer, wenn nicht klassifiziert. `"precompressed"` wird nur für eine materiell byte-dominierende Stichprobe binärer Werte mit erkannten Standardsignaturen von Containern ausgegeben. Die erkannte Containerfamilie wird absichtlich nicht offengelegt. |
 | `magnitude_min`, `magnitude_max` | int | Optionale vorzeichenbehaftete Dezimalexponenten in Schema v6, welche die Größenordnung beprobter numerischer Nicht-NULL-Werte begrenzen. Sie werden zusammen mit `has_negative` ausgegeben; exakte Werte werden nie ausgegeben. |
 | `has_negative` | bool | Optionale Beobachtung des Vorzeichens in Schema v6; nur zusammen mit beiden Größenordnungsgrenzen ausgegeben. |
 | `time_span` | string | Optionaler beprobter Datums-/Zeitbereich in Schema v6: `intraday`, `days`, `weeks`, `months`, `years` oder `decades`. |
@@ -214,12 +214,18 @@ NDV- und Schiefestatistiken ab und verwirft die Fingerprints. Weder Werte noch
 Fingerprints werden serialisiert. Der Block enthält `measured`, `sample_rows`,
 `non_null_rows`, `observed_distinct_count`, `estimated_distinct_count`,
 `top_value_fraction`, `frequency_p50`, `frequency_p95`, `frequency_p99`,
-`frequency_max`, `sample_method`, `sampled_with_bias` und `bias_reason`.
+`frequency_max`, `sample_method`, `sample_layout`, `sampled_with_bias` und
+`bias_reason`. `sample_layout` ist eine optionale maschinenlesbare Enumeration.
+Der derzeit ausgegebene Wert ist `primary-key-range-windows`; fehlt das Feld,
+ist kein Ordnungsvertrag verfügbar. Verbraucher dürfen keine
+Generierungssemantik aus dem menschenlesbaren Feld `sample_method` ableiten.
 
 Anzahlen und Anteile werden, soweit erforderlich, datenschutzgerecht gerundet.
 Die Statistiken sollen Duplikatdichte, die Schiefe häufig auftretender Werte und
-endliche Wertebereiche in synthetischen Testdatensätzen nachbilden; aus ihnen
-lassen sich weder Quellwerte noch ihre fachliche Bedeutung rekonstruieren.
+endliche Wertebereiche in synthetischen Testdatensätzen nachbilden. Sie enthalten
+keine beprobten Werte, aber auffällige Verteilungen können einen Workload
+identifizieren; behandeln Sie sie nicht als unumkehrbar oder als Nachweis dafür,
+dass fachliche Bedeutung nicht aus externem Wissen abgeleitet werden kann.
 
 ### `[tables.<id>.cols.<cid>.compression]` (nur Tier 2)
 
@@ -246,10 +252,27 @@ sample_method = "column TABLESAMPLE SYSTEM(0.1) LIMIT N (text format)"
 sampled_with_bias = false
 ratio_zstd_3 = 8.4
 ratio_stddev = 0.25
-sample_encoding = "dbwarp-blueprint-rowframe-v1"
+sample_encoding = "blueprint-compression-probe-v2"
 ```
 
 Es werden keine beprobten Spaltenwerte in die Blueprint-Datei geschrieben.
+
+Für Binärspalten kann dieselbe begrenzte Tier-2-Stichprobe das grobe Profil
+`style = "precompressed"` ausgeben. Die Erkennung erfolgt nur an den Grenzen
+der Stichprobenwerte und verlangt eine materielle, byte-dominierende
+Beobachtung. Blueprint analysiert oder dekomprimiert den Wert nicht, bewahrt
+seine Signatur nicht auf und unterscheidet Bild-, Archiv-, komprimierte Medien-,
+verschlüsselte und zufällige Nutzdaten über diese eine verlässliche
+Kennzeichnung hinaus nicht. Text- und Base64-Kodierungen werden weiterhin nach
+ihrem Textstil klassifiziert und nicht als vorkomprimierte Binärcontainer
+behandelt.
+
+Der deterministische Generator bildet dieses grobe Profil auf einen neutralen,
+gültigen ZIP-Container mit einem gespeicherten hochentropischen Mitglied ab.
+Dadurch bleibt das betriebliche Komprimierungsverhalten erhalten, ohne zu
+behaupten, dass die Quelle ZIP-Dateien enthielt, oder offenzulegen, ob der
+erkannte Quellwert ein Bild-, Archiv- oder Mediencontainer war. Die gewöhnliche
+Binärdatengenerierung bleibt unverändert.
 
 ## `[tables.<id>.idxs.<iid>]`
 
@@ -271,7 +294,7 @@ Der Bezeichner lautet `idx-N`, wobei `N` die bei 1 beginnende Ordnungszahl des I
 
 ## `[tables.<id>.compression]` und `[tables.<id>.cols.<cid>.compression]` (nur Tier 2)
 
-Nur vorhanden, wenn die Datei mit `--measure-compression --yes` erzeugt wurde. Der Block auf Tabellenebene misst den vollständigen beprobten Zeilenstrom und bleibt das maßgebliche Verhältnis für Schätzungen der vollständigen Tabellenübertragung. Blöcke auf Spaltenebene werden aus denselben beprobten Zeilen spaltenweise projiziert und sollen nachgelagerten Generatoren synthetischer Testdatensätze dabei helfen, die Entropie je Spalte abzustimmen, ohne Kundenwerte zu sehen. Sie lösen keine zusätzlichen Datenbanklesevorgänge aus.
+Nur vorhanden, wenn die Datei mit `--measure-compression --yes` erzeugt wurde. Der Block auf Tabellenebene misst eine neutrale spaltenorientierte Projektion der vollständigen Stichprobe und bleibt das maßgebliche Verhältnis für Schätzungen der vollständigen Tabellenübertragung. Blöcke auf Spaltenebene werden aus denselben beprobten Zeilen spaltenweise projiziert und sollen nachgelagerten Generatoren synthetischer Testdatensätze dabei helfen, die Entropie je Spalte abzustimmen, ohne Kundenwerte zu sehen. Sie lösen keine zusätzlichen Datenbanklesevorgänge aus.
 
 | Feld | Typ | Genauigkeit |
 |---|---|---|
@@ -281,16 +304,16 @@ Nur vorhanden, wenn die Datei mit `--measure-compression --yes` erzeugt wurde. D
 | `sample_method` | string | Engine-spezifische Beschreibung der begrenzten Stichprobe, beispielsweise `"TABLESAMPLE SYSTEM(0.1) LIMIT N"`, `"LIMIT N (fallback after empty TABLESAMPLE)"` oder `"SELECT TOP N"` |
 | `sampled_with_bias` | bool | true, wenn die Stichprobe nicht gleichmäßig ist, beispielsweise bei einem reinen LIMIT-Fallback |
 | `bias_reason` | string | leer, wenn `sampled_with_bias = false`; andernfalls eine Kennzeichnung wie `"unordered_limit_after_empty_TABLESAMPLE"` |
-| `ratio_zstd_3` | float | auf die nächsten **0.05** gerundet, zstd Stufe 3 (Produktionsstandard). Gemessen an Bytes, die mit `sample_encoding` kodiert wurden. |
+| `ratio_zstd_3` | float | auf die nächsten **0.05** gerundet, gemäß der zstd-Messrichtlinie des Vertrags für Stufe 3. Gemessen an Bytes, die mit `sample_encoding` kodiert wurden. |
 | `ratio_zstd_19` | float | veraltetes zstd-Stufe-19-Verhältnis aus älteren Erfassungen; das Werkzeug misst und emittiert es nicht mehr |
-| `ratio_stddev` | float | auf die nächsten **0.05** gerundet, Standardabweichung der Stufe-3-Verhältnisse über zeilenbündige 64-KiB-Blöcke der Probe. Projektionsblöcke auf Spaltenebene geben derzeit `0.0` aus, weil sie beratende Entropiehinweise und kein Varianzmodell darstellen. |
-| `sample_encoding` | string | Bezeichner der Byte-Kodierung, in der die Stichprobe mit zstd komprimiert wurde. Aktueller Wert: `"dbwarp-blueprint-rowframe-v1"`. Der dbwarp-Estimator MUSS diese Zeichenfolge validieren, bevor er das Verhältnis verwendet. Unterschiedliche Kodierungen erzeugen für dieselben logischen Daten unterschiedliche Verhältnisse und sind NICHT austauschbar. Ältere Blueprint-Dateien enthalten dieses Feld möglicherweise nicht; Estimatoren sollten gemessene Verhältnisse nur verwenden, wenn die Kodierungskennzeichnung vorhanden und bekannt ist. |
+| `ratio_stddev` | float | auf die nächsten **0.05** gerundet, Standardabweichung der Stufe-3-Verhältnisse über begrenzte Tabellen-Probe-Frames. Projektionsblöcke auf Spaltenebene geben derzeit `0.0` aus, weil sie beratende Entropiehinweise und kein Varianzmodell darstellen. |
+| `sample_encoding` | string | Bezeichner der Byte-Kodierung und Richtlinie für die Komprimierungssitzung, die für die Messung verwendet wurden. Live-Tabellenblöcke von PostgreSQL verwenden derzeit `"blueprint-columnar-transfer-probe-v2"`. MySQL und SQL Server verwenden `"blueprint-columnar-transfer-probe-v3"`, das zusätzlich an 256-KiB-Probe-Blockgrenzen einen Flush ausführt. SQL Server behält für `nvarchar`/`nchar`/`ntext` die native UTF-16LE-Byteverteilung bei; `varchar`/`char`/`text` behalten ihre beprobte Bytebreite bei, und `charset` gibt die Katalog-Codepage an, die ein Verbraucher benötigt. V1 bleibt ein reiner Eingabekompatibilitätsvertrag. Spaltenblöcke verwenden `"blueprint-compression-probe-v2"`. Der dbwarp-Estimator MUSS diese Zeichenfolge validieren, bevor er das Verhältnis verwendet; unterschiedliche Kodierungen oder Sitzungsrichtlinien sind NICHT austauschbar. Ältere Blueprint-Dateien enthalten dieses Feld möglicherweise nicht; Estimatoren sollten gemessene Verhältnisse nur verwenden, wenn die Kodierungskennzeichnung vorhanden und bekannt ist. |
 
 Der dbwarp-Estimator sollte beim Erstellen synthetischer Testdatensätze erkannte Komprimierungsblöcke je Spalte bevorzugen, danach auf die Komprimierung auf Tabellenebene und schließlich auf Typ-/Stilvorgaben zurückfallen.
 
-### Byte-Kodierung `dbwarp-blueprint-rowframe-v1`
+### Byte-Kodierung `blueprint-compression-probe-v2`
 
-Der Tier-2-Sampler hängt Zeilen oder beprobte Spaltenwerte in diesem Format an einen Puffer im Arbeitsspeicher an und führt darauf zstd mit Stufe 3 aus. Der Puffer wird verworfen; nur die resultierenden gerundeten Verhältnisse werden in die Blueprint-Datei ausgegeben.
+Der Tier-2-Sampler hängt Zeilen oder beprobte Spaltenwerte in diesem Format an einen Puffer im Arbeitsspeicher an und führt darauf zstd mit Stufe 3 aus. Der Puffer wird verworfen. Der Blueprint behält ausschließlich die dokumentierten aggregierten Felder für Komprimierung, NULL-Dichte, Kardinalität/Häufigkeit, Länge und Stil.
 
 ```text
 Buffer = (Column)*       # flat stream; rows are NOT delimited
@@ -302,7 +325,8 @@ Column:
     length bytes payload
 ```
 
-Typkennzeichnungen sind Teil des Kodierungsvertrags und werden nicht neu nummeriert, ohne das Suffix `-v2` zu erhöhen.
+Typkennzeichnungen sind Teil des Probe-Vertrags und werden nicht neu nummeriert,
+ohne einen neuen versionierten Probe-Bezeichner zu verwenden.
 
 | Kennzeichnung | Name | Verwendet für |
 |---|---|---|
@@ -320,6 +344,34 @@ Typkennzeichnungen sind Teil des Kodierungsvertrags und werden nicht neu nummeri
 | 0x10 | BinaryRaw | `bytea`-, `varbinary`-, `image`- oder Blob-Bytes |
 | 0xFE | UnknownText | von der Datenbank bereitgestellte textuelle Fallback-Darstellung |
 
+### Byte-Kodierung `blueprint-columnar-transfer-probe-v1`, `v2` und `v3`
+
+Live-Datenbankverhältnisse auf Tabellenebene transformieren dieselben begrenzten
+V2-Spaltenstichproben in neutrale Frames mit jeweils 1.000 Zeilen. Jeder Frame
+besitzt einen versionierten Probe-Header und für jede Spalte eine Ordnungszahl,
+eine Typkennzeichnung, eine Vier-Byte-Länge je Zeile und anschließend die
+spaltenweise zusammenhängenden Nutzdatenbytes. Eine Länge von `0xffffffff`
+stellt NULL dar. Die Bytedarstellung ist in allen drei Versionen gleich. V1
+komprimierte die verbundene Framefolge als eine zstd-Operation der Stufe 3 mit
+angekündigter Eingabelänge. V2 führt die Frames durch einen persistenten
+zstd-Kontext der Stufe 3 und führt nach jedem Frame einen Flush aus. V3 behält
+diesen Kontext und die neutrale Zeilengruppendarstellung bei, führt aber
+zusätzlich an jeder 256-KiB-Probe-Kompressionsblockgrenze innerhalb einer
+Zeilengruppe einen Flush aus. MySQL und SQL Server verwenden V3; V2 bleibt die
+aktuelle PostgreSQL-Messung. SQL-Server-Unicode-Text wird als UTF-16LE gemessen.
+Schmaler SQL-Server-Text
+behält die Quellbytebreite bei und zeichnet einen geschlossenen, bereinigten
+Zeichensatz aus der Sortierungs-Codepage auf. Die äußeren Zeilengruppenausgaben
+liefern die Beobachtungen für `ratio_stddev`. Versionierte Kennzeichnungen
+verhindern, dass eine Framing- oder Flush-Richtlinie stillschweigend als eine
+andere interpretiert wird.
+
+Diese Darstellung modelliert generische komprimierungsrelevante Eigenschaften
+einer spaltenorientierten Massenübertragung. Sie ist weder eine Aufzeichnung
+eines Datenbankprotokolls noch ein Migrations-Wire-Format oder ein kodierter
+Datenexport. Stichprobenbytes verbleiben nur im Speicher und werden verworfen,
+sobald die Aggregatmessungen abgeleitet sind.
+
 ### Genauigkeitsgrenzen
 
 `ratio_zstd_3` beschreibt das angegebene `sample_encoding`; es ist keine Erfassung von Datenbankprotokoll- oder Migrations-Wire-Bytes. Die öffentliche automatisierte Testsuite validiert deterministische Codierung, begrenzte Stichproben und Serialisierung, beansprucht aber keinen universellen prozentualen Fehler über alle Engines und Extraktionspfade hinweg.
@@ -331,7 +383,7 @@ Bevor Sie das Verhältnis für eine wichtige Kapazitätsentscheidung verwenden, 
 Optional. Inline-Tabelle, in der jeder Schlüssel eine ID `table-NNN` ist, die
 auf eine Liste von Kanten abbildet. Schema v3 bewahrt Elternordnungszahlen,
 referenzielle Aktionen, den Übereinstimmungsmodus, Aufschiebbarkeit,
-Validierungs-/Vertrauensstatus sowie eine optionale datenschutzgerechte
+Validierungs-/Vertrauensstatus sowie eine optionale begrenzte, namenfreie
 Beziehungszusammenfassung. Kanten werden zuerst nach Ziel und danach nach
 Spaltenliste sortiert.
 
@@ -407,7 +459,7 @@ Betriebsanleitung und Engine-Abdeckung.
 | Reihenfolge der Bezeichner | Domänengetrenntes HMAC-SHA256 mit einem geheimen prozesslokalen Schlüssel verhindert Offline-Prüfungen möglicher Namen. Verwenden Sie einen kundenseitig verwahrten Schlüssel nur, wenn stabile Kennzeichnungen über mehrere Läufe erforderlich sind. |
 | Niederwertige numerische Bits | Statistiken werden standardmäßig auf die dokumentierte Genauigkeit gerundet. Der Modus für exakte Längen ist ausdrücklich, zustimmungspflichtig, wird im Auditprotokoll aufgezeichnet und muss als sensiblere Metadaten behandelt werden. |
 | Zeitstempel unter einer Sekunde | Ein UTC-Zeitstempel am Anfang, nur mit Sekundengenauigkeit |
-| TOML-Formatierung | Kanonisch: alphabetische Schlüssel, feste Einrückung, keine eingefügten Kommentare |
+| TOML-Formatierung | Kanonisch: alphabetische Schlüssel, feste Einrückung und nur die festen Header-/Producer-Kommentare; keine aus Eingaben abgeleiteten Kommentare |
 | Stichprobenzufall | Die Stichprobe verwendet feste Seeds (deterministisches `TABLESAMPLE SYSTEM` von PG). Unabhängig davon bezieht die Anonymisierung der Bezeichner absichtlich einen geheimen Schlüssel aus dem CSPRNG des Betriebssystems, sofern der Kunde keinen Schlüssel bereitstellt. |
 | Nicht verwendete Felder | Jedes Feld ist oben dokumentiert; es gibt keine Felder „metadata“, „comment“ oder „reserved“, die unbegrenzte Daten enthalten könnten. |
 | Artefakt-Quelltext und externes Material | Definitionen sind vorübergehend und werden nach begrenzter Analyse genullt; Namen, SQL-Text, Endpunkte, Providerzeichenfolgen, Anmeldedaten, Schlüssel, Zertifikate, Paketnamen und Binärdateien besitzen kein serialisiertes Feld |
@@ -432,24 +484,28 @@ Upgrade-Meldung ablehnen, statt Felder stillschweigend zu verwerfen.
 - Unterschiede sind leichter zu erkennen: ein Schlüssel je Zeile, zusammenhängende Untertabellen anhand von Bezeichnern.
 - Der Kunde kann die Datei von Hand bearbeiten, wenn er vor der Weitergabe ein bestimmtes Feld entfernen möchte.
 
-JSON wird im SQL-Fallback-Pfad als **Zwischenformat** verwendet (`sql/blueprint.pg.sql` erzeugt JSON; `blueprint_format.py` normalisiert zu TOML). Die letztendliche, mit dbwarp geteilte Datei ist immer TOML.
+JSON wird im SQL-Fallback-Pfad als **Zwischenformat** verwendet. Jedes Skript `sql/blueprint.*.sql` erzeugt JSON, das `blueprint_format.py` zu TOML normalisiert. Das Zwischen-JSON enthält echte Quellbezeichner; MySQL kann über `COLUMN_TYPE` außerdem enum/set-Deklarationen enthalten. Es muss daher geschützt innerhalb der Quellumgebung bleiben. Der Normalisierer verwendet standardmäßig einen neuen geheimen Schlüssel und akzeptiert für genehmigte Vergleichsläufe denselben geschützten `--anonymization-key-file`-Vertrag. Die für eine Weitergabe an DBWarp geprüfte Enddatei ist immer TOML.
 
 ## Herkunftserweiterungen für strukturierte Dateien
 
-Schemaversion 3 und neuer kann die folgenden begrenzten Felder ausgeben.
+Wenn `engine` oder `source_kind` `"parquet"` oder `"avro"` ist, kann
+Schemaversion 3 und neuer zusätzlich die folgenden begrenzten Felder ausgeben.
+Ältere Leser müssen Felder ignorieren, die sie nicht verstehen; neuere Leser
+müssen die Unterscheidung zwischen der Speicherung in der Quelldatei und
+begrenzten Messungen an dekodierten Stichproben bewahren.
 
 Blueprints strukturierter Dateien verwenden dieselben anonymisierten Bezeichner
-wie Datenbank-Blueprints: `table-NNN` in deterministischer Eingabereihenfolge und `col-N`
+wie Datenbank-Blueprints: `table-NNN` in mit geheimem Schlüssel erzeugter Reihenfolge und `col-N`
 in Schemaordinalreihenfolge. Dateistämme, Parquet-Pfade, Avro-Feldnamen und das
 Manifestfeld `logical_table` werden nicht als Tabellen- oder Spaltenbezeichner
 ausgegeben.
 
-Wenn `engine` oder `source_kind` `"parquet"` oder `"avro"` ist, bezeichnet
+Auf Tabellenebene bezeichnet
 `table_bytes` die logische Größenannahme für den Transfer, `storage_bytes`
 dagegen die tatsächliche Größe des Quellobjekts. Parquet ohne dekodierte
 Stichprobe verwendet unkomprimierte Spalten-Chunk-Bytes für `table_bytes`; eine
 optionale dekodierte Stichprobe ersetzt sie durch hochgerechnete
-`dbwarp-blueprint-rowframe-v1`-Bytes. Avro leitet den Wert aus seinem vollständig
+`blueprint-compression-probe-v2`-Bytes. Avro leitet den Wert aus seinem vollständig
 dekodierten Durchlauf ab. `source_partitions`, `row_group_count` und
 `source_codec` dokumentieren Dateiaufbau und Planungsherkunft. Mehrdatei-Datensätze
 aggregieren diese Werte. `row_group_count` gilt für Parquet; bei einem einzelnen
@@ -457,15 +513,18 @@ Eingabeobjekt ist `source_partitions` gleich `1`.
 
 Auf Spaltenebene ist `null_fraction` ein beobachteter Wert von `0.0` bis `1.0`.
 `length_sample_rows` und `length_sample_method` beschreiben die Herkunft von
-`len_avg` und `len_p95`. `source_semantics` speichert begrenzte Hinweise wie
-`"repeated-leaf"`, `"nested-json"` oder `"multi-type-union"`. Dezimalpräzision,
-Zeitstempelpräzision und UTC/lokale Semantik, UUID sowie Binärgrößen werden in
-den vorhandenen skalaren Feldern und `native_type` geführt.
+`len_avg` und `len_p95`. `source_semantics` hält begrenzte
+Kompatibilitätsfakten wie `"repeated-leaf"`, `"nested-json"` oder
+`"multi-type-union"` fest; es enthält niemals einen Kundenfeldnamen oder
+-wert. Dezimalpräzision und -skala,
+Zeitstempelpräzision und UTC/lokale Semantik, UUID sowie Metadaten für binäre
+Werte fester Größe werden in den vorhandenen bereinigten skalaren Feldern und
+`native_type` geführt.
 
 Auf Tabellenebene vergleicht `ratio_storage` `table_bytes` mit den tatsächlichen
 Quellobjekt-Bytes. Auf Parquet-Spaltenebene vergleicht der Wert unkomprimierte
 und komprimierte Spalten-Chunk-Bytes aus dem Footer. Beides sind Signale für die
-Dateiplanung, keine DBWarp-Übertragungsschätzungen. `ratio_zstd_3` und
+Dateiplanung, keine Schätzungen aus dekodierten Stichproben. `ratio_zstd_3` und
 `ratio_zstd_19` sind nur dann gültige Eingaben zur Übertragungskalibrierung, wenn `sample_encoding` den
-erkannten Wert `"dbwarp-blueprint-rowframe-v1"` besitzt. Parquet-Footer- und
+erkannten Wert `"blueprint-compression-probe-v2"` besitzt. Parquet-Footer- und
 Avro-Containerquoten dürfen niemals in diese zstd-Felder kopiert werden.

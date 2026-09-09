@@ -130,6 +130,7 @@ chmod 600 "$TOKEN_FILE"
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out catalog-only.blueprint.toml \
@@ -346,21 +347,14 @@ transfer it only through the approved channel.
 
 ## Recipe: Batch Handoff Package
 
-Create a directory like this:
+Follow the [handoff policy](QUICKSTART.md#review-and-share). Keep the working
+manifest, audits, command records, and reviewer notes local; create this
+separate directory from the reviewed packed Blueprint only.
 
 ```text
 customer-blueprint-handoff/
   customer-blueprint-bundle.packed.toml
-  customer.batch.toml.redacted
-  reviewer-notes.md       # optional
 ```
-
-Build this separate directory from reviewed copies. Keep the working
-`bundle.toml`, `blueprints/`, `audits/`, and any `errors.txt` local and
-access-controlled. `customer.batch.toml.redacted` should show only approved
-source IDs, kinds, tags, and dataset modes. Do not include secrets, private
-hostnames, password files, token files, private keys, database logs, or decoded
-row samples.
 
 ## Recipe: Offline Deck From Reviewed TOML
 
@@ -397,18 +391,15 @@ byte-identical when its timestamp and language are unchanged.
 
 ## Recipe: Handoff Package for DBWarp
 
-Create a directory like this:
+Follow the [handoff policy](QUICKSTART.md#review-and-share). The default
+package contains only the approved Blueprint:
 
 ```text
 customer-blueprint-handoff/
   blueprint.toml
-  blueprint.pptx              # optional
-  command-used.redacted.txt
-  reviewer-notes.md           # optional
 ```
 
-`command-used.redacted.txt` may record the approved flags and sampling budgets,
-but remove credentials, tokens, private hostnames, and local paths. Keep
-`audit.txt` locally as access-controlled operational evidence. Include it only
-for a named support need through an approved secure channel. Do not include
-password files, token files, private keys, or database logs.
+Add `blueprint.pptx` only after separate review and approval. Keep audits,
+command records, reviewer notes, and credential/key material out of the
+handoff directory; operational evidence is shared only for a specific support
+need through an approved secure channel.

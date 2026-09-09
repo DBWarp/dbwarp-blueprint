@@ -6,12 +6,144 @@
 
 use std::time::Instant;
 
+use clap::ValueEnum;
+
 use crate::audit::AuditLog;
 
-/// Hard per-table ceiling for live row-sample payload. Queries project
-/// variable-width cells through server-side truncation before the driver sees
-/// them, and the local encoder independently refuses to exceed this bound.
+/// Controls how length metadata is anonymized without conflating schema
+/// fidelity with sampled-value fidelity.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum LengthFidelity {
+    /// Preserve schema capacities and index prefixes exactly, while placing
+    /// observed value lengths in bounded relative-error buckets.
+    #[default]
+    Balanced,
+    /// Preserve the original coarse privacy bucketing for all lengths.
+    Strict,
+    /// Preserve both structural and observed lengths exactly.
+    Exact,
+}
+
+impl LengthFidelity {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Balanced => "balanced",
+            Self::Strict => "strict",
+            Self::Exact => "exact",
+        }
+    }
+
+    pub fn preserves_structure(self) -> bool {
+        !matches!(self, Self::Strict)
+    }
+
+    pub fn legacy_marker(self) -> &'static str {
+        match self {
+            Self::Balanced => "hybrid-v2",
+            Self::Strict => "rounded",
+            Self::Exact => "exact",
+        }
+    }
+
+    pub fn observed_marker(self, measured: bool) -> &'static str {
+        if !measured {
+            return "not-sampled";
+        }
+        match self {
+            Self::Balanced => "relative-rounded-v2",
+            Self::Strict => "coarse-rounded-v1",
+            Self::Exact => "exact",
+        }
+    }
+}
+
+pub fn sampled_column_length_stats(
+    mut lengths: Vec<u64>,
+    length_fidelity: LengthFidelity,
+) -> Option<(u64, u64)> {
+    if lengths.is_empty() {
+        return None;
+    }
+    let average = lengths.iter().copied().sum::<u64>() / lengths.len() as u64;
+    lengths.sort_unstable();
+    let p95_index = ((lengths.len() * 95).div_ceil(100)).saturating_sub(1);
+    let p95 = lengths[p95_index];
+    Some(match length_fidelity {
+        LengthFidelity::Exact => (average, p95),
+        LengthFidelity::Balanced => {
+            let rounded_average =
+                crate::format::round_len_relative(average).max(u64::from(average > 0));
+            let rounded_p95 = crate::format::round_len_relative(p95).max(rounded_average);
+            (rounded_average, rounded_p95)
+        }
+        LengthFidelity::Strict => {
+            let rounded_average = crate::format::round_len_avg(average).max(u64::from(average > 0));
+            let rounded_p95 = crate::format::round_len_p95(p95).max(rounded_average);
+            (rounded_average, rounded_p95)
+        }
+    })
+}
+
+/// Per-table budget for decoded sample-value payload, not transport bytes or
+/// process memory. Queries truncate variable-width cells on the server; the
+/// local encoder independently refuses to exceed this bound. Protocol encoding,
+/// original-length metadata, retries and driver buffers add overhead.
 pub const MAX_LIVE_TABLE_SAMPLE_BYTES: usize = 16 * 1024 * 1024;
+
+/// Plan server-side payload limits, including on retries. Observed lengths are
+/// hints, not permission to exceed the ceiling: a single value may be larger
+/// than the entire budget, and another query may encounter different values.
+/// For character projections callers supply worst-case encoded byte widths.
+pub(crate) fn bounded_projection_plan(
+    requested_rows: u64,
+    columns: &[dbwarp_blueprint_core::TransferProbeColumnShape],
+    prefer_complete_rows: bool,
+) -> anyhow::Result<dbwarp_blueprint_core::TransferProbeSamplePlan> {
+    use dbwarp_blueprint_core::{
+        TransferProbeColumnShape, TRANSFER_PROBE_CELL_OVERHEAD_BYTES,
+        TRANSFER_PROBE_MAX_SAMPLE_BYTES,
+    };
+    let overhead = (columns.len() as u64).saturating_mul(TRANSFER_PROBE_CELL_OVERHEAD_BYTES);
+    let ceiling = TRANSFER_PROBE_MAX_SAMPLE_BYTES as u64;
+    let desired_row_bytes = columns.iter().fold(overhead, |total, column| {
+        total.saturating_add(match column {
+            TransferProbeColumnShape::Fixed { payload_reserve } => (*payload_reserve).max(1),
+            TransferProbeColumnShape::Variable { declared_max_bytes } => {
+                (*declared_max_bytes).max(1)
+            }
+        })
+    });
+    let rows = if prefer_complete_rows {
+        requested_rows
+            .max(1)
+            .min((ceiling / desired_row_bytes.max(1)).max(1))
+    } else {
+        requested_rows
+    };
+    let plan = dbwarp_blueprint_core::plan_transfer_probe_sample(rows, columns)?;
+    let row_bytes =
+        columns
+            .iter()
+            .zip(&plan.variable_byte_limits)
+            .fold(overhead, |total, (column, limit)| {
+                total.saturating_add(match column {
+                    TransferProbeColumnShape::Fixed { payload_reserve } => {
+                        (*payload_reserve).max(1)
+                    }
+                    TransferProbeColumnShape::Variable { .. } => *limit,
+                })
+            });
+    anyhow::ensure!(
+        row_bytes.saturating_mul(plan.sample_rows) <= ceiling,
+        "sample projection cannot fit a single row within the payload budget"
+    );
+    Ok(plan)
+}
+
+pub(crate) fn record_sample_prefix_bias(method: &mut String, bias: &mut String) {
+    method.push_str("; bounded prefixes; original lengths retained");
+    bias.push_str("+sample_byte_budget_prefix");
+}
 
 const SAMPLE_CELL_OVERHEAD_BYTES: usize = 32;
 
@@ -140,6 +272,48 @@ pub(crate) fn accumulate_table_totals(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_projection_rejects_an_impossible_fixed_row() {
+        use dbwarp_blueprint_core::TransferProbeColumnShape;
+        let columns = [TransferProbeColumnShape::Fixed {
+            payload_reserve: u64::MAX,
+        }];
+        assert!(bounded_projection_plan(32, &columns, true).is_err());
+        assert!(bounded_projection_plan(32, &columns, false).is_err());
+    }
+
+    #[test]
+    fn bounded_projection_caps_mixed_payload_and_preserves_narrow_values() {
+        use dbwarp_blueprint_core::TransferProbeColumnShape::{Fixed, Variable};
+        let columns = [
+            Fixed {
+                payload_reserve: 64,
+            },
+            Variable {
+                declared_max_bytes: 16,
+            },
+            Variable {
+                declared_max_bytes: u64::MAX,
+            },
+        ];
+        let plan = bounded_projection_plan(32, &columns, true).unwrap();
+        assert_eq!(plan.sample_rows, 1);
+        assert_eq!(plan.variable_byte_limits[1], 16);
+        assert_eq!(
+            plan.variable_byte_limits.iter().sum::<u64>() + 64 + 3 * 6,
+            MAX_LIVE_TABLE_SAMPLE_BYTES as u64
+        );
+    }
+
+    #[test]
+    fn bounded_prefix_provenance_preserves_existing_sampling_bias() {
+        let mut method = "bounded sample".to_string();
+        let mut bias = "natural_order".to_string();
+        record_sample_prefix_bias(&mut method, &mut bias);
+        assert_eq!(bias, "natural_order+sample_byte_budget_prefix");
+        assert!(method.contains("bounded prefixes; original lengths retained"));
+    }
 
     #[test]
     fn percent_decoding_is_deterministic_and_preserves_invalid_escapes() {

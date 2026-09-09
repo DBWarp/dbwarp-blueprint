@@ -19,7 +19,9 @@ Utilisez un compte dédié à faibles privilèges, autorisé à lire les métado
 Propriétés recommandées :
 
 - aucun privilège d'écriture ;
-- aucun privilège DDL ;
+- aucun privilège DDL, sauf si la revue approuve explicitement la capture
+  MySQL améliorée, dont les privilèges de métadonnées `TRIGGER` et `EVENT`
+  permettent des opérations DDL ;
 - aucun rôle de superutilisateur/administrateur ;
 - accès en lecture limité à la base de données évaluée ;
 - mot de passe ou jeton fourni par fichier ou invite, et non intégré à l'URI.
@@ -32,7 +34,7 @@ approuvée, supprimez le compte de collecte dédié à l’aide du script
 correspondant sous `sql/revoke/` ; avant l’exécution, vérifiez précisément les
 cibles de base de données, de motif d’hôte, de rôle et de connexion.
 
-## Tier 1 : catalogue uniquement
+## Tier 1 : métadonnées uniquement (aucun échantillonnage de lignes)
 
 Le Tier 1 est utilisé par défaut lorsque `--measure-compression` est absent.
 
@@ -45,6 +47,9 @@ Il lit :
 - les familles de types des colonnes, leur nullabilité et, lorsqu'elles sont disponibles, les statistiques de longueur arrondies ;
 - le type d'index, son unicité et les ordinaux anonymisés des colonnes ;
 - la structure du graphe des clés étrangères lorsqu'elle est disponible ;
+- des comptages bornés d'objets hors tables et de prérequis externes provenant
+  des catalogues d'objets avec la valeur par défaut
+  `--artifact-detail summary` (aucune définition) ;
 - une sonde RTT facultative côté client, sauf si `--no-rtt-probe` est défini.
 
 Il ne lit pas les valeurs des lignes.
@@ -67,7 +72,11 @@ Le Tier 2 n'est activé que par la paire explicite :
 --measure-compression --yes
 ```
 
-Le Tier 2 lit en outre en mémoire du processus des échantillons de lignes de taille limitée. Les octets échantillonnés sont encodés dans un tampon interne de trames de lignes, compressés localement avec zstd au niveau 3, résumés sous forme de ratios arrondis, puis supprimés.
+Le Tier 2 lit en outre en mémoire du processus des échantillons de lignes de
+taille limitée. Les octets échantillonnés sont encodés dans un tampon interne
+de trames de lignes et servent à dériver des mesures agrégées de compression,
+de densité NULL, de cardinalité/fréquence, de longueur et de style, avant la
+suppression des valeurs et des empreintes temporaires.
 
 Les octets échantillonnés ne sont :
 
@@ -93,9 +102,21 @@ Désactivez-la avec :
 
 ## Fichiers lus
 
-À l'exécution, l'outil lit uniquement les fichiers explicitement désignés sur la ligne de commande, comme les fichiers de mot de passe, d'utilisateur, de CA/certificat/clé TLS, de jeton Entra ou un fichier d'entrée `--from-toml`.
+À l'exécution, l'outil lit uniquement les fichiers explicitement sélectionnés
+sur la ligne de commande ou référencés par un manifeste de lot ou un bundle
+explicitement sélectionné. Il peut s'agir de fichiers de mot de passe,
+d'utilisateur ou de clé d'anonymisation, de fichiers de CA/certificat/clé TLS,
+de fichiers de jeton Entra, d'entrées de fichiers structurés et d'entrées
+Blueprint ou de bundle.
 
 Il ne lit volontairement pas les emplacements implicites courants d'informations d'identification tels que `~/.pgpass`, `~/.my.cnf`, les fichiers d'informations d'identification cloud, les clés SSH, l'historique du shell ou les variables d'environnement de mot de passe par défaut.
+
+Cette déclaration couvre la découverte d'identifiants contrôlée par
+l'application. Les bibliothèques de base de données, TLS, DNS et
+d'authentification intégrée peuvent consulter les magasins de confiance, la
+configuration et les caches d'identifiants du système d'exploitation.
+Examinez ou tracez séparément ces dépendances de plateforme lorsque la
+politique de l'hôte l'exige.
 
 Consultez [`../AUDIT.md`](AUDIT.md) pour la liste complète.
 
@@ -126,8 +147,13 @@ Avant de partager `blueprint.toml`, vérifiez que :
 - aucun nom réel de table, colonne, index, schéma ou utilisateur n'est présent ;
 - aucun nom d'objet hors table, texte de définition, chaîne de point de terminaison, information d'identification, clé/certificat, nom de paquet ou binaire n'est présent ;
 - aucune valeur de ligne n'est présente ;
-- les valeurs numériques sont arrondies conformément à [`../FORMAT.md`](FORMAT.md) ;
-- les sections de compression facultatives ne contiennent que des ratios et des métadonnées d'échantillon.
+- les valeurs numériques utilisent la précision exacte ou arrondie documentée
+  dans [`../FORMAT.md`](FORMAT.md) ; les champs exacts facultatifs doivent être
+  examinés comme plus sensibles ;
+- les sections facultatives dérivées d'échantillons contiennent des métadonnées
+  agrégées de compression, de densité NULL, de cardinalité/fréquence, de
+  longueur, de style et de provenance d'échantillon, jamais les valeurs
+  échantillonnées.
 - les champs de complétude des artefacts déclarent la visibilité filtrée, les catalogues illisibles et les familles connues non modélisées.
 
 La sortie MySQL équilibrée par défaut contient les capacités déclarées et les
@@ -141,7 +167,7 @@ considérés comme prêts pour un benchmark.
 
 Le marqueur n'affirme pas que l'échantillonnage a couvert chaque table. Une
 transmission destinée à un benchmark doit également indiquer zéro colonne
-indexée de largeur variable non échantillonnée dans le manifeste de
+indexée non vide de largeur variable non échantillonnée dans le manifeste de
 l'estimateur ; augmentez `--max-wall-secs` et recommencez la capture si cette
 condition échoue.
 

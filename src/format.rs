@@ -22,9 +22,9 @@ pub use dbwarp_blueprint_core::MIN_SCHEMA_VERSION;
 pub use dbwarp_blueprint_core::{
     ArtifactInventory, BlueprintArtifact, BlueprintCardinality, BlueprintColumn,
     BlueprintCompression, BlueprintExternalPrerequisite, BlueprintFile, BlueprintIndex,
-    BlueprintRelationship, BlueprintTable, DatabaseTopology, DatasetScope, FkEdge,
-    LanguageFeatureCensus, NetworkProbe, Totals, ARTIFACT_CONTRACT, LANGUAGE_CENSUS_CONTRACT,
-    SCHEMA_VERSION,
+    BlueprintRelationship, BlueprintSampleLayout, BlueprintTable, DatabaseTopology, DatasetScope,
+    FkEdge, LanguageFeatureCensus, NetworkProbe, Totals, ARTIFACT_CONTRACT,
+    LANGUAGE_CENSUS_CONTRACT, SCHEMA_VERSION,
 };
 
 /// Round to nearest millisecond. Used by the RTT probe to emit
@@ -570,7 +570,7 @@ mod tests {
                     ratio_zstd_3: 4.25,
                     ratio_zstd_19: 5.0,
                     ratio_stddev: 0.0,
-                    sample_encoding: "dbwarp-blueprint-rowframe-v1".to_string(),
+                    sample_encoding: crate::sample_encode::SAMPLE_ENCODING_TAG.to_string(),
                     ..BlueprintCompression::default()
                 }),
                 ..BlueprintColumn::default()
@@ -670,7 +670,7 @@ mod tests {
         assert_eq!(col_compression.ratio_zstd_3, 4.25);
         assert_eq!(
             col_compression.sample_encoding,
-            "dbwarp-blueprint-rowframe-v1"
+            crate::sample_encode::SAMPLE_ENCODING_TAG
         );
     }
 }

@@ -8,6 +8,32 @@ Häufige Fehler von `dbwarp-blueprint` und die nächsten Schritte.
 
 Fehler in der Verantwortung des Bedieners beginnen jetzt mit einem stabilen Meldungscode `DBPnnnnS`, beispielsweise `DBP1001E`. Verwenden Sie den Code bei der Suche in der Dokumentation oder beim Eröffnen eines Supporttickets. Siehe [Bedienermeldungscodes](MESSAGES.md).
 
+## Quellcode-Build endet mit Status 2 oder 3
+
+`build.sh` endet mit Status 2, wenn das installierte `rustc` nicht der in
+`rust-toolchain.toml` festgelegten Version entspricht und Netzwerkzugriff nicht
+ausdrücklich genehmigt wurde. Installieren Sie genau diese Rust-Version oder
+erlauben Sie dem Skript nach Prüfung der Download-Grenze, den festgelegten und
+per Prüfsumme verifizierten Bootstrap herunterzuladen:
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
+`build.sh` endet mit Status 3, wenn `DBWARP_BLUEPRINT_OFFLINE=1` gesetzt ist,
+der Quellbaum aber kein Verzeichnis `vendor-crates/` enthält. Ein normaler
+Quellcode-Checkout kann diesen Modus nicht erfüllen. Laden Sie das gebündelte
+Quellcodearchiv desselben Releases herunter, prüfen und entpacken Sie es und
+führen Sie den Build in diesem entpackten Baum aus:
+
+```bash
+DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh
+```
+
+Kopieren Sie keine Abhängigkeiten zwischen Release-Versionen. Die vollständigen
+Online- und Offline-Verfahren stehen unter [Aus Quellcode
+erstellen](BUILD.md).
+
 ## Angeforderte Sprache wird nicht verwendet
 
 Verwenden Sie bei der Diagnose der Sprachauswahl ausdrücklich einen unterstützten Wert:

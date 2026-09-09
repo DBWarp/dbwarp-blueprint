@@ -62,6 +62,24 @@ fn option_names(help: &str) -> BTreeSet<String> {
 }
 
 #[test]
+fn every_language_help_uses_supported_credential_syntax() {
+    for language in ["en"].into_iter().chain(LANGUAGES.iter().copied()) {
+        let output = run(&["--lang", language, "--help"]);
+        assert!(output.status.success(), "{language}: {:?}", output.stderr);
+        let help = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            help.contains("postgresql://[user@]host[:port]/database"),
+            "{language}"
+        );
+        assert!(!help.contains("[:password]"), "{language}");
+        assert!(
+            !help.contains("compression_source_confidence"),
+            "{language}"
+        );
+    }
+}
+
+#[test]
 fn every_language_localizes_complete_help_without_translating_options() {
     let english = run(&["--help"]);
     assert!(english.status.success());

@@ -22,6 +22,319 @@ mod tests {
         assert_eq!(normalized_mysql_version("private-build"), "unknown");
     }
 
+    #[test]
+    fn numeric_primary_key_range_windows_span_the_source_domain() {
+        assert_eq!(
+            mysql_range_sample_thresholds(1, 60_000_000, 4),
+            vec![1, 15_000_000, 30_000_000, 45_000_000]
+        );
+        assert_eq!(
+            mysql_range_sample_thresholds(-100, 100, 4),
+            vec![-100, -50, 0, 50]
+        );
+        assert_eq!(mysql_range_sample_thresholds(7, 7, 4), vec![7; 4]);
+    }
+
+    #[test]
+    fn mysql_projection_budget_preserves_narrow_columns_and_funds_wide_text() {
+        let columns = vec![
+            ColumnRow {
+                col_type: "integer".into(),
+                native_type: "bigint".into(),
+                numeric_precision: 19,
+                ..ColumnRow::default()
+            },
+            ColumnRow {
+                col_type: "text".into(),
+                native_type: "varchar".into(),
+                char_max_length: 120,
+                char_octet_length: 480,
+                character_set_name: "utf8mb4".into(),
+                ..ColumnRow::default()
+            },
+            ColumnRow {
+                col_type: "text".into(),
+                native_type: "enum".into(),
+                char_max_length: 5,
+                char_octet_length: 20,
+                character_set_name: "utf8mb4".into(),
+                ..ColumnRow::default()
+            },
+            ColumnRow {
+                col_type: "text".into(),
+                native_type: "longtext".into(),
+                char_max_length: u32::MAX.into(),
+                char_octet_length: u32::MAX.into(),
+                character_set_name: "utf8mb4".into(),
+                ..ColumnRow::default()
+            },
+            ColumnRow {
+                col_type: "binary".into(),
+                native_type: "binary".into(),
+                char_max_length: 16,
+                char_octet_length: 16,
+                ..ColumnRow::default()
+            },
+        ];
+
+        let (rows, limits) = mysql_sample_projection_budget(4_096, &columns).unwrap();
+        assert_eq!(rows, 4_096);
+        assert_eq!(limits[1].char_limit, 120);
+        assert_eq!(limits[2].char_limit, 5);
+        assert!(limits[3].char_limit >= 291);
+        assert_eq!(limits[4].byte_limit, 16);
+    }
+
+    #[test]
+    fn mysql_projection_budget_reduces_rows_for_pathologically_wide_schemas() {
+        let columns = (0..1_600)
+            .map(|_| ColumnRow {
+                col_type: "numeric".into(),
+                numeric_precision: 65,
+                ..ColumnRow::default()
+            })
+            .collect::<Vec<_>>();
+        let (rows, limits) = mysql_sample_projection_budget(4_096, &columns).unwrap();
+        assert!(rows < 4_096);
+        assert_eq!(limits.len(), columns.len());
+    }
+
+    #[test]
+    fn mysql_original_octet_length_is_independent_of_sampled_payload() {
+        assert_eq!(mysql_observed_octet_length(&Value::UInt(291)), Some(291));
+        assert_eq!(mysql_observed_octet_length(&Value::Int(226)), Some(226));
+        assert_eq!(
+            mysql_observed_octet_length(&Value::Bytes(b"154".to_vec())),
+            Some(154)
+        );
+        assert_eq!(mysql_observed_octet_length(&Value::NULL), None);
+    }
+
+    #[test]
+    fn mysql_adaptive_projection_caps_single_and_combined_oversized_values() {
+        let ceiling = dbwarp_blueprint_core::TRANSFER_PROBE_MAX_SAMPLE_BYTES as u64;
+        for native in ["binary", "text"] {
+            for width in [1, ceiling - 4096, ceiling, ceiling + 4096, u64::MAX] {
+                for count in [1, 2, 32] {
+                    let columns = vec![
+                        ColumnRow {
+                            col_type: native.into(),
+                            ..ColumnRow::default()
+                        };
+                        count
+                    ];
+                    for requested in [1, 32, u64::MAX] {
+                        let (rows, limits) = mysql_adaptive_projection_budget(
+                            &columns,
+                            &vec![width; count],
+                            requested,
+                        )
+                        .unwrap();
+                        let row_bytes = limits
+                            .iter()
+                            .map(|limit| {
+                                let payload = if native == "binary" {
+                                    limit.byte_limit
+                                } else {
+                                    limit.char_limit * 4
+                                };
+                                assert!(payload <= limit.byte_limit);
+                                payload as u64
+                                    + dbwarp_blueprint_core::TRANSFER_PROBE_CELL_OVERHEAD_BYTES
+                            })
+                            .sum::<u64>();
+                        assert!(rows > 0 && rows <= requested);
+                        assert!(rows * row_bytes <= ceiling);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mysql_text_retry_reserves_for_connection_transcoding_and_changed_rows() {
+        let columns = [ColumnRow {
+            col_type: "text".into(),
+            character_set_name: "latin1".into(),
+            char_max_length: 1024,
+            char_octet_length: 1024,
+            ..ColumnRow::default()
+        }];
+        assert_eq!(mysql_sample_bytes_per_character(&columns[0]), 4);
+        let (rows, limits) = mysql_adaptive_projection_budget(&columns, &[1024], 32).unwrap();
+        assert_eq!(rows, 32);
+        assert_eq!(limits[0].char_limit, 1024);
+        assert_eq!(limits[0].byte_limit, 4096);
+        let (rows, limits) = mysql_sample_projection_budget(u64::MAX, &columns).unwrap();
+        assert!(
+            rows * (limits[0].char_limit as u64 * 4 + 6)
+                <= dbwarp_blueprint_core::TRANSFER_PROBE_MAX_SAMPLE_BYTES as u64
+        );
+    }
+
+    #[test]
+    fn mysql_projection_observes_truncation_before_result_charset_conversion() {
+        let column = ColumnRow {
+            col_name: "narrow_text".into(),
+            col_type: "text".into(),
+            character_set_name: "latin1".into(),
+            ..ColumnRow::default()
+        };
+        let projection = mysql_sample_projection(
+            &[column],
+            &[MysqlSampleProjectionLimit {
+                byte_limit: 4,
+                char_limit: 1,
+            }],
+        );
+        assert_eq!(projection, "LEFT(`narrow_text`, 1), OCTET_LENGTH(`narrow_text`), OCTET_LENGTH(LEFT(`narrow_text`, 1))");
+    }
+
+    #[test]
+    fn mysql_generated_column_roles_are_closed_and_not_transfer_values() {
+        assert_eq!(
+            mysql_column_value_source("STORED GENERATED"),
+            "generated-stored"
+        );
+        assert_eq!(
+            mysql_column_value_source("VIRTUAL GENERATED"),
+            "generated-virtual"
+        );
+        assert_eq!(
+            mysql_column_value_source("auto_increment"),
+            "auto-increment"
+        );
+        assert_eq!(mysql_column_value_source("DEFAULT_GENERATED"), "");
+
+        let ordinary = ColumnRow::default();
+        let generated = ColumnRow {
+            value_source: "generated-stored".into(),
+            ..ColumnRow::default()
+        };
+        assert!(mysql_column_is_transfer_value(&ordinary));
+        assert!(!mysql_column_is_transfer_value(&generated));
+    }
+
+    #[test]
+    fn sampled_column_results_expand_back_to_source_ordinals() {
+        let expanded = expand_mysql_sampled_columns(vec![Some(10_u64), Some(30_u64)], &[0, 2], 3);
+        assert_eq!(expanded, vec![Some(10), None, Some(30)]);
+    }
+
+    #[test]
+    fn range_sampling_requires_the_first_numeric_primary_key_column() {
+        let qual = ("app".to_string(), "events".to_string());
+        let mut id = ColumnRow {
+            schema_name: qual.0.clone(),
+            table_name: qual.1.clone(),
+            ordinal: 1,
+            col_name: "event_id".into(),
+            col_type: "numeric".into(),
+            native_type: "bigint".into(),
+            numeric_scale: 0,
+            ..ColumnRow::default()
+        };
+        let payload = ColumnRow {
+            schema_name: qual.0.clone(),
+            table_name: qual.1.clone(),
+            ordinal: 2,
+            col_name: "payload".into(),
+            col_type: "text".into(),
+            native_type: "varchar".into(),
+            ..ColumnRow::default()
+        };
+        let indexes = BTreeMap::from([(
+            (qual.0.clone(), qual.1.clone(), "PRIMARY".into()),
+            vec![(
+                1,
+                "event_id".into(),
+                true,
+                "BTREE".into(),
+                true,
+                false,
+                0,
+                false,
+            )],
+        )]);
+        let columns = vec![id.clone(), payload];
+        let plan = mysql_primary_range_sample_plan(&qual, &columns, &indexes)
+            .expect("numeric leading primary key must support range sampling");
+        assert_eq!(plan.range_column.ordinal, 1);
+        assert_eq!(
+            plan.order_columns
+                .iter()
+                .map(|column| column.col_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["event_id"]
+        );
+
+        id.native_type = "varchar".into();
+        assert!(mysql_primary_range_sample_plan(&qual, &[id], &indexes).is_none());
+    }
+
+    #[test]
+    fn range_sampling_orders_by_the_complete_composite_primary_key() {
+        let qual = ("app".to_string(), "events".to_string());
+        let columns = vec![
+            ColumnRow {
+                schema_name: qual.0.clone(),
+                table_name: qual.1.clone(),
+                ordinal: 1,
+                col_name: "parent_id".into(),
+                col_type: "numeric".into(),
+                native_type: "bigint".into(),
+                numeric_scale: 0,
+                ..ColumnRow::default()
+            },
+            ColumnRow {
+                schema_name: qual.0.clone(),
+                table_name: qual.1.clone(),
+                ordinal: 2,
+                col_name: "position".into(),
+                col_type: "numeric".into(),
+                native_type: "int".into(),
+                numeric_scale: 0,
+                ..ColumnRow::default()
+            },
+        ];
+        let indexes = BTreeMap::from([(
+            (qual.0.clone(), qual.1.clone(), "PRIMARY".into()),
+            vec![
+                (
+                    1,
+                    "parent_id".into(),
+                    true,
+                    "BTREE".into(),
+                    true,
+                    false,
+                    0,
+                    false,
+                ),
+                (
+                    2,
+                    "position".into(),
+                    true,
+                    "BTREE".into(),
+                    true,
+                    false,
+                    0,
+                    false,
+                ),
+            ],
+        )]);
+
+        let plan = mysql_primary_range_sample_plan(&qual, &columns, &indexes)
+            .expect("composite numeric primary key must support range sampling");
+        assert_eq!(plan.range_column.col_name, "parent_id");
+        assert_eq!(
+            plan.order_columns
+                .iter()
+                .map(|column| column.col_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["parent_id", "position"]
+        );
+    }
+
     fn mysql_table(storage_engine: &str) -> TableRow {
         TableRow {
             schema_name: "app".to_string(),
@@ -29,7 +342,6 @@ mod tests {
             rows_estimate: 1_000,
             data_length: 65_536,
             index_length: 16_384,
-            update_time: Some(chrono::Utc::now().naive_utc()),
             storage_engine: storage_engine.to_string(),
         }
     }
@@ -57,6 +369,10 @@ mod tests {
         assert_eq!(assessment.dataset_scope.row_count_completeness, "complete");
         assert_eq!(assessment.dataset_scope.size_completeness, "complete");
         assert!(!assessment.suppress_table_statistics);
+        assert!(!assessment
+            .dataset_scope
+            .limitations
+            .contains(&"statistics-stale".to_string()));
     }
 
     #[test]

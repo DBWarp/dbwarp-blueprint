@@ -15,25 +15,55 @@ Pomiar kompresji jest opcjonalny i wymaga wyraźnej zgody. Interaktywny przebieg
 --measure-compression --yes
 ```
 
-Bez tych opcji narzędzie odczytuje wyłącznie metadane katalogu.
+Gdy pomiar kompresji jest wyłączony, przechwytywanie bazy danych na żywo nie
+próbkuje wartości wierszy z tabel użytkownika. Zachowanie plików strukturalnych
+jest inne: rekordy Avro nadal muszą zostać odczytane sekwencyjnie w celu
+zebrania liczby wierszy, długości i metadanych wartości null; zobacz
+[Pliki strukturalne](STRUCTURED_FILES.md).
 
 ## Co jest próbkowane
 
-Dla każdej tabeli użytkownika narzędzie odczytuje do pamięci ograniczoną liczbę
-wierszy, koduje je w deterministycznym buforze ramek wierszy, lokalnie kompresuje
-ten bufor algorytmem zstd na poziomie 3, rejestruje zaokrąglone
-współczynniki i odrzuca bufor.
+Dla każdej kwalifikującej się tabeli użytkownika, której pustki nie da się
+bezpiecznie potwierdzić, narzędzie odczytuje do pamięci ograniczoną liczbę
+wierszy, koduje je w stabilnych, przejściowych buforach sondy, lokalnie kompresuje
+te bufory algorytmem zstd na poziomie 3 i wyprowadza zagregowane pomiary kompresji,
+udziału NULL, kardynalności/częstotliwości, długości i stylu, po czym odrzuca
+próbkowane wartości i tymczasowe odciski.
 
 Dla wybranych kolumn tekstowych i binarnych Poziom 2 może również próbkować
 samą kolumnę. Pozwala to narzędziom planistycznym dalszego etapu dopasować
 entropię poszczególnych kolumn zamiast opierać się wyłącznie na średnich na
 poziomie tabeli.
 
-Każdy pomiar to niezależna, jednoprzebiegowa ramka zstd z zadeklarowanym rozmiarem wejścia. Wariancja współczynników (`ratio_stddev`) jest mierzona na wyrównanych do wierszy fragmentach 64 KiB tego samego bufora, dzięki czemu opisuje transfer przewidywany przez estymator, a nie jedną średnią całego bufora. Ponieważ rozmiar wejścia jest deklarowany, zstd dobiera parametry zależne od rozmiaru zgodne ze sposobem modelowania transferu przez estymator. Przy małych próbkach (poniżej około 1 MiB) współczynniki mogą zauważalnie odbiegać od przechwyceń z wcześniejszych wydań mierzonych przez kontekst strumieniowy bez deklaracji rozmiaru; współczynników małych tabel nie można bezpośrednio porównywać przez tę granicę. Miarodajny jest pomiar z deklarowanym rozmiarem, bo odpowiada transferowi.
+Współczynniki tabel aktywnych baz danych korzystają z neutralnej sekwencji
+ograniczonych grup po 1000 wierszy, z jednym deskryptorem na kolumnę, długościami
+wartości o stałej szerokości i ładunkami ułożonymi kolumnowo. Mierzy to strukturę
+istotną dla kompresji, wspólną dla transportów masowych, bez odwzorowywania
+protokołu bazy ani formatu sieciowego DBWarp. Współczynniki kolumn zachowują
+`blueprint-compression-probe-v2`; oznaczone wartości z prefiksem długości nadal
+stanowią bardziej szczegółowe wejście entropii.
 
-Próbkowane bajty nie są zapisywane na dysku, dołączane do `blueprint.toml` ani do
-dziennika audytu i nie są nigdzie wysyłane poza przesłaniem z serwera bazy
-danych do uruchomionego przez Ciebie procesu lokalnego.
+Bloki tabel PostgreSQL używają obecnie
+`blueprint-columnar-transfer-probe-v2`, który przepuszcza grupy wierszy przez
+jeden trwały kontekst zstd poziomu 3 i opróżnia go po każdej grupie. MySQL i SQL
+Server używają `blueprint-columnar-transfer-probe-v3`: tych samych neutralnych
+bajtów i trwałego kontekstu, z dodatkowymi opróżnieniami na granicach bloków
+sondy o rozmiarze 256 KiB. Próbki SQL Server `nvarchar`, `nchar` i `ntext`
+są mierzone jako rozkłady bajtów UTF-16LE. `varchar`, `char` i `text` zachowują
+próbkowaną wąską szerokość bajtów; Blueprint zapisuje stronę kodową katalogu
+kolacji źródłowej jako `utf-8`, `windows-N` lub `code-page-N`, aby zatwierdzony
+konsument mógł wybrać zgodny natywny koder zamiast poszerzać wartości. Sterownik
+nadal udostępnia próbnikowi zdekodowane ciągi, więc nie deklaruje się identyczności
+bajtów dla starszych stron kodowych. Tabelowy `ratio_stddev` jest mierzony między
+wyjściami zewnętrznych grup wierszy. Bloki projekcji kolumn pozostają niezależnymi,
+jednoprzebiegowymi pomiarami entropii i emitują `0.0`. Starsze pomiary tabel
+oznaczone `blueprint-columnar-transfer-probe-v1` wykonywały jedną operację z
+zadeklarowanym rozmiarem na połączonych ramkach; jawna wersja zapobiega cichemu
+reinterpretowaniu tych współczynników zgodnie z obecną polityką strumieniową.
+
+Próbkowane bajty trafiają do procesu lokalnego wyłącznie przez wybraną sesję
+bazy danych. Nie są zapisywane na dysku, dołączane do `blueprint.toml` ani do
+dziennika audytu, wysyłane ani przekazywane do infrastruktury DBWarp.
 
 ## Współbieżność lokalnych workerów
 
@@ -51,8 +81,10 @@ większej ilości lokalnego CPU:
 Wyższe wartości mogą skrócić czas, gdy wąskim gardłem jest zstd, lecz zwiększą
 lokalne użycie CPU i szczytową pamięć. Nie tworzą równoległych połączeń
 próbkujących bazę. Każdy worker ma własne konteksty zstd, a kolejka wejściowa
-jest ograniczona do liczby workerów. Kolejność wyjścia i wartości Blueprint v6
-pozostają deterministyczne.
+jest ograniczona do liczby workerów. Liczba workerów nie zmienia pomiarów.
+Kolejność anonimowych etykiet celowo zmienia się przy domyślnym nowym kluczu;
+używaj ponownie chronionego pliku `--anonymization-key-file` tylko do
+zatwierdzonych porównań między uruchomieniami.
 
 Kolektor pomija zapytania o wiersze i styl tylko wtedy, gdy utrzymywana przez
 silnik wartość katalogowa bezpiecznie potwierdza pustą tabelę w chwili odczytu
@@ -63,7 +95,7 @@ próbkowania. Ta ostrożna różnica chroni wierność.
 
 ## Co pojawia się w pliku Blueprint
 
-Emitowane są wyłącznie liczby podsumowujące. Dla kolumn podobnych do tekstu
+Emitowane są wyłącznie zagregowane podsumowania. Dla kolumn podobnych do tekstu
 przebieg Poziomu 2 może emitować ograniczoną etykietę stylu, taką jak `json`,
 `xml`, `natural-text`, `base64`, `hex`, `numeric-text` lub `mixed`.
 
@@ -84,9 +116,10 @@ sample_rows = 1000
 sample_bytes = 65536
 sample_method = "column LIMIT N (engine-specific bounded sample)"
 sampled_with_bias = true
+bias_reason = "unordered_limit_after_empty_TABLESAMPLE"
 ratio_zstd_3 = 12.35
 ratio_stddev = 0.2
-sample_encoding = "dbwarp-blueprint-rowframe-v1"
+sample_encoding = "blueprint-compression-probe-v2"
 
 [tables.table-001.compression]
 measured = true
@@ -96,7 +129,7 @@ sample_method = "LIMIT N (engine-specific bounded sample)"
 sampled_with_bias = false
 ratio_zstd_3 = 4.35
 ratio_stddev = 0.15
-sample_encoding = "dbwarp-blueprint-rowframe-v1"
+sample_encoding = "blueprint-columnar-transfer-probe-v3"
 ```
 
 Wartości te pomagają zatwierdzonym narzędziom dalszego etapu oszacować rozmiar
@@ -112,22 +145,33 @@ zupełnie inaczej podczas migracji:
   naturalnym często dobrze się kompresują.
 - Zaszyfrowane wartości, już skompresowane obiekty blob, losowe tokeny i dane
   binarne o wysokiej entropii nie kompresują się dobrze.
-- Dane SQL Server `nvarchar` mają inny rozkład bajtów niż tekst UTF-8 i są
-  odpowiednio kodowane na potrzeby próbkowania.
+- Tekst Unicode i tekst wąski w SQL Server mają różne rozkłady bajtów. Próbnik
+  modeluje `nvarchar` jako UTF-16LE i zapisuje stronę kodową kolacji potrzebną
+  do interpretacji `varchar`, zamiast traktować każdą kolumnę tekstową jako UTF-8.
 
 Niewielki pomiar lokalny jest zwykle bardziej użyteczny niż zgadywanie na
 podstawie typów kolumn.
 
 ## Obciążenie próbki i przejrzystość
 
-Niektóre silniki nie oferują idealnie równomiernego próbkowania tabel. Gdy
-narzędzie przechodzi na mniej idealną metodę, plik Blueprint oznacza to polami
-`sampled_with_bias` i `bias_reason`.
+Niektóre silniki nie oferują idealnie równomiernego próbkowania tabel. MySQL
+rozkłada ograniczoną próbkę na cztery zakresy numerycznego klucza podstawowego,
+jeśli ta ścieżka dostępu jest dostępna; w przeciwnym razie przechodzi na
+`LIMIT N`. Obie metody są jawnie oznaczone jako obciążone, ponieważ żadna nie
+jest statystyczną próbką losową. Inne mniej idealne metody awaryjne silników są
+również zapisywane przez `sampled_with_bias` i `bias_reason`.
+
+Gdy układ ograniczonej próbki wpływa na generowanie syntetyczne, Blueprint
+zapisuje go niezależnie od tych pól tekstowych. Próbkowanie zakresów numerycznego
+klucza podstawowego MySQL emituje
+`sample_layout = "primary-key-range-windows"` i porządkuje każde okno według
+pełnego klucza podstawowego. Pozwala to konsumentom zachować grupową lokalność
+kluczy złożonych bez analizowania `sample_method` ani `bias_reason`.
 
 Obciążone próbki są nadal przydatne, ale narzędzia dalszego etapu powinny
 traktować je z mniejszą ufnością. Dziennik audytu rejestruje, że próbkowanie
-wierszy było włączone, oraz liczbę lokalnie zakodowanych bajtów row-frame.
-Bajty sieciowe są oznaczone jako `unknown`, jeśli sterownik ich nie udostępnia.
+wierszy było włączone, oraz liczbę lokalnie zakodowanych bajtów sondy.
+Bajty sesji bazy są oznaczone jako `unknown`, jeśli sterownik ich nie udostępnia.
 
 ## Praktyczne ustawienia próbkowania
 
@@ -154,12 +198,20 @@ jest twardym limitem całego przechwytywania na żywo, łącznie z połączeniem
 katalogami, RTT i próbkowaniem; nie jest nowym budżetem dla każdej fazy.
 
 Próbkowanie bazy danych na żywo ma również niekonfigurowalny limit 16 MiB
-projektowanego ładunku na tabelę. Projekcja SQL obcina komórki o zmiennej
-szerokości po stronie serwera i zmniejsza limit wierszy dla wyjątkowo szerokich
-tabel, zanim sterownik otrzyma dane. W rezultacie bardzo duże wartości LOB
-wpływają przez ograniczone prefiksy, a nie pełną zawartość. Audyt zapisuje
-aktywny limit ładunku tabeli i dokładną łączną liczbę bajtów ramek wierszy
-zakodowanych lokalnie.
+ładunku projekcji na tabelę. Początkowa projekcja SQL ma budżet zależny od typu
+i osobno obserwuje pierwotne długości w oktetach. Gdy wartość projekcji została
+skrócona, MySQL i SQL Server mogą ponowić próbę z mniejszą liczbą wierszy i
+zmienionymi limitami kolumn, które nadal mieszczą się w budżecie. Wartości zbyt
+szerokie dla tego budżetu pozostają ograniczonymi prefiksami; informacje o
+pochodzeniu pomiarów kompresji i podsumowań wartości dokumentują to ograniczenie,
+natomiast statystyki długości zachowują pierwotne długości próbkowanych wartości
+zgłoszone przez serwer, z zastosowaniem wybranej polityki wierności długości.
+
+Limit nie dotyczy bajtów sieciowych ani pamięci procesu. Kodowanie protokołu,
+metadane pierwotnych długości, ponowienia i bufory sterownika powodują dodatkowy
+narzut. Audyt zapisuje skonfigurowany limit ładunku, wykonane zapytania i dokładną
+łączną liczbę lokalnie zakodowanych bajtów sondy; nie raportuje zmierzonego ruchu
+na połączeniu z bazą danych.
 
 ## Jak konsumenci dalszego etapu wykorzystują te dane
 
@@ -172,4 +224,6 @@ Konsument dalszego etapu powinien używać dowodów kompresji w następującej k
 Pole `sample_encoding` jest częścią kontraktu. Konsumenci powinni używać tylko
 współczynników z rozpoznanym znacznikiem kodowania, ponieważ różne kodowania
 próbki mogą dawać różne współczynniki kompresji dla tych samych danych
-logicznych.
+logicznych. W szczególności tabelowy współczynnik kolumnowej sondy transferowej i
+współczynniki v2 poszczególnych kolumn są pomiarami uzupełniającymi i nie wolno
+ich stosować zamiennie.

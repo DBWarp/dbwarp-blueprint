@@ -21,6 +21,17 @@ Plik binarny jest zapisywany w:
 target/release/dbwarp-blueprint
 ```
 
+Pozostałe przykłady używają `./dbwarp-blueprint`. Po kompilacji ze źródeł uruchom
+bezpośrednio `target/release/dbwarp-blueprint` albo skopiuj ten plik do
+`./dbwarp-blueprint`, zanim wykonasz przykłady.
+
+Jeśli przypięty toolchain Rust nie jest zainstalowany, a zatwierdzono dostęp do
+sieci, wyraźnie wyraź zgodę:
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
 ## Co robi skrypt budowania
 
 `build.sh` jest celowo konserwatywny:
@@ -51,6 +62,13 @@ Gotowe pliki binarne są dostępne na stronie Releases:
 Są udostępnione dla wygody. Jeżeli Twoje zasady wymagają przeglądu źródeł,
 zbuduj program lokalnie z tego samego znacznika.
 
+Archiwa binarne platform są pakietami operatorskimi, a nie drzewami źródeł,
+więc nie można w nich ponownie zbudować programu. Zawarte w nich kopie tego
+przewodnika i `verify.sh` opisują ścieżkę weryfikacji z użyciem pasującego
+źródła. Użyj drzewa dokładnego tagu wydania lub archiwum wydania ze źródłami i
+zależnościami, gdy potrzebujesz `build.sh`, źródeł Cargo albo lokalnej
+kompilacji porównawczej.
+
 Pliki wydania:
 
 | Platforma | Plik |
@@ -62,11 +80,19 @@ Pliki wydania:
 
 ## Weryfikowanie pobranego archiwum
 
-Linux/macOS:
+Linux:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
+
+macOS:
+
+```bash
+shasum -a 256 dbwarp-blueprint-macos-arm64.tar.gz
+```
+
+Porównaj wyświetloną wartość z odpowiednim wierszem w `SHA256SUMS.txt`.
 
 Windows PowerShell:
 
@@ -109,6 +135,26 @@ Kompilacja Linux Kerberos:
 ```bash
 cargo build --release --locked --features integrated-auth-gssapi
 ```
+
+## Odtwarzanie pliku binarnego wydania
+
+`./build.sh` potwierdza, że sprawdzone źródła można zbudować; identyczność bajtowa
+wymaga również wszystkich natywnych danych wejściowych wydania. Użyj dokładnej
+rewizji z `PROVENANCE.json`, zapisanej platformy docelowej i funkcji, przypiętego
+toolchainu Rust, natywnego kompilatora/linkera, czasu commitu jako
+`SOURCE_DATE_EPOCH` oraz opcji mapowania ścieżek i linkera z procesu wydania.
+Wydania Windows używają też `clang-cl` i `/Brepro`.
+
+Po odtworzeniu tych danych porównaj rozpakowany plik wydania z wynikiem lokalnym:
+
+```bash
+SOURCE_BIN=target/release/dbwarp-blueprint \
+  ./verify.sh /path/to/extracted/dbwarp-blueprint
+```
+
+Jeśli skróty są różne, nie traktuj plików jako równoważnych. CI wydania buduje
+dwukrotnie na tym samym runnerze w oddzielnych katalogach Cargo i odrzuca różnice;
+`PROVENANCE.json` zapisuje dane potrzebne do oceny lokalnego odtworzenia.
 
 ## Dostarczone zależności
 

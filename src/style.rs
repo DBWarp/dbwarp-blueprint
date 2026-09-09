@@ -3,7 +3,9 @@
 //! Reads a small bounded byte buffer locally, returns ONE LABEL describing
 //! the dominant content style. The bytes themselves are never emitted.
 //!
-//! Categories: json | xml | natural-text | base64 | hex | numeric-text | mixed
+//! Text categories: json | xml | natural-text | base64 | hex | numeric-text |
+//! mixed. The shared core adds the independent `precompressed` style only for
+//! bounded binary values with a dominant standard container signature.
 //! Empty / unclassifiable input returns "" (skipped in output).
 //!
 //! Conservative: when uncertain, returns "mixed" rather than guessing.

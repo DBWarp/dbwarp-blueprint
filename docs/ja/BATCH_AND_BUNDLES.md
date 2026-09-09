@@ -62,7 +62,7 @@ Bundle v3 は物理 capture source と論理 dataset を分離します。各 so
 aggregation は fail-closed です。
 
 - `independent`: group に source が 1 つだけあり、total は 1 回だけ加算されます。
-- `replica`: 一致する copy は 1 回だけ数えます。相違する場合は deterministic
+- `replica`: 一致する copy は 1 回だけ数え、replica ごとに 1 回とは決して数えません。相違する場合は deterministic
   representative を 1 つ保持し、平均せず、結果を不完全とします。
 - `shard`: `members_complete = true` で、宣言したすべての member が成功した場合だけ
   加算します。不完全な shard group は total に寄与しません。
@@ -178,7 +178,7 @@ dbwarp-blueprint \
 Parquet および Avro ソースの場合:
 
 - `single_file` は解決後のファイルが正確に 1 つであることを要求し、それを 1 つの論理テーブルとして維持します。
-- `one_table_per_file` は、各ファイルを 1 つの子Blueprintファイル内の別々のサニタイズ済みテーブルへマッピングします。
+- `one_table_per_file` は、各ファイルを 1 つの子Blueprintファイル内の別々の匿名ラベル付きテーブルへマッピングします。
 - `merge_same_schema` は、列数が一致する場合、多数のファイルを 1 つの論理テーブルにマージします。
 - `partitioned_dataset` は現在、`merge_same_schema` と同じマージ動作を使用します。Hive 形式のパーティション検出との意味上の区別を将来のために確保しています。
 
@@ -195,7 +195,7 @@ dbwarp-blueprint --bundle-list customer-blueprint-bundle/bundle.toml
 先頭行は `aggregation`、物理 `sources`、`logical_datasets`、aggregate total、
 `limitations` を表示します。group 行は `relationship`、`members_complete`、source ID、
 source 行は `dataset_relationship`、`dataset_group`、`dataset_scope` を表示します。
-`aggregation=suppressed` は size zero ではなく、manifest を確認または修正する指示です。
+`aggregation=suppressed` は、サイズがゼロであることを示すものではなく、manifest を確認または修正する指示として扱ってください。
 
 タグ付きソースのサブセットを 1 つ一覧表示します:
 
@@ -240,8 +240,8 @@ dbwarp-blueprint \
 
 バンドルによってプライバシーモデルが緩和されることはありません:
 
-- ライブ DB ソースは、引き続きサニタイズされたテーブル/列/インデックス ID を出力する。
-- 構造化ファイルの値は、`--measure-compression --yes` が有効な場合にのみデコードされる。
+- ライブ DB ソースは、引き続き秘密キーで保護された匿名のテーブル/列/インデックス ID を出力する。
+- Parquet の値は、`--measure-compression --yes` が有効な場合にのみデコードされる。Avro の取得では、圧縮測定を行わない場合でも、件数、長さ、NULL 比率を求めるために常にコンテナ内のレコードを走査する。
 - デコードされたサンプルはメモリ内にとどまる。
 - バンドルメタデータは、顧客が選択したソース ID とタグを使用する。
 - バンドルコマンドはテレメトリの送信もファイルのアップロードも行わない。

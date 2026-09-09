@@ -25,13 +25,26 @@
 
 各リリースには `SHA256SUMS.txt` も含まれます。
 
+プラットフォームアーカイブは実行可能な運用者向けバンドルであり、ソースツリー
+ではありません。運用および監査の参照資料は含まれますが、その場で再ビルドする
+ことはできません。ソース監査または比較ビルドには、正確なリリースタグか、同じ
+リリースの `dbwarp-blueprint-source-vendored.tar.gz` アセットを使用してください。
+
 ## ダウンロードの検証
 
-Linux/macOS:
+Linux:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
+
+macOS:
+
+```bash
+shasum -a 256 dbwarp-blueprint-macos-arm64.tar.gz
+```
+
+表示された値を `SHA256SUMS.txt` の該当行と比較します。
 
 Windows PowerShell:
 

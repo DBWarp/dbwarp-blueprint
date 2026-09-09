@@ -4,7 +4,7 @@
 
 **语言：** [English](../STRUCTURED_FILES.md) | [Deutsch](../de/STRUCTURED_FILES.md) | [Français](../fr/STRUCTURED_FILES.md) | [Español](../es/STRUCTURED_FILES.md) | [Polski](../pl/STRUCTURED_FILES.md) | [日本語](../ja/STRUCTURED_FILES.md) | **简体中文**
 
-当源是文件而不是实时数据库时，`dbwarp-blueprint` 可以从本地 Parquet 和 Avro 输入构建净化后的 Blueprint TOML。
+当源是文件而不是实时数据库时，`dbwarp-blueprint` 可以从本地 Parquet 和 Avro 输入构建有界、匿名化的 Blueprint TOML。
 
 这是一种离线模式：
 
@@ -13,7 +13,8 @@
 - 无遥测；
 - 不会将行值写入输出；
 - 表和列标识符仅输出为 `table-NNN` 和 `col-N`；
-- 审计仅记录本地输入/输出文件路径和输出哈希。
+- 审计会记录本地输入/输出路径、输出哈希，以及模式、时间、采样工作量和警告等正常
+  运维证据；此模式下不记录数据库端点。
 
 ## Parquet
 
@@ -57,7 +58,7 @@ Avro 对象容器不会公开 Parquet 风格的页脚行数。因此，Avro 模�
 
 嵌套 Parquet 叶节点以及 Avro 数组、映射、记录或多类型联合无法表示为单个精确 SQL 标量。Blueprint 会记录标准化的 `json` 类型和 `source_semantics`，例如 `"repeated-leaf"`、`"nested-json"` 或 `"multi-type-union"`。下游生成器必须将这些值标识为有代表性的 JSON 压力，不得声称嵌套模式能够精确往返。
 
-源文件名主干、Parquet 路径、Avro 字段名和批处理 `logical_table` 标签不会写为 Blueprint 标识符。多文件数据集会输出确定性的 `table-NNN` 标识符，聚合对象字节数、分区数、行组数、编解码器、宽度、空值比例和兼容的压缩来源，并拒绝结构化逻辑列契约不同的文件。
+源文件名主干、Parquet 路径、Avro 字段名和批处理 `logical_table` 标签不会写为 Blueprint 标识符。多文件数据集会输出由秘密密钥保护的 `table-NNN` 标识符，聚合对象字节数、分区数、行组数、编解码器、宽度、空值比例和兼容的压缩来源，并拒绝结构化逻辑列契约不同的文件。
 
 ## 解码后的压缩采样
 
@@ -77,12 +78,14 @@ dbwarp-blueprint \
 启用后，`dbwarp-blueprint` 会：
 
 - 从文件解码最多 `--sample-rows` 条记录；
-- 使用实时数据库 Blueprint 采集所用的同一 `dbwarp-blueprint-rowframe-v1` 行帧编码采样值；
+- 使用实时数据库 Blueprint 采集所用的同一瞬态
+  `blueprint-compression-probe-v2` 表示来编码采样值；
 - 输出表级和逐列 zstd-3 压缩摘要；
-- 在生成的 TOML 中记录 `sample_encoding = "dbwarp-blueprint-rowframe-v1"`；
+- 在生成的 TOML 中记录 `sample_encoding = "blueprint-compression-probe-v2"`；
 - 仅在内存中保存采样字节，绝不会将行值写入磁盘。
 
-`--measure-compression` 需要 `--yes`，因为它会读取解码后的客户值，即使只持久化聚合比率也是如此。
+`--measure-compression` 需要 `--yes`，因为它会读取解码后的客户值。它只持久化汇总的
+压缩、NULL 密度、基数／频率、长度和样式测量值，绝不持久化采样值。
 
 当前采样器使用确定性的前 N 条样本。这样可重现且开销低，但如果文件经过排序或聚集，则可能存在偏差。对于高风险估算，请优先选择有代表性的文件，或从不同分片生成多个 Blueprint 文件。未来版本可能会加入行组/块分层采样。
 
@@ -91,7 +94,7 @@ dbwarp-blueprint \
 结构化文件 Blueprint 模式适用于：
 
 - 在 DBWarp 运行前估算 Parquet/Avro 导入大小；
-- 根据文件元数据生成不含客户数据的合成测试数据集；
+- 在不复制源名称或行值的情况下生成具有代表性的合成测试数据集；
 - 规划 Parquet/Avro -> DBWarp columnar -> 目标数据库流程。
 
 当真实源为受支持的数据库，即 PostgreSQL、MySQL 或 SQL Server 时，它不能替代实时数据库 Blueprint 采集。数据库目录包含通用文件元数据中不存在的索引、键、FK、统计信息新鲜度和引擎布局详细信息。

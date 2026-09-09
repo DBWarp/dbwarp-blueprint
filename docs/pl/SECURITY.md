@@ -29,7 +29,10 @@ i najmniejszy bezpieczny zestaw dowodów potrzebny do oceny zgłoszenia.
 | `--from-toml`, `--from-parquet`, `--from-avro`, `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Brak połączeń sieciowych inicjowanych przez aplikację. Dane wejściowe na sieciowych systemach plików pozostają kwestią systemu operacyjnego lub warstwy pamięci masowej. |
 
 Narzędzie nie wywołuje usług DBWarp ani interfejsów API chmury. Sterowniki baz
-danych i system operacyjny hosta mogą generować opisany powyżej ruch pomocniczy.
+danych i system operacyjny hosta mogą generować opisany powyżej ruch pomocniczy
+oraz korzystać z systemowych magazynów zaufania, konfiguracji DNS, bibliotek
+dynamicznych, a także konfiguracji lub pamięci poświadczeń uwierzytelniania
+zintegrowanego.
 
 `--max-wall-secs` ustanawia dwa niezależne zabezpieczenia. PostgreSQL używa
 lokalnego dla sesji `statement_timeout`, a MySQL lokalnego dla sesji
@@ -44,14 +47,14 @@ zatrzymana.
 
 ## Odczytywane pliki
 
-Podczas działania narzędzie odczytuje tylko dane wejściowe wybrane w wierszu
+Podczas działania aplikacja bezpośrednio odczytuje tylko dane wejściowe wybrane w wierszu
 poleceń lub wskazane przez dane wejściowe przetwarzania wsadowego albo pakietu:
 
 | Plik | Kiedy |
 |---|---|
 | `--user-file` | źródło nazwy użytkownika |
 | `--password-file` | źródło hasła |
-| `--anonymization-key-file` | opcjonalny klucz HMAC przechowywany przez klienta, używany do zachowania anonimowych etykiet obiektów między zatwierdzonymi uruchomieniami; w systemie Unix tryb pliku nie może zezwalać na odczyt grupie ani innym użytkownikom |
+| `--anonymization-key-file` | opcjonalny klucz HMAC przechowywany przez klienta, używany przez plik binarny lub normalizator zapasowej ścieżki SQL do zachowania anonimowych etykiet obiektów między zatwierdzonymi uruchomieniami; w systemie Unix tryb pliku nie może zezwalać na odczyt grupie ani innym użytkownikom |
 | `--azure-token-file` | źródło tokenu Entra ID dla SQL Server |
 | `--tls-ca` | zaufany pakiet CA |
 | `--tls-cert` | certyfikat TLS klienta |
@@ -61,9 +64,9 @@ poleceń lub wskazane przez dane wejściowe przetwarzania wsadowego albo pakietu
 | `--from-avro` | metadane kontenera obiektów Avro i rekordy; Avro musi zostać odczytane sekwencyjnie, aby policzyć rekordy |
 | `--batch-manifest` | manifest wsadowy oraz każdy lokalny plik strukturalny, plik poświadczeń, plik tokenu i plik TLS, do którego się odwołuje |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | plik TOML pakietu i wszystkie względne pliki Blueprint wymagane przez wybraną operację |
-| `/dev/tty` | interaktywny monit o hasło w systemach uniksopodobnych |
+| terminal sterujący lub konsola | interaktywny monit o hasło (`/dev/tty` w systemach uniksopodobnych) |
 
-Narzędzie nie odczytuje `~/.pgpass`, `~/.my.cnf`, plików poświadczeń chmurowych, kluczy SSH, historii powłoki ani domyślnych zmiennych środowiskowych haseł.
+Aplikacja nie ma jawnej ścieżki zapasowej odczytującej `~/.pgpass`, `~/.my.cnf`, pliki poświadczeń chmurowych, klucze SSH, historię powłoki ani domyślne zmienne środowiskowe haseł baz danych. Biblioteki platformy obsługujące bazę danych, TLS, DNS i tożsamość mogą nadal korzystać z własnej konfiguracji systemowej i pamięci poświadczeń; użyj śledzenia systemu operacyjnego, gdy zasady wymagają pełnego inwentarza procesu i bibliotek.
 
 W przypadku PostgreSQL i MySQL dostarczony pakiet PEM `--tls-ca` zastępuje
 wkompilowane korzenie Mozilla. SQL Server używa magazynu zaufania systemu
@@ -109,6 +112,10 @@ Poświadczenia są opakowane w typ `Secret`, który celowo nie implementuje `Deb
 
 Poświadczenia są przekazywane sterownikowi bazy danych wyłącznie podczas zestawiania połączenia. Nie są zapisywane w pliku wyjściowym ani w dzienniku audytu. Dziennik audytu zapisuje źródło poświadczenia, na przykład `file:/etc/dbwarp/db.pass`, a nie jego wartość.
 
+## Kopie poświadczeń należące do sterowników
+
+Zerowanie obejmuje bufor `Secret` należący do DBWarp Blueprint; nie może zagwarantować usunięcia kopii utworzonych przez sterownik bazy danych, bibliotekę TLS, dostawcę uwierzytelniania systemu operacyjnego lub alokator. Bieżące API sterownika MySQL wymaga posiadanego `String`, dlatego `src/engine_mysql.rs` jawnie kopiuje hasło z `Secret` do `OptsBuilder`. Ta kopia nie jest zerowana i pozostaje aktywna do usunięcia buildera/opcji. PostgreSQL, SQL Server i biblioteki uwierzytelniania platformy mogą także tworzyć wewnętrzne kopie poza wrapperem. Odpowiednio ogranicz inspekcję procesów i przestrzeń wymiany na hostach używających wrażliwych poświadczeń.
+
 ## Odrzucane wzorce poświadczeń
 
 Hasła osadzone w URI połączenia są odrzucane. Na przykład poniższy adres nie jest akceptowany:
@@ -124,20 +131,28 @@ Zamiast tego użyj `--password-file`, `--password-env` albo interaktywnego monit
 Plik Blueprint zaprojektowano tak, aby był czytelny dla człowieka i możliwy do sprawdzenia:
 
 - rzeczywiste identyfikatory są zastępowane anonimowymi nazwami chronionymi kluczem, takimi jak `table-001` i `col-1`
-- wartości liczbowe są zaokrąglane do udokumentowanych przedziałów
+- wartości liczbowe używają dokładnej lub zaokrąglonej precyzji udokumentowanej dla każdego pola; tryby dokładnej długości wymagają jawnej zgody
 - komentarze są stałe i nie służą jako kanał danych
 - wartości wierszy nigdy nie trafiają do danych wyjściowych
 - próbki kompresji, jeśli są włączone, są kompresowane lokalnie i usuwane
 
-Poziom 2 na żywo stosuje sztywny limit 16 MiB projektowanego ładunku na tabelę,
-zanim sterownik bazy danych otrzyma dane wierszy. Dla wyjątkowo szerokich tabel
+Poziom 2 na żywo przeznacza najwyżej 16 MiB na ładunek wartości próbek
+zwracanych przez projekcję dla każdej tabeli. Dla wyjątkowo szerokich tabel
 zmniejsza żądaną liczbę wierszy, a komórki o zmiennej szerokości projektuje z
-użyciem natywnego dla silnika obcinania po stronie serwera. Sondy stylu są
-ograniczane oddzielnie w projekcji SQL. Lokalny koder ramek wierszy niezależnie
-wymusza ten sam limit tabeli. Zapobiega to przesyłaniu nieograniczonego ładunku
-LOB przy małej wartości `--sample-rows`; oznacza to również, że bardzo duże
-wartości wpływają na oszacowania kompresji i długości wyłącznie przez swoje
-ograniczone prefiksy.
+użyciem natywnego dla silnika obcinania po stronie serwera, również podczas
+adaptacyjnych ponowień w MySQL i SQL Server. Sondy stylu są ograniczane
+oddzielnie w projekcji SQL. Lokalny koder sondy niezależnie wymusza swój limit
+na tabelę.
+
+Nie jest to limit 16 MiB na ruch sieciowy ani pamięć procesu: ramkowanie
+protokołu, osobno zwracane metadane pierwotnych długości, szesnastkowa
+reprezentacja danych binarnych PostgreSQL, ponowienia i bufory sterownika
+powodują dodatkowy narzut. Bardzo duże wartości mogą wnosić jedynie ograniczone
+prefiksy do pomiarów kompresji i podsumowań wartości. Kolektor osobno uzyskuje
+na serwerze pierwotne długości próbkowanych wartości i stosuje wybraną politykę
+wierności długości do tych długości, a nie tylko do długości zwróconych
+prefiksów. Informacje o pochodzeniu próbkowania dokumentują odpowiednie
+ograniczenia; ograniczony wynik nie jest dowodem pomiaru pełnej wartości.
 
 Kolejność tabel, schematów, indeksów i obiektów innych niż tabele wykorzystuje
 HMAC-SHA256 z separacją domen. Domyślnie narzędzie pobiera z systemu operacyjnego
@@ -148,6 +163,10 @@ zostać zachowane między zatwierdzonymi uruchomieniami porównawczymi. Plik mus
 zawierać dokładnie 32 surowe bajty lub 64 znaki szesnastkowe i musi być chroniony
 jak poświadczenie. Audyt zapisuje jedynie, czy użyto klucza efemerycznego, czy
 przechowywanego przez klienta; nigdy nie zapisuje wartości klucza.
+
+Normalizator `blueprint_format.py` zapasowej ścieżki SQL, używający wyłącznie biblioteki standardowej, stosuje ten sam kontrakt kolejności chronionej kluczem. Domyślnie pobiera nowy losowy klucz z systemu operacyjnego, chyba że podano `--anonymization-key-file`, i po kanonicznym nagłówku dodaje stały komentarz z producentem i źródłem klucza, aby jego wyniku nie można było pomylić z wynikiem kolektora Rust.
+
+Przed normalizacją pośredni JSON zapasowej ścieżki SQL zawiera rzeczywiste nazwy schematów, tabel, kolumn i indeksów. W MySQL `COLUMN_TYPE` może także zawierać zadeklarowane elementy enum/set. Skrypty SQL nie mają selektora podzbioru schematów i nie generują dziennika audytu aplikacji. Zachowaj pośredni JSON w środowisku źródłowym jako wrażliwy materiał schematu, normalizuj go lokalnie i przesyłaj wyłącznie sprawdzony TOML. Użyj kolektora Rust, gdy zatwierdzono tylko wybrane schematy lub wymagane są pełne dowody audytu, topologii, artefaktów lub próbkowania.
 
 Zmniejsza to ryzyko ujawnienia, ale nie sprawia, że każdy plik wyjściowy jest
 bezpieczny dla każdego odbiorcy. Anonimowy kształt schematu, grafy zależności,

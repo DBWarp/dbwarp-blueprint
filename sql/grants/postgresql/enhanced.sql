@@ -40,14 +40,19 @@
 -- do not grant MAINTAIN/BYPASSRLS to this account. Repeat --schema for approved
 -- cross-schema dependencies. Database-wide artifact counts remain in scope.
 --
--- NOT granted: any write, DDL, sequence, replication, superuser, BYPASSRLS,
--- pg_read_all_stats or pg_monitor privilege. Row-level security still applies.
+-- NOT granted by this script: any write, DDL, sequence, replication, superuser,
+-- BYPASSRLS, pg_read_all_stats or pg_monitor privilege. Audit pre-existing role
+-- memberships and PUBLIC ACLs separately; PostgreSQL 13/14 defaults may allow
+-- PUBLIC to create in schema public. Row-level security still applies.
 -- Note: "ON ALL TABLES IN SCHEMA" also covers views, materialized views and
 -- foreign tables in those schemas (read-only; broader than the literal
 -- ordinary-table minimum).
 --
+-- Protect any edited copy containing a password; do not commit or share it.
+-- Remove that copy after use according to your secure-disposal policy.
+--
 -- Run ONCE, connected to the TARGET database as a superuser or its owner:
---     psql "postgresql://postgres@HOST/DBNAME" -f standard.sql
+--     psql "postgresql://postgres@HOST/DBNAME" -f enhanced.sql
 -- Requires psql 10+ (uses \if). Re-running is safe.
 -- =============================================================================
 

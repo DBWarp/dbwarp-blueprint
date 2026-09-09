@@ -69,7 +69,8 @@ La agregación falla de forma segura:
 
 - `independent`: exactamente una fuente en el grupo; sus totales se suman una
   vez.
-- `replica`: las copias coincidentes cuentan una vez. Si divergen, se conserva
+- `replica`: las copias coincidentes cuentan una vez, nunca una vez por
+  réplica. Si divergen, se conserva
   un representante determinista, sin promediar, y el resultado es incompleto.
 - `shard`: los miembros solo se suman cuando `members_complete = true` y todos
   los declarados han finalizado correctamente. Un grupo incompleto no aporta
@@ -198,7 +199,7 @@ como máximo 120 bytes ASCII después de la normalización.
 Para orígenes Parquet y Avro:
 
 - `single_file` requiere exactamente un archivo resuelto y lo mantiene como una tabla lógica.
-- `one_table_per_file` asigna cada archivo a una tabla saneada independiente en
+- `one_table_per_file` asigna cada archivo a una tabla independiente con etiqueta anónima en
   un archivo Blueprint secundario.
 - `merge_same_schema` combina muchos archivos en una tabla lógica cuando
   coincide el número de columnas.
@@ -275,9 +276,10 @@ Un paquete es una entrada Blueprint portátil y revisable. Antes de aceptarlo, u
 Un paquete no relaja el modelo de privacidad:
 
 - los orígenes de bases de datos en vivo siguen emitiendo identificadores
-  saneados de tablas, columnas e índices;
-- los valores de archivos estructurados solo se decodifican cuando se habilita
-  `--measure-compression --yes`;
+  anónimos de tablas, columnas e índices protegidos por una clave secreta;
+- los valores de Parquet solo se decodifican con `--measure-compression --yes`;
+  la captura de Avro siempre recorre los registros del contenedor para obtener
+  recuentos, longitudes y fracciones de nulos, incluso sin medir la compresión;
 - las muestras decodificadas permanecen en memoria;
 - los metadatos del paquete utilizan identificadores de origen y etiquetas
   elegidos por el cliente;

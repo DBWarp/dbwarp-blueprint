@@ -97,9 +97,11 @@ The same flags work with `--from-avro`.
 When enabled, `dbwarp-blueprint`:
 
 - decodes up to `--sample-rows` records from the file;
-- encodes sampled values using the same `dbwarp-blueprint-rowframe-v1` rowframe used by live database Blueprint capture;
+- encodes sampled values using the same transient
+  `blueprint-compression-probe-v2` representation used by live database
+  Blueprint capture;
 - emits table-level and per-column zstd-3 compression summaries;
-- records `sample_encoding = "dbwarp-blueprint-rowframe-v1"` in the generated TOML;
+- records `sample_encoding = "blueprint-compression-probe-v2"` in the generated TOML;
 - keeps sampled bytes in memory only and never writes row values to disk.
 
 `--measure-compression` requires `--yes` because it reads decoded customer

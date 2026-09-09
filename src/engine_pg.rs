@@ -1,7 +1,8 @@
 //! PostgreSQL engine — catalog reader (Tier 1) + compression sampler (Tier 2).
 //!
 //! Connects via `tokio-postgres`. Reads catalog tables only in Tier 1.
-//! Tier 2 additionally runs `TABLESAMPLE SYSTEM(0.1) LIMIT N` per table,
+//! Tier 2 additionally runs an estimate-aware bounded `TABLESAMPLE SYSTEM`
+//! query per table,
 //! zstd-compresses locally, records ratio + stddev, discards bytes.
 //!
 //! All identifiers in the output are anonymized via `format::table_id`,
@@ -25,7 +26,7 @@ use crate::artifacts::{
 use crate::audit::AuditLog;
 use crate::engine_common::{
     accumulate_table_totals, elapsed_ms, percent_decode, rtt_percentiles_ms,
-    warn_compression_unavailable,
+    sampled_column_length_stats, warn_compression_unavailable, LengthFidelity,
 };
 use crate::format::{
     self, BlueprintColumn, BlueprintCompression, BlueprintFile, BlueprintIndex, BlueprintTable,
@@ -78,6 +79,7 @@ fn type_tag_for_pg_str(type_str: &str) -> TypeTag {
             TypeTag::TextUtf8
         }
         "bytea" => TypeTag::BinaryRaw,
+        "vector" => TypeTag::VectorBinary,
         _ => TypeTag::UnknownText,
     }
 }
@@ -110,16 +112,15 @@ fn normalized_pg_type(type_str: &str) -> String {
         }
         "date" => "date".to_string(),
         "time" | "time without time zone" | "time with time zone" | "timetz" => "time".to_string(),
-        "timestamp"
-        | "timestamp without time zone"
-        | "timestamp with time zone"
-        | "timestamptz" => "timestamp".to_string(),
+        "timestamp" | "timestamp without time zone" => "timestamp".to_string(),
+        "timestamp with time zone" | "timestamptz" => "timestamptz".to_string(),
         "uuid" => "uuid".to_string(),
         "json" | "jsonb" => "json".to_string(),
         "text" | "varchar" | "character varying" | "character" | "char" | "name" | "citext" => {
             "text".to_string()
         }
         "bytea" => "binary".to_string(),
+        "vector" => "vector".to_string(),
         _ => "user-defined".to_string(),
     }
 }
@@ -146,6 +147,22 @@ fn declared_pg_max_chars(type_str: &str) -> u64 {
         }
     }
     0
+}
+
+/// Dense float32 vector width in PostgreSQL's binary send representation:
+/// two big-endian u16 header fields followed by one f32 per dimension.
+fn declared_pg_max_bytes(type_str: &str) -> u64 {
+    let normalized = type_str.trim().to_ascii_lowercase();
+    let Some(dimension) = normalized
+        .strip_prefix("vector(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .filter(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| (1..=16_000).contains(value))
+    else {
+        return 0;
+    };
+    4 + dimension * 4
 }
 
 fn normalized_index_method(method: &str) -> String {
@@ -282,6 +299,7 @@ impl PgConnectParams {
 pub struct PgRunOpts {
     pub measure_compression: bool,
     pub compression_workers: usize,
+    pub length_fidelity: LengthFidelity,
     pub sample_rows: u64,
     pub sample_timeout_secs: u64,
     pub source_kind: SourceKind,
@@ -306,6 +324,7 @@ pub async fn run(
     opts: &PgRunOpts,
     audit: &mut AuditLog,
 ) -> Result<BlueprintFile> {
+    audit.length_fidelity = Some(opts.length_fidelity.label().to_string());
     audit.connection.uri_redacted = params.redacted_uri.clone();
     audit.connection.tls_mode = opts.tls.mode.as_str().to_string();
     audit.connection.tls_ca_path = opts.tls.ca_bundle.clone();
@@ -578,8 +597,10 @@ pub async fn run(
                     match sample_compression(
                         &client,
                         t,
+                        table_id,
                         cols_for_table,
                         opts.sample_rows,
+                        opts.length_fidelity,
                         &compression_pool,
                         audit,
                     )
@@ -606,8 +627,10 @@ pub async fn run(
                                 CompressionSample {
                                     table: measurements.table,
                                     columns: measurements.columns,
+                                    column_lengths: pending.column_lengths,
                                     null_fractions: pending.null_fractions,
                                     cardinalities: pending.cardinalities,
+                                    payload_profiles: pending.payload_profiles,
                                 },
                             );
                         }
@@ -694,7 +717,16 @@ pub async fn run(
         let mut col_map: BTreeMap<String, BlueprintColumn> = BTreeMap::new();
         if let Some(cs) = cols_by_oid.get(&t.oid) {
             for (col_pos, c) in cs.iter().enumerate() {
-                let style_label = style_by_col.get(&(t.oid, c.attnum)).copied().unwrap_or("");
+                let payload_profile = compression_sample
+                    .as_ref()
+                    .and_then(|sample| sample.payload_profiles.get(col_pos))
+                    .map(String::as_str)
+                    .unwrap_or("");
+                let style_label = style_by_col
+                    .get(&(t.oid, c.attnum))
+                    .copied()
+                    .filter(|label| !label.is_empty())
+                    .unwrap_or(payload_profile);
                 let column_compression = compression_sample
                     .as_ref()
                     .and_then(|sample| sample.columns.get(col_pos))
@@ -705,11 +737,24 @@ pub async fn run(
                     .and_then(|sample| sample.null_fractions.get(col_pos))
                     .copied()
                     .flatten();
+                let sampled_lengths = compression_sample
+                    .as_ref()
+                    .and_then(|sample| sample.column_lengths.get(col_pos))
+                    .copied()
+                    .flatten();
                 let column_cardinality = compression_sample
                     .as_ref()
                     .and_then(|sample| sample.cardinalities.get(col_pos))
                     .cloned()
                     .flatten();
+                let length_sample_rows = if sampled_lengths.is_some() {
+                    column_compression
+                        .as_ref()
+                        .map(|compression| compression.sample_rows)
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
                 col_map.insert(
                     format::col_id(c.attnum as u32),
                     BlueprintColumn {
@@ -719,14 +764,25 @@ pub async fn run(
                         null_fraction,
                         native_type: String::new(),
                         declared_max_chars: declared_pg_max_chars(&c.type_str),
-                        declared_max_bytes: 0,
+                        declared_max_bytes: declared_pg_max_bytes(&c.type_str),
                         numeric_precision: 0,
                         numeric_scale: 0,
                         datetime_precision: 0,
                         charset: String::new(),
                         collation: String::new(),
-                        len_avg: format::round_len_avg(c.len_avg),
-                        len_p95: format::round_len_p95(c.len_p95),
+                        len_avg: sampled_lengths
+                            .map(|(average, _)| average)
+                            .unwrap_or_else(|| format::round_len_avg(c.len_avg)),
+                        len_p95: sampled_lengths
+                            .map(|(_, p95)| p95)
+                            .unwrap_or_else(|| format::round_len_p95(c.len_p95)),
+                        length_sample_rows,
+                        length_p95_sample_rows: length_sample_rows,
+                        length_sample_method: if length_sample_rows > 0 {
+                            "decoded bounded SQL sample".to_string()
+                        } else {
+                            String::new()
+                        },
                         style: style_label.to_string(),
                         compression: column_compression,
                         cardinality: column_cardinality,
@@ -851,12 +907,10 @@ pub async fn run(
         length_metadata: "hybrid-v2".to_string(),
         declared_length_fidelity: "exact".to_string(),
         index_length_fidelity: "not-captured".to_string(),
-        observed_length_fidelity: if opts.measure_compression {
-            "coarse-rounded-v1"
-        } else {
-            "not-sampled"
-        }
-        .to_string(),
+        observed_length_fidelity: opts
+            .length_fidelity
+            .observed_marker(opts.measure_compression)
+            .to_string(),
         totals,
         network: network_probe,
         database_topology: Some(sizing.topology),
@@ -1899,8 +1953,10 @@ fn pg_fk_match(code: &str) -> &'static str {
 struct CompressionSample {
     table: BlueprintCompression,
     columns: Vec<Option<BlueprintCompression>>,
+    column_lengths: Vec<Option<(u64, u64)>>,
     null_fractions: Vec<Option<f64>>,
     cardinalities: Vec<Option<format::BlueprintCardinality>>,
+    payload_profiles: Vec<String>,
 }
 
 include!("engine_pg_sampling.rs");

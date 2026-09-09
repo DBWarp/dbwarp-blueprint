@@ -20,7 +20,7 @@
 
 ```bash
 ./dbwarp-blueprint --lang fr --help
-./dbwarp-blueprint --lang pl --connect postgresql://db.internal/payments --dry-run
+./dbwarp-blueprint --lang pl --connect postgresql://db.internal/payments --schema app --dry-run
 ```
 
 サポートされている値は `en`、`de`、`fr`、`es`、`pl`、`ja`、`zh` です。
@@ -29,7 +29,33 @@
 Blueprint TOML は決して変わりません。
 [`INTERNATIONALISATION.md`](INTERNATIONALISATION.md)を参照してください。
 
-## 2. 資格情報を安全に準備する
+## 2. 最小権限の専用アカウントを準備する
+
+後でキャプチャに使用する `--dry-run` の例を含め、データベースへ接続する前に
+この手順を実施してください。アプリケーション所有者、管理者、スーパー
+ユーザー、`root`、`sa`、`db_owner` のアカウントから始めないでください。
+
+1. 正確なエンジンとバージョン、データベース、承認済みのスキーマを特定します。
+2. キャプチャ階層を選びます。テーブルカタログだけなら `basic`、合成コピーに
+   使用できる上限付き行サンプルなら `standard`、さらに非テーブルオブジェクト
+   も分析するなら `enhanced` です。
+3. DBA は `sql/grants/<engine>/` にある該当スクリプトをコピーし、マークされた
+   データベース、スキーマ、プリンシパル、パスワード、ロール切り替えの値を
+   すべて編集したうえで、通常の変更管理手順に従って実行します。
+4. そのスクリプトが作成した専用アカウントを使用し、すべての実接続コマンドで
+   承認済みスキーマごとに `--schema NAME` を一つ指定します。
+5. キャプチャと証跡のレビュー後、DBA は `sql/revoke/` にある該当エンジンの
+   スクリプトを確認して実行し、アカウントと権限を削除します。
+
+スクリプトは、厳密に範囲を限定した権限と便利な組み込みロールを意図的に区別し、
+ロールが広すぎる場合を説明します。実行可能なスクリプトについては
+[`../../sql/grants/README.md`](../../sql/grants/README.md)、バージョン別の DBA／
+セキュリティ上の根拠については
+[`../../sql/grants/DATABASE_PERMISSIONS.md`](../../sql/grants/DATABASE_PERMISSIONS.md)
+を参照してください。コレクター自体はデータベースプリンシパルを作成、拡張、
+削除しません。
+
+## 3. 資格情報を安全に準備する
 
 接続 URI にパスワードを含めないでください。本ツールは、プロセス一覧やシェル履歴への漏えいを避けるため、URI に埋め込まれたパスワードを拒否します。
 
@@ -37,6 +63,7 @@ Blueprint TOML は決して変わりません。
 シェル履歴には残りません）:
 
 ```bash
+sudo install -d -m 700 -o "$USER" -g "$(id -gn)" /etc/dbwarp
 install -m 600 /dev/null /etc/dbwarp/db.pass
 read -rsp 'Database password: ' DBWARP_BP_PASSWORD; printf '\n'
 printf '%s' "$DBWARP_BP_PASSWORD" > /etc/dbwarp/db.pass
@@ -47,18 +74,19 @@ unset DBWARP_BP_PASSWORD
 
 ```bash
 install -m 600 /dev/null /etc/dbwarp/db.user
-printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
+printf '%s' 'DOMAIN\migration_user' > /etc/dbwarp/db.user
 ```
 
 その後、`--user-file /etc/dbwarp/db.user` を使用します。
 
-## 3. 最初にドライランする
+## 4. 最初にドライランする
 
 ドライランは、接続せずに引数を検証し、予定されている操作を表示します:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -77,15 +105,17 @@ printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
   --dry-run
 ```
 
-## 4. カタログのみのモードを実行する
+## 5. カタログのみのモードを実行する
 
 カタログのみのモードは、メタデータと統計を読み取りますが、行サンプルは読み取りません:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out blueprint.catalog.toml \
@@ -95,7 +125,7 @@ printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
 
 行サンプリングがポリシーで禁止されている場合、または最初のセキュリティレビューを行う場合に使用してください。
 
-## 5. 非テーブル成果物の詳細度を選択する
+## 6. 非テーブル成果物の詳細度を選択する
 
 既定の `--artifact-detail summary` は非テーブルカタログを読みますが、オブジェクト定義は読みません。有界件数と外部前提条件クラスを出力します。ポリシーがこれらのカタログを禁止する場合は `--artifact-detail none` を使用してください。
 
@@ -104,6 +134,7 @@ printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --artifact-detail analyzed \
@@ -115,13 +146,16 @@ printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
 
 出力にはオブジェクト名、定義テキスト、エンドポイント、秘密、鍵、証明書、バイナリが含まれません。graph または analyzed モードを承認する前に [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md) を参照してください。
 
-## 6. Tier 2 圧縮測定を実行する
+## 7. Tier 2 圧縮測定を実行する
 
-Tier 2 は、制限された行サンプルをメモリへ読み込み、ローカルで圧縮し、比率のサマリーだけを書き込み、サンプルバイトを破棄します:
+Tier 2 は、制限された行サンプルをメモリへ読み込み、圧縮、NULL 密度、
+カーディナリティ/頻度、長さ、スタイルの集計測定値を計算して、サンプル値を
+破棄します:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -135,13 +169,14 @@ Tier 2 は、制限された行サンプルをメモリへ読み込み、ロー�
 
 可能な場合は Tier 2 を使用してください。DBWarp によるワイヤーバイト、エグレスコスト、合成テキスト/バイナリデータ生成の推定精度が向上します。
 
-## 7. デッキを生成する
+## 8. デッキを生成する
 
 ライブ実行中に生成する場合:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -159,7 +194,7 @@ Tier 2 は、制限された行サンプルをメモリへ読み込み、ロー�
 ./dbwarp-blueprint --from-toml blueprint.toml --deck blueprint.pptx
 ```
 
-## 8. 共有前にレビューする
+## 9. 共有前にレビューする
 
 次をレビューします:
 
@@ -179,9 +214,10 @@ unzip -l blueprint.pptx  # optional deck package inspection
 - `table-001`、`col-1`、`schema-A` などの匿名化 ID が使用されている
 - 有界な成果物件数と、承認済みの場合は匿名成果物 ID
 - 黙って省略せず、不完全または読み取り不能な成果物の明示的な証拠
-- 任意の圧縮比だけがあり、サンプルバイトはない
+- 圧縮、NULL 密度、カーディナリティ/頻度、長さ、スタイルの任意の集計測定値。
+  サンプル値は含まれない
 
-## 9. DBWarp へ引き渡す
+## 10. DBWarp へ引き渡す
 
 最小限の引き渡し:
 
@@ -204,15 +240,12 @@ dataset-group id が保持されます。匿名の値を使用し、転送前に
 
 顧客に複数のデータベース、複数の Parquet または Avro データセットがある場合、またはベンチマーク生成用に選択したソース/テーブルだけを承認する場合は、`docs/BATCH_AND_BUNDLES.md` を使用してください。
 
-既定では、次の項目をアクセス制御されたローカル証拠として保管します:
+<a id="review-and-share"></a>
 
-```text
-blueprint.audit.txt
-blueprint.pptx
-command-used.txt
-```
+### レビューと共有
 
-監査や保存したコマンドには、データベースエンドポイント、認証済みプリンシパル、
-ローカルパス、タイミングデータ、マニフェストの source id が含まれる場合があります。
-特定のサポート上の必要がある場合に限り、承認済みの安全な経路で送信してください。
-パスワードファイル、CA 秘密鍵、顧客ダンプ、データベースログは送信しないでください。
+既定では、レビュー済みの `blueprint.toml` またはパック済みバンドルのみを共有してください。デッキは、内容と機密区分を確認し、組織の方針に従って別途承認した場合に限り添付できます。
+
+監査、コマンド記録、レビューメモ、未承認のデッキは、アクセス制御されたローカル証拠として保管してください。これらにはエンドポイント、認証済みの主体、ローカルパス、時間情報、マニフェストの識別子が含まれる場合があります。運用証拠は、特定のサポート上の必要がある場合に限り、承認された安全な経路で送信してください。
+
+ツールは `command-used.redacted.txt` を作成しません。これはオペレーターが任意で作成する記録であり、標準の引き渡し成果物ではありません。パスワードやトークンのファイル、匿名化キー、CA 秘密鍵、顧客データのダンプ、データベースログは絶対に含めないでください。

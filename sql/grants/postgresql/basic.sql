@@ -22,8 +22,13 @@
 -- grant for this BASIC account. Repeat --schema for an approved multi-schema
 -- application; an unresolved selector fails with DBP1420E.
 --
--- NOT granted: SUPERUSER, CREATEDB, CREATEROLE, REPLICATION, BYPASSRLS, schema
--- USAGE, table SELECT, pg_read_all_data, pg_read_all_stats, pg_monitor.
+-- NOT granted by this script: SUPERUSER, CREATEDB, CREATEROLE, REPLICATION,
+-- BYPASSRLS, schema USAGE, table SELECT, pg_read_all_data, pg_read_all_stats,
+-- or pg_monitor. Audit pre-existing role memberships and PUBLIC ACLs separately;
+-- PostgreSQL 13/14 defaults may allow PUBLIC to create in schema public.
+--
+-- Protect any edited copy containing a password; do not commit or share it.
+-- Remove that copy after use according to your secure-disposal policy.
 --
 -- Run ONCE, connected to the TARGET database as a superuser or its owner:
 --     psql "postgresql://postgres@HOST/DBNAME" -f basic.sql

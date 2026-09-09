@@ -1,10 +1,8 @@
 # dbwarp-blueprint one-step DBA grant scripts — basic / standard / enhanced
 
-Least-privilege grant sets for the three capture tiers. Derived by tracing
-every catalog and row query in
-`src/engine_pg.rs`, `src/engine_mysql.rs`, `src/engine_mssql.rs`, then
-**verifying each script live** against the complete non-managed version
-matrix. The coverage is summarized below.
+Least-privilege grant sets for the three capture tiers, based on the catalog
+and sampling queries implemented by the PostgreSQL, MySQL, and SQL Server
+collectors. Choose the script for your engine version and approved capture tier.
 
 ## Files
 
@@ -25,7 +23,7 @@ the targets before running any removal script.
 
 `DATABASE_PERMISSIONS.md` in this folder is the full DBA/security
 review behind these scripts (profiles, query-to-permission mapping, cloud IAM,
-acceptance gates); its catalog-only / synthetic-copy-ready / enhanced profiles
+scope and completeness checks); its catalog-only / synthetic-copy-ready / enhanced profiles
 are the `basic` / `standard` / `enhanced` tiers here.
 
 Each file is self-contained and idempotent: it creates its own principal when
@@ -38,7 +36,9 @@ the marked lines at the top (principal name, database/schema scope, and, for
 PostgreSQL or SQL Server, password) and runs the file once. PostgreSQL and SQL
 Server files refuse to run while the password is still `CHANGE-ME`. MySQL
 8.0.18 and later generates a random initial password and returns it to the DBA;
-the checked-in scripts never contain a usable password literal.
+the checked-in scripts never contain a usable password literal. Protect any
+edited script containing credentials, never commit or share it, and remove it
+after use according to your secure-disposal policy.
 
 
 ## Tier definitions (what the tool reads → which CLI flags → what a DBA grants)
@@ -114,10 +114,14 @@ coverage, not measured error against source truth.
 | **standard** | + `USAGE` on schemas, `SELECT ON ALL TABLES IN SCHEMA` (default: every non-system schema; switch: `pg_read_all_data`, PG 14+) | `SELECT ON schema.*` instead of `REFERENCES` | + `SELECT ON SCHEMA::x` for every schema owning a user table (switch: `db_datareader`) | same |
 | **enhanced** | **nothing more** — every artifact catalog and `pg_get_*def` function is PUBLIC-readable | `SELECT, SHOW VIEW, TRIGGER, EVENT ON schema.*` + `SHOW_ROUTINE ON *.*` + `SELECT ON performance_schema.user_defined_functions` | + `SELECT ON sys.sql_expression_dependencies`; user in `msdb` + `SELECT ON msdb.dbo.sysjobs` | same |
 
-No tier grants table-data writes, `CREATE`/`ALTER`/`DROP` on tables or schemas,
-ownership, impersonation, server state, RLS bypass, unmasking, key control,
-superuser/sysadmin, or cloud IAM. MySQL enhanced is the narrow exception to
-the general no-DDL posture:
+The scripts do not grant table-data writes, `CREATE`/`ALTER`/`DROP` on tables
+or schemas, ownership, impersonation, server state, RLS bypass, unmasking, key
+control, superuser/sysadmin, or cloud IAM. Effective privileges can still come
+from pre-existing role membership or `PUBLIC` ACLs; review the principal after
+provisioning. In particular, PostgreSQL 13 and 14 installations created with
+their default ACLs can allow `PUBLIC` to create objects in schema `public`.
+The scripts do not change that cluster-wide policy. MySQL enhanced is the
+narrow exception to the scripts' general no-DDL posture:
 `TRIGGER` and `EVENT` are DDL-capable metadata privileges used to inspect those
 object families, and another client using the same principal could create or
 drop triggers or events in the selected schema. Use standard when that
@@ -130,71 +134,18 @@ no additional grant in any tier. Operators should pass
 `--expect-server-principal PRINCIPAL` when the approved login is known; a
 mismatch fails before catalog capture rather than broadening permissions.
 
-## Verification evidence
+## Operational limitations
 
-Each script was applied with its placeholders substituted, then the binary was
-run with that tier's flags. "Negative" rows run a lower-tier account with a
-higher-tier CLI to prove the extra grants are necessary.
-
-These grant sets are verified against PostgreSQL 13-18, MySQL 8.0/8.4/9.7, and
-SQL Server 2019/2022/2025, covering both the scoped-grant and built-in-role
-models on every applicable target. PostgreSQL 13 uses scoped grants because
-`pg_read_all_data` starts at PostgreSQL 14; MySQL retains the shipped
-database-object grant model because its scripts offer no predefined-role
-toggle; SQL Server uses `db_datareader`. Published artifacts carry their own
-provenance and checksums.
-
-The scope contract is additionally exercised against PostgreSQL 18.6,
-MySQL 8.4.11, and SQL Server 2022 (16.0.4265): basic,
-standard, and enhanced each captured only the selected five-table fixture and
-recorded `selection-limited` plus `schema_selector_count: 1`. A validly
-connected request for a nonexistent schema failed with `DBP1420E`, wrote no
-Blueprint, and did not copy the requested name into its audit on all three
-engines. This is representative selector proof, not qualification of every
-version in the matrix.
-
-| Run | PG 17.11 | MySQL 9.7 | SQL 2022 | SQL 2019 |
-|---|---|---|---|---|
-| basic account, basic CLI | rc 0, 4 tables, no warnings | rc 0, 3 tables, none | rc 0, 4 tables, none | same as 2022 |
-| standard account, standard CLI | rc 0, 21 compression blocks, `DBP1408W×5`¹ | rc 0, 15 blocks, none | rc 0, 16 blocks, none | same |
-| enhanced account, enhanced CLI | `visibility="full"`, 17 catalogs read, 29 objects | 109 artifacts, all 7 catalogs read, no `DBP1410W` | `visibility="full"`, incl. `scheduled_job:1` from msdb | same |
-| **negative:** standard acct + enhanced CLI | identical to enhanced (PG needs nothing extra) | routines/triggers/events silently absent; `catalogs_unreadable=["performance_schema.user_defined_functions"]`, `DBP1410W×2` | `catalogs_unreadable=["msdb.dbo.sysjobs","sys.sql_expression_dependencies"]`, `DBP1410W×4`, `visibility="privilege_filtered"` | same |
-| **negative:** basic acct + standard CLI | `DBP1407W×12` (samples denied) | `DBP1407W×9` | `DBP1407W×12` | same |
-| superuser comparison run, enhanced CLI | same measured facts except `len_avg` on the RLS-enabled table² | – | – | – |
-
-¹ `DBP1408W "Style sample failed: error serializing parameter 0"` occurs
-identically for a superuser: it is a known limitation of the column style
-probe for enum/domain columns, not a permission gap.
-² `pg_stats` hides rows of a table with row-level security from any role
-without `BYPASSRLS`, so observed widths for that table are 0 for the collector
-(and for its owner). Do not grant `BYPASSRLS` for this; accept it or capture
-from a scrubbed replica.
-
-
-## Verification findings
-
-1. **SQL Server 2022+: `VIEW SECURITY DEFINITION` + `VIEW DATABASE PERFORMANCE
-   STATE` does NOT make tables visible** (`sys.tables` returned 0 rows; only
-   certificates/keys/credentials became visible). `VIEW DEFINITION` is still
-   required for the basic walk on 2022/2025. The granular DMV permission alone
-   is correct for `sys.dm_db_partition_stats`.
-2. **SQL Server graph/analyzed needs two explicit grants**: `SELECT ON
-   sys.sql_expression_dependencies` (only `db_owner` has it by default;
-   `db_datareader` also covers it) and, for the Agent job census, a user in
-   `msdb` with `SELECT ON dbo.sysjobs` — `SQLAgentReaderRole` is not enough
-   because the code reads the base table rather than `sysjobs_view`.
-3. **MySQL enhanced is not achievable with read-only privileges**: `TRIGGER`
-   and `EVENT` (both DDL-capable) are the only way to see
-   `information_schema.TRIGGERS`/`EVENTS`; `SHOW_ROUTINE` (global, 8.0.20+) is
-   needed for routine definitions and reveals routines in **every** schema on
-   the server (`EXECUTE` is unnecessary); `SHOW VIEW` is needed for view
-   definitions but is insufficient for basic (leaves `COLUMNS` and
-   `KEY_COLUMN_USAGE` empty). `REFERENCES` remains the correct basic privilege.
-4. **PostgreSQL enhanced = standard.** A `CONNECT`-only role already sees all
-   17 artifact catalogs and every definition function; `GRANT CONNECT` itself
-   is implied by the default `PUBLIC` ACL but is kept explicit.
-5. The basic tier is not prompt-free: automation must pass `--yes` (documented
-   as harmless) or the run ends with `DBP1701E`.
+- PostgreSQL 13 uses scoped grants; `pg_read_all_data` is available from 14.
+  Enhanced capture needs no additional PostgreSQL grants beyond standard.
+- SQL Server 2022/2025 still requires `VIEW DEFINITION` for table visibility;
+  `VIEW SECURITY DEFINITION` is not a substitute. Enhanced dependency and
+  Agent-job reads need the explicit grants listed above.
+- MySQL enhanced grants `TRIGGER` and `EVENT`, which are DDL-capable, and
+  global `SHOW_ROUTINE`. Approve these broader capabilities explicitly.
+- Row-level security can hide `pg_stats` widths. Do not add `BYPASSRLS` merely
+  to improve the capture. Use the approved visible population or an approved replica.
+- Every tier prompts for consent; automation must pass `--yes`.
 
 ## Scope caveats a DBA should know before approving
 

@@ -4,8 +4,14 @@
 
 **Langues :** [English](../../AUDIT.md) | [Deutsch](../de/AUDIT.md) | **Français** | [Español](../es/AUDIT.md) | [Polski](../pl/AUDIT.md) | [日本語](../ja/AUDIT.md) | [简体中文](../zh/AUDIT.md)
 
-Ce document énumère toutes les actions que l'outil peut effectuer. Comparez-les
-à votre politique de sécurité.
+Ce document décrit le comportement réseau, système de fichiers, environnement,
+base de données et audit de l'application à l'exécution. Comparez chaque mode
+et option actifs à votre politique de sécurité. Les pilotes de base de données,
+les bibliothèques TLS et d'identité, le chargeur dynamique et le système
+d'exploitation peuvent aussi consulter la configuration de la plateforme, les
+magasins de confiance, le DNS, les caches d'identifiants et les stockages réseau ;
+ces actions de la couche de support ne sont pas entièrement visibles dans
+l'audit de l'application.
 
 ## Sortie réseau
 
@@ -23,27 +29,31 @@ L'outil lit les entrées sélectionnées par le mode actif :
 | Fichier | Quand | Contenu |
 |---|---|---|
 | `--user-file PATH` | Si fourni | Nom d'utilisateur uniquement. Les espaces de fin sont supprimés ; un fichier vide est une erreur. |
-| `--password-file PATH` | Si fourni | Lu une fois, puis remis à zéro après utilisation. Refusé si son mode autorise la lecture par le groupe ou par tous. |
-| `--azure-token-file PATH` | Si fourni | Jeton SQL Server Entra ID. Lu une fois, puis remis à zéro après utilisation. Refusé si son mode autorise la lecture par le groupe ou par tous. |
+| `--password-file PATH` | Si fourni | Lu une fois. Le tampon `Secret` détenu par DBWarp est remis à zéro à sa destruction ; les pilotes peuvent conserver leurs propres copies comme indiqué dans SECURITY.md. Refusé si son mode autorise la lecture par le groupe ou par tous sous Unix. |
+| `--anonymization-key-file PATH` | Si fourni | Clé HMAC détenue par le client, de 32 octets ou 64 caractères hexadécimaux. Refusée si elle est lisible par le groupe ou par tous sous Unix. La clé n'est jamais émise. |
+| `--azure-token-file PATH` | Si fourni | Jeton SQL Server Entra ID. Lu une fois ; le tampon `Secret` détenu par DBWarp est remis à zéro à sa destruction. Refusé si son mode autorise la lecture par le groupe ou par tous sous Unix. |
 | `--tls-ca PATH` | Si fourni | Certificat d'autorité de certification PEM approuvé, lu au moment de la connexion. PostgreSQL/MySQL acceptent un bundle ; SQL Server accepte exactement un certificat. Le fichier fourni remplace les certificats racines par défaut du moteur. |
 | `--tls-cert PATH` | Si fourni | Certificat TLS client PostgreSQL/MySQL (PEM), lu au moment de la connexion. Refusé pour SQL Server avec `DBP1015E`. |
-| `--tls-key PATH` | Si fourni | Clé TLS client PostgreSQL/MySQL (PEM). Refusée si son mode autorise la lecture par le groupe ou par tous. Lue au moment de la connexion et refusée pour SQL Server avec `DBP1015E`. |
+| `--tls-key PATH` | Si fourni | Clé TLS client PostgreSQL/MySQL (PEM). Refusée sous Unix si son mode autorise la lecture par le groupe ou par tous. Lue au moment de la connexion et refusée pour SQL Server avec `DBP1015E`. |
 | `--from-toml PATH` | Si fourni | Fichier TOML dbwarp-blueprint existant, lu localement pour créer une présentation sans connexion à une base de données. |
 | `--from-parquet PATH` | Si fourni | Métadonnées Parquet et, uniquement avec un consentement explicite à l'échantillonnage, lignes décodées en quantité limitée. |
 | `--from-avro PATH` | Si fourni | Métadonnées et enregistrements du conteneur Avro ; le conteneur est parcouru pour obtenir le nombre de lignes. |
 | `--batch-manifest PATH` | Si fourni | Manifeste et chaque chemin local d'entrée, d'informations d'identification, de jeton et TLS qu'il référence. |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Si fourni | TOML du bundle et fichiers Blueprint relatifs nécessaires pour l'affichage, l'extraction ou l'empaquetage. |
-| `/dev/tty` | Si aucune source de mot de passe n'est fournie | Invite sans écho. |
-| (compilation uniquement) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` dans les releases vendues, `vendor/mysql_async`, `vendor-crates/*` dans les bundles hors ligne | Uniquement lors de l'exécution de `./build.sh` | Entrées de chaîne d'outils, provenance source et compilation Cargo |
+| terminal/console de contrôle (`/dev/tty` sur les systèmes de type Unix) | Si aucune source de mot de passe n'est fournie | Invite sans écho. |
+| (compilation uniquement) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` dans les releases avec dépendances incluses (vendored), `vendor/mysql_async`, `vendor-crates/*` dans les bundles hors ligne | Uniquement lors de l'exécution de `./build.sh` | Entrées de chaîne d'outils, provenance source et compilation Cargo |
 
-Ce qu'il ne lit **PAS** :
+L'application ne possède aucun chemin explicite pour lire :
 - `~/.pgpass`, `~/.my.cnf`, `~/.aws/credentials`, `~/.azure/credentials`
 - Tout fichier sous `~/.ssh/*`
-- `/etc/passwd`, `/etc/shadow`
+- `/etc/passwd` ou `/etc/shadow` comme entrées Blueprint (les bibliothèques
+  d'identité et d'authentification de la plateforme peuvent néanmoins consulter
+  les données des comptes du système d'exploitation)
 - Toute variable d'identification de base de données autre que celle désignée par `--password-env`,
   `--user-env` ou `--azure-token-env`. Les compilations Kerberos intégrées
-  peuvent également observer `KRB5CCNAME`, car libgssapi utilise le cache de
-  tickets Kerberos. Les variables de langue et de présentation du terminal sont décrites ci-dessous.
+  peuvent également amener la pile GSSAPI/Kerberos de la plateforme à consulter
+  sa configuration, son cache, son keytab et ses variables d'environnement. Les
+  variables de langue et de présentation du terminal sont décrites ci-dessous.
 
 ## Écritures dans le système de fichiers
 
@@ -57,22 +67,29 @@ L'outil écrit uniquement les sorties sélectionnées par le mode actif :
 | `--out-dir DIR` | Mode batch hors simulation | `bundle.toml`, répertoires `blueprints/` et `audits/` par source, marqueur de propriété et `errors.txt` après un échec partiel. La publication utilise un répertoire de prépublication adjacent et un marqueur de récupération. |
 | (compilation uniquement) `./target/`, `./build/` | Uniquement lors de l'exécution de `./build.sh` | Sorties standard de compilation Cargo |
 
-Ce qu'il n'écrit **PAS** :
+L’application ne possède aucun chemin explicite pour écrire dans :
+
 - `/var/log/*`
 - `~/.cache/*`, `~/.local/*`, `~/.config/*`
 - aucun répertoire temporaire système implicite (l'utilisateur peut toujours y diriger explicitement une sortie ou un répertoire batch)
 
 ## Variables d'environnement lues
 
-L'audit ne répertorie que les variables réellement consultées. Si `--lang` ne
+L'audit ne répertorie que les variables consultées par DBWarp Blueprint lui-même. Si `--lang` ne
 sélectionne pas déjà une langue prise en charge, la sélection peut lire
-`DBWARP_BLUEPRINT_LANG`, `LC_ALL`, `LC_MESSAGES` et `LANG`. Le rendu du terminal peut lire `NO_COLOR`,
+`DBWARP_BLUEPRINT_LANG`, `LC_ALL`, `LC_MESSAGES` et `LANG`, dans cet ordre. Le rendu du terminal peut lire `NO_COLOR`,
 `TERM`, `COLORTERM` et `COLUMNS` ; ces variables n'affectent que la présentation.
 
 Lorsque `--password-env VAR_NAME` ou `--user-env VAR_NAME` est indiqué,
 l'outil lit exactement la variable nommée. Il ne se rabat pas sur les valeurs
 courantes par défaut telles que `PGPASSWORD`, `MYSQL_PWD`, `MSSQL_PASSWORD`,
 `USER` ou `LOGNAME` ; ces replis ne sont volontairement pas implémentés.
+
+Les bibliothèques de base de données, TLS, DNS et d'authentification intégrée
+de la plateforme peuvent consulter leurs propres variables et leur propre
+configuration en dehors de cette liste applicative. Utilisez une trace du
+système d'exploitation si la politique exige un inventaire complet du processus
+et de ses bibliothèques.
 
 Lors de l'exécution de `./build.sh`, le script lit `PINNED_RUST` (remplacement),
 `ALLOW_NETWORK` (autorisation explicite du téléchargement de rustup-init),
@@ -81,8 +98,8 @@ standard. Aucune n'est lue par l'outil lui-même à l'exécution.
 
 ## Journal d'audit par exécution
 
-L'outil émet un journal d'audit sur stderr à chaque exécution. Son format est
-du texte brut déterministe. Redirigez-le vers un fichier avec `2>audit.txt` ou
+L'outil émet un journal d'audit sur stderr à chaque exécution avec une mise en
+page en texte brut stable. Redirigez-le vers un fichier avec `2>audit.txt` ou
 utilisez `--audit-log PATH` pour obtenir une copie explicite.
 
 Exemple (Tier 1) :
@@ -95,6 +112,7 @@ build_toolchain:     1.94.0 (vendored)
 mode:                tier-1
 started_at_unix_ms:  1745596800000
 outcome:             ok
+anonymization_key:   ephemeral-random
 schema_selector_count: 1
 
 connection:
@@ -190,7 +208,7 @@ warnings:
   - (none)
 
 network_egress:
-  - db.example:5432 (the DB connection only)
+  - db.example:5432 (database-driver session; DNS may use the configured resolver)
 
 env_vars_read:
   - (none)
@@ -198,12 +216,12 @@ env_vars_read:
 trust_assertions:
   - no row content was read
   - no telemetry was sent anywhere
-  - all numeric statistics rounded to documented precision
-  - identifier ordering is deterministic (sha256-based)
-  - no random or pseudorandom data in output
-  - artifact summary stores bounded counts only; no object identities or definitions
+  - length policy balanced: declared capacities and index prefixes exact; sampled lengths relatively rounded
+  - identifier ordering uses domain-separated HMAC-SHA256 with a fresh process-local key; labels intentionally vary between runs
+  - the anonymization key and source identifiers are not written to the Blueprint
+  - artifact summary stores bounded counts and external-prerequisite classes; no object identities or definitions
   - artifact output excludes source object names, SQL text, endpoints, credentials, keys, certificates, and binaries
-  - credential read once via Secret wrapper, zeroized when dropped at end of engine run; see SECURITY.md for driver-owned copy lifetimes (MySQL clones to non-zeroizing String for the driver API)
+  - credential entered through the Secret wrapper and its buffer is zeroized on drop; driver APIs may retain copies as documented under 'Driver-owned credential copies' in SECURITY.md
 
 run_duration_ms:    142
 finished_at_unix_ms: 1745596800142
@@ -235,13 +253,16 @@ Le journal d'audit :
   dégradation connue n'a été observée ;
 - copie les preuves validées `[database_topology]` et `[dataset_scope]` dans `topology_and_scope`, uniquement avec des jetons fermés et des nombres ; aucun nom de nœud, endpoint ou identifiant de cluster ou de base ne peut apparaître ;
 - conserve `DBP1411W`, `DBP1412W` et `DBP1413W` lorsque la topologie ou la couverture est incomplète, afin qu'une collecte réussie ne masque pas une réserve de dimensionnement ;
-- enregistre une estimation déterministe et ventilée par dimension de la fidélité Blueprint. Le score décrit la couverture des preuves capturées pour la structure, le dimensionnement, les statistiques de colonnes, les relations et les artefacts. Il ne s'agit ni d'une erreur mesurée par rapport aux données source ni d'un intervalle de confiance statistique ;
+- enregistre une estimation déterministe de fidélité Blueprint ventilée par dimension. Le score décrit la couverture des preuves capturées pour la structure, le dimensionnement, les statistiques de colonnes, les relations et les artefacts. Il ne s'agit ni d'une erreur mesurée par rapport aux données source ni d'un intervalle de confiance statistique. Les statistiques PostgreSQL signalées comme obsolètes ou jamais analysées réduisent le score de la dimension de dimensionnement et apparaissent explicitement comme limitations `table-statistics-stale` ou `table-statistics-never-analyzed`. La fraîcheur ne peut pas compenser une couverture manquante des nombres de lignes. Aucune preuve de fraîcheur n'est inventée pour les moteurs qui utilisent des compteurs actualisés en continu ou dont la fraîcheur des statistiques ne peut pas être établie ;
 - déclare les assertions de confiance adaptées au mode (Tier 1 ou Tier 2) ;
-- est déterministe pour la même entrée : même base de données et mêmes arguments
-  produisent le même audit, à l'exception des champs de durée.
+- utilise un format texte stable, mais ses valeurs peuvent varier avec l'état de
+  la base, le moment, les avertissements et la nouvelle clé d'anonymisation créée
+  par défaut. Pour les comparaisons approuvées, réutilisez un
+  `--anonymization-key-file` protégé et fixez `--generated-at` ; les champs de
+  durée varient toujours.
 
 **Émission conditionnelle des assertions de confiance.** La ligne
-« credential read once via Secret wrapper... » n'est émise que lors des
+« credential entered through the Secret wrapper... » n'est émise que lors des
 exécutions où une information d'identification a effectivement été lue. Les
 chemins d'échec qui s'interrompent avant son acquisition (erreurs d'analyse de
 l'URI, refus des mots de passe intégrés à l'URI, simulation, etc.) n'émettent
@@ -301,10 +322,14 @@ Consultez [`docs/ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md) pour la couvertu
 Lorsque la mesure de compression est acceptée interactivement, ou sans interaction avec `--measure-compression --yes`, l'outil effectue également les opérations suivantes :
 
 - Pour chaque table qui n'est pas prouvée vide, il suit un chemin
-  d'échantillonnage borné propre au moteur. PostgreSQL commence par
-  `TABLESAMPLE SYSTEM(0.1) LIMIT N` et se rabat sur `LIMIT N` si nécessaire ;
-  MySQL utilise `LIMIT N` et SQL Server `TOP N`. Les chemins biaisés définissent
-  `sampled_with_bias = true` dans la sortie.
+  d'échantillonnage borné propre au moteur. PostgreSQL commence par un
+  pourcentage adaptatif de `TABLESAMPLE SYSTEM`, calculé à partir du nombre
+  estimé de lignes et de la taille d'échantillon demandée, avec `LIMIT N`,
+  et se rabat sur `LIMIT N` si nécessaire ;
+  MySQL utilise quatre fenêtres de plage bornées sur la clé primaire numérique
+  lorsque ce chemin d'accès sûr existe, sinon `LIMIT N` ; SQL Server utilise
+  `TOP N`. Les chemins biaisés définissent `sampled_with_bias = true` dans la
+  sortie.
 - Il lit les lignes échantillonnées dans un tampon local en mémoire.
 - Les lectures de base de données restent séquentielles. L'option
   `--compression-workers N` peut exécuter de 1 à 32 workers locaux bornés
@@ -346,23 +371,66 @@ l'exactitude de la source.
 
 ## Protocole de vérification
 
+Une archive de plateforme téléchargée et une reproduction à partir des sources
+sont deux contrôles de confiance distincts. Vérifiez d'abord l'archive et son
+exécutable à l'aide de la somme de contrôle publiée avec la même version.
+L'archive de plateforme est un bundle opérateur, pas une arborescence de
+sources : sa documentation et `verify.sh` servent de référence pour une copie
+des sources correspondante. Obtenez le tag exact de la version depuis le dépôt
+public, ou utilisez l'archive de sources avec dépendances de la version, avant
+de tenter un audit ou une reconstruction. N'attendez pas d'une archive de
+plateforme qu'elle puisse être reconstruite sur place.
+
 Si vous souhaitez *prouver* que l'outil ne fait que ce qui est documenté :
 
-1. **Audit des sources** : clonez le dépôt, lisez `src/secret.rs`, puis recherchez
-   `\.expose\(\)` en dehors de ce fichier :
+1. **Intégrité du téléchargement** : vérifiez l'archive de plateforme avec
+   l'entrée correspondante de `SHA256SUMS.txt`, puis l'exécutable extrait avec
+   son fichier `*.binary.sha256`. Les deux fichiers de sommes de contrôle
+   doivent provenir du même tag de version immuable. Consultez
+   [Télécharger les binaires](BINARIES.md).
+2. **Audit des sources** : dans la copie des sources ou l'archive de sources
+   avec dépendances correspondante, lisez `src/secret.rs`, puis recherchez
+   `\.expose\(\)` en dehors de ce fichier. Si `rg` est installé, la commande
+   concise est :
    ```
    $ rg -n '\.expose\(\)' src --glob '!secret.rs'
    ```
+   Sinon, utilisez l'outil de recherche récursive de texte approuvé pour votre
+   plateforme ; `rg` n'est pas un prérequis de compilation ou de vérification.
    Les sites d'appel de production remettent immédiatement le `&str` exposé au
-   constructeur de connexion d'un pilote. MySQL appelle en outre `.to_string()`, car l'API de `mysql_async`
-   exige une `String` ; cette copie n'est pas remise à zéro et persiste jusqu'à
-   la suppression de l'`OptsBuilder`. Tier 1 et Tier 2 réutilisent la même
-   connexion MySQL. Consultez SECURITY.md §2 pour la
-   discussion complète.
-2. **Compilation depuis les sources** : `./build.sh`. La CI de publication effectue une reconstruction indépendante sur le même runner, dans un répertoire cible Cargo distinct, et rejette toute différence d'octets. Une comparaison locale n'est pertinente qu'avec la même révision source, la même cible, les mêmes fonctionnalités, la même chaîne Rust épinglée, le même éditeur de liens et les mêmes options de compilation.
-3. **Comparaison à la version** : `./verify.sh release/dbwarp-blueprint-X.Y.Z-...`
-4. **Trace d'exécution** : exécutez `strace -f -e trace=open,connect,read,write`
-   dans un bac à sable. Comparez avec les listes ci-dessus.
-5. **Trace réseau** : utilisez `tcpdump` sur l'hôte. Pour une exécution active authentifiée par mot de passe, vérifiez la session de base de données et le trafic DNS attendu. Pour l'authentification intégrée, tenez également compte du trafic attendu vers le KDC ou le contrôleur de domaine. En mode batch, rapprochez une session de base de données par source de base de données.
+   constructeur de connexion d'un pilote. MySQL appelle en outre `.to_string()`,
+   car l'API de `mysql_async` exige une `String`. Cette copie non remise à zéro
+   est transférée aux options détenues par le pilote et peut survivre à
+   l'`OptsBuilder`, pendant la durée de vie des options/de la connexion ;
+   supprimer le constructeur ne prouve pas son effacement. Tier 1 et Tier 2
+   réutilisent la même connexion MySQL. Consultez **Copies de justificatifs
+   détenues par le pilote** dans SECURITY.md pour la discussion complète.
+3. **Compilation depuis les sources** : `./build.sh`. Avec l'archive de sources
+   avec dépendances, exécutez `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`. La CI de
+   publication effectue une reconstruction indépendante sur le même runner,
+   en vidant puis en réutilisant le même répertoire cible Cargo entre les
+   compilations, tout en conservant séparément le premier exécutable. Elle
+   rejette toute différence d'octets. Une comparaison locale n'est pertinente qu'avec la même révision
+   source, la même cible, les mêmes fonctionnalités, la même chaîne Rust
+   épinglée, le même éditeur de liens et les mêmes options de compilation.
+4. **Comparaison à la version** : depuis la copie ou l'arborescence de sources
+   correspondante, exécutez
+   `./verify.sh /path/to/extracted/dbwarp-blueprint`. Consultez
+   **Reproduire un binaire de version** dans BUILD.md pour la cible, les
+   fonctionnalités, la chaîne d'outils, l'éditeur de liens, l'époque de date
+   source et les options de compilation requises.
+5. **Trace d'exécution** : sous Linux, exécutez
+   `strace -f -e trace=open,connect,read,write` dans un bac à sable. Si `strace`
+   ou `rg` n'est pas disponible, utilisez l'outil équivalent de traçage des
+   fichiers/réseau et de recherche récursive de texte approuvé pour votre
+   plateforme. Comparez avec les listes ci-dessus.
+6. **Trace réseau** : utilisez `tcpdump` sur l'hôte. Pour une exécution active
+   authentifiée par mot de passe, vérifiez la session de base de données et le
+   trafic DNS attendu. Pour l'authentification intégrée, tenez également compte
+   du trafic attendu vers le KDC ou le contrôleur de domaine. En mode batch,
+   rapprochez une session de base de données par source de base de données.
 
-Si l'un de ces éléments ne correspond pas à ce qui est documenté ici, ouvrez un ticket avec votre trace ; nous l'examinerons dans les 72 heures.
+Si l'un de ces éléments ne correspond pas à ce qui est documenté ici, signalez
+l'écart par le canal indiqué dans SECURITY.md et joignez uniquement la plus
+petite trace sûre nécessaire à sa reproduction. Ne placez pas de justificatifs,
+d'identifiants client ni de sortie sensible du pilote dans un ticket public.

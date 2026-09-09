@@ -4,7 +4,7 @@
 
 **Sprachen:** [English](../../DECK.md) | **Deutsch** | [Français](../fr/DECK.md) | [Español](../es/DECK.md) | [Polski](../pl/DECK.md) | [日本語](../ja/DECK.md) | [中文](../zh/DECK.md)
 
-`dbwarp-blueprint --deck blueprint.pptx` schreibt neben der TOML-Datei von `--out` eine optionale PowerPoint-Zusammenfassung (`.pptx`) des Blueprints. Mit `dbwarp-blueprint --from-toml blueprint.toml --deck blueprint.pptx` kann dieselbe Präsentation später aus einer vorhandenen, geprüften Blueprint-Datei erstellt werden, ohne eine Verbindung zu einer Datenbank herzustellen. Sie stellt dieselben anonymisierten Daten dar; über Ihre Datenbank wird nichts Weiteres gelesen, gesendet oder berechnet.
+`dbwarp-blueprint --deck blueprint.pptx` schreibt neben der TOML-Datei von `--out` eine optionale PowerPoint-Zusammenfassung (`.pptx`) des Blueprints. Mit `dbwarp-blueprint --from-toml blueprint.toml --deck blueprint.pptx` kann dieselbe Präsentation später aus einer vorhandenen, geprüften Blueprint-Datei erstellt werden, ohne eine Verbindung zu einer Datenbank herzustellen. Sie stellt dieselben anonymisierten Daten dar: Aus Ihrer Datenbank wird nichts Weiteres gelesen oder an sie gesendet. Die Präsentation berechnet nur die dokumentierten lokalen Zusammenfassungen und Projektionen aus Feldern, die bereits im Blueprint vorhanden sind.
 
 ```bash
 ./dbwarp-blueprint \
@@ -41,23 +41,24 @@ Kennzeichnungen dürfen keine Leerzeichen am Anfang oder Ende, keine Steuer- ode
 bidirektionalen Formatierungszeichen enthalten und höchstens 48 Anzeigeeinheiten
 lang sein. Lassen Sie die Option weg, wenn keine Kennzeichnung erscheinen soll.
 Die Einstellung ändert nur die Präsentation; weder die Blueprint-Datei noch die
-im Deck zusammengefassten Daten werden verändert. Bei festem `--generated-at`
-bleibt die Ausgabe deterministisch.
+im Deck zusammengefassten Daten werden verändert. Bei exakt demselben geprüften
+Blueprint, derselben Sprache, Kennzeichnung und demselben Zeitstempel sind die
+Bytes der Präsentation reproduzierbar.
 
 ## Vertrauenseigenschaften
 
 - **Lokal aus dem Arbeitsspeicher erstellt.** Die Präsentation wird aus demselben Blueprint im Arbeitsspeicher erzeugt, aus dem auch `blueprint.toml` entsteht. Es gibt keine zusätzliche Datenbankabfrage und keinen zweiten Durchlauf durch den Katalog. Im Modus `--from-toml` wird der Blueprint im Arbeitsspeicher stattdessen aus der geprüften TOML-Datei geladen.
-- **Kein Netzwerk.** Beim Erzeugen der Präsentation wird keinerlei ausgehende Verbindung hergestellt.
+- **Kein Anwendungsnetzwerk.** Beim Erzeugen der Präsentation wird keine Netzwerkverbindung geöffnet; ein Blueprint auf einem netzwerkgebundenen Pfad unterliegt weiterhin dem Speicher-Stack des Hosts.
 - **Keine Drittanbieterbibliothek.** Das OOXML wird direkt in `src/deck.rs` geschrieben; die Datei `.pptx` ist ein gewöhnliches ZIP-Archiv mit XML-Bestandteilen, das Sie mit `unzip` entpacken und lesen können. Es gibt weder PowerPoint-Automatisierung noch einen Rendering-Dienst oder eine zusätzliche Crate im Abhängigkeitsgraphen. Die freigegebenen DBWarp-Logobilder und die statischen DM Sans-Schriftarten sind in die Rust-Binärdatei eingebettet und werden als OOXML-Medien- und Schriftbestandteile geschrieben; die Erzeugung liest keinen Asset-Pfad zur Laufzeit.
-- **Keine echten Bezeichner und keine Zeilendaten.** Tabellen, Spalten und Indizes erscheinen mit denselben anonymen Platzhaltern wie in der Blueprint-Datei (`table-001`, `col-1`, `idx-1`, `schema-A`), und jede Zahl besitzt dieselbe dokumentierte Genauigkeit. Die Präsentation enthält keine kundenspezifischen Fakten, die nicht bereits in der Blueprint-Datei stehen.
-- **Deterministisch.** Bei festgeschriebenem `--generated-at` erzeugt derselbe Blueprint für dieselbe ausgewählte Sprache eine byteidentische Datei `.pptx` (feste Reihenfolge der Bestandteile, feste Zeitstempel).
+- **Keine echten Bezeichner und keine Zeilendaten.** Tabellen, Spalten und Indizes erscheinen mit denselben anonymen Platzhaltern wie in der Blueprint-Datei (`table-001`, `col-1`, `idx-1`, `schema-A`). Quellmessungen behalten ihre dokumentierte Genauigkeit; Projektionen werden nur aus bereits im Blueprint vorhandenen Feldern berechnet. Die Präsentation enthält keine kundenspezifischen Informationen über diese Eingabe hinaus.
+- **Aus festgelegter Eingabe reproduzierbar.** Derselbe geprüfte Blueprint erzeugt für dieselbe ausgewählte Sprache, Vertraulichkeitskennzeichnung und denselben festgeschriebenen Zeitstempel eine byteidentische Datei `.pptx` (feste Reihenfolge der Bestandteile und feste Zeitstempel). Zwei Live-Erfassungen werden dadurch nicht identisch; dafür sind auch derselbe geschützte `--anonymization-key-file`, derselbe Quellzustand und dieselben Erfassungsoptionen erforderlich.
 
 ## Inhalt
 
 Die Präsentation passt sich an die Schemagröße an:
 
 - **Titel**: DBWarp-Logo und Tagline, Engine, Version, Quellenart, Tabellenanzahl und Erzeugungszeitstempel.
-- **Executive Summary**: managementgerechte Signale zu Migrationsumfang, Datenkonzentration, Beziehungskomplexität und teilbarer Evidenz.
+- **Executive Summary**: managementgerechte Signale zu Migrationsumfang, Datenkonzentration, Beziehungskomplexität und Prüfevidenz.
 - **Übersicht**: Summen für Tabellen, Zeilen, Datengröße und Indexgröße sowie Anzahl der Spalten, Indizes, Fremdschlüssel und Schemata.
 - **Kleine Schemata** (wenige Tabellen): ein größenproportionales Feld je Tabelle (Zeilen, Bytes, Spaltentypen, Indizes) und ein Fremdschlüsseldiagramm.
 - **Große Schemata**: Charakterisierung statt Aufzählung:

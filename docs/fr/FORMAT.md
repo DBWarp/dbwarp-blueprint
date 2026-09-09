@@ -7,7 +7,7 @@
 Lisible par un humain. Facile à comparer. Vérifiable à des fins forensiques.
 
 > **Ce format réduit le risque de canal caché et de divulgation directe grâce à
-> un schéma borné, des identifiants déterministes et une précision numérique
+> un schéma borné, des identifiants fondés sur une clé secrète et une précision numérique
 > documentée. La structure anonyme du graphe et les champs exacts facultatifs
 > peuvent encore caractériser une charge de travail ; vérifiez donc le fichier
 > selon votre propre politique de classification des données.**
@@ -24,16 +24,16 @@ Lisible par un humain. Facile à comparer. Vérifiable à des fins forensiques.
 
 ```
 
-La ligne vide fait partie du contrat. L'outil émet exactement cet en-tête et aucun autre commentaire. Cela facilite la détection de tout contenu de commentaire inattendu ; ce n'est pas une affirmation selon laquelle les autres champs structurés ne peuvent pas identifier un schéma ou un graphe de dépendances distinctif.
+La ligne vide fait partie de l'en-tête canonique. Le collecteur Rust émet exactement cet en-tête et aucun autre commentaire. Le normaliseur de repli SQL le conserve à l'identique, puis ajoute un commentaire fixe `Producer: blueprint_format.py SQL fallback` indiquant la source de la clé afin que les destinataires puissent distinguer le producteur. Ce n'est pas une affirmation selon laquelle les autres champs structurés ne peuvent pas identifier un schéma ou un graphe de dépendances distinctif.
 
 ## Champs de premier niveau
 
 | Champ | Type | Description |
 |---|---|---|
 | `schema_version` | int | Version du format. Actuellement `6` ; les versions 1 à 5 restent lisibles. |
-| `generated_at` | ISO-8601 string | Horodatage UTC, à la seconde, sans fraction. **Peut être figé** au moyen de l'option CLI `--generated-at "2026-04-26T00:00:00Z"` pour les exécutions reproductibles et identiques octet pour octet. Le journal d'audit enregistre `generated_at_pin: ...` chaque fois que l'option est définie, afin que ce choix soit visible lors d'une analyse forensique. Cette option est le seul moyen de figer cette valeur : aucune variable d'environnement n'est jamais lue, conformément au contrat de confiance « no env vars read by default » du README. |
-| `engine` | string | `"postgresql"`, `"mysql"` ou `"sqlserver"`. |
-| `engine_version` | string | Chaîne de version renvoyée par le moteur de base de données. |
+| `generated_at` | ISO-8601 string | Horodatage UTC, à la seconde, sans fraction. **Peut être figé** au moyen de l'option CLI `--generated-at "2026-04-26T00:00:00Z"`. Des captures en direct identiques octet pour octet exigent aussi le même `--anonymization-key-file` protégé, le même état de la source, les mêmes options et le même producteur. Le journal d'audit enregistre `generated_at_pin: ...` chaque fois que l'option est définie, afin que ce choix soit visible lors d'une analyse forensique. Aucune variable d'environnement ne fige cette valeur. |
+| `engine` | string | `"postgresql"`, `"mysql"`, `"sqlserver"`, `"parquet"` ou `"avro"`. |
+| `engine_version` | string | Version numérique étroite du produit, utilisée pour la capture et la génération sensibles à la version sur une base active ; vide pour les sources de fichiers structurés. Les bannières de producteur ou de distribution sont exclues. |
 | `source_kind` | string | L'une des valeurs `"production"`, `"staging"`, `"scrubbed-replica"`, `"synthetic"`. Déclarée par le client. |
 | `length_metadata` | string | Marqueur de compatibilité historique : `"hybrid-v2"`, `"exact"`, `"rounded"` ou `"not-captured"`. Les nouveaux consommateurs doivent utiliser les trois champs ci-dessous. |
 | `declared_length_fidelity` | string | `"exact"` pour les capacités déclarées en caractères de PostgreSQL et pour les modes MySQL équilibré par défaut/exact ; `"coarse-rounded-v1"` pour la confidentialité MySQL stricte ; `"not-captured"` lorsque l'information n'est pas disponible. |
@@ -41,11 +41,11 @@ La ligne vide fait partie du contrat. L'outil émet exactement cet en-tête et a
 | `observed_length_fidelity` | string | `"relative-rounded-v2"` par défaut lorsque l'échantillonnage a eu lieu, `"exact"` en mode exact, `"coarse-rounded-v1"` en mode strict ou `"not-sampled"`. La couverture de l'échantillonnage reste une exigence distincte pour chaque colonne. |
 | `[totals]` | inline table | Nombres agrégés (voir ci-dessous). |
 | `[network]` | table | Preuve facultative de connexion client-base et de RTT de requête. |
-| `[database_topology]` | table | Obligatoire pour les sources de base en schéma v6. Déploiement, rôle local, visibilité et preuves de catalogue respectueux de la confidentialité. Absent pour les fichiers structurés. |
+| `[database_topology]` | table | Obligatoire pour les sources de base en schéma v6. Déploiement, rôle local, visibilité et preuves de catalogue bornés et sans noms. Absent pour les fichiers structurés. |
 | `[dataset_scope]` | table | Obligatoire pour chaque Blueprint en schéma v6. Déclare ce que couvrent les totaux et si la couverture des tables, lignes et octets est complète. |
 | `[tables.X]` | tables | Une entrée par table, avec identifiant anonymisé. |
 | `[fk_edges]` | inline table | Graphe des clés étrangères entre tables anonymisées. Facultatif. |
-| `[artifact_inventory]` | table | Comptages respectueux de la confidentialité des objets hors tables, graphe de dépendances anonyme facultatif, prérequis externes et recensement borné facultatif du langage. Sources de bases de données uniquement. |
+| `[artifact_inventory]` | table | Comptages bornés et sans noms des objets hors tables, graphe de dépendances anonyme facultatif, prérequis externes et recensement borné facultatif du langage. Sources de bases de données uniquement. |
 
 ## `[totals]`
 
@@ -169,7 +169,7 @@ préserve cet ordre entre les exécutions de comparaison approuvées.
 | `counted_in_totals` | bool | Schéma v6. L'absence signifie l'inclusion dans tous les totaux agrégés. `external` exige `false` explicite, ce qui exclut la table de `table_count`, `row_count`, `table_bytes` et `index_bytes` ; aucune autre valeur explicite n'est canonique. |
 | `check_count` | int | Nombre structurel exact facultatif de contraintes CHECK dans le schéma v6. L'absence signifie inconnu ; `0` signifie que le catalogue concerné n'en a trouvé aucune. |
 | `has_clustered_index` | bool | toujours `false` pour PostgreSQL |
-| `stats_freshness` | string | `"fresh"` / `"stale"` / `"never_analyzed"` (PG), vide en cas de repli SQL |
+| `stats_freshness` | string | `"fresh"` / `"stale"` / `"never_analyzed"` pour PostgreSQL, dérivé des horodatages d'analyse de `pg_stat_all_tables` ; vide pour MySQL, SQL Server, les fichiers structurés et les chemins de repli SQL qui ne peuvent pas établir la fraîcheur des statistiques sans droits d'accès plus larges. MySQL `UPDATE_TIME` n'est délibérément pas utilisé, car il décrit la modification des données source, et non la récence de `ANALYZE TABLE`. |
 | `[tables.<id>.cols.<cid>]` | sub-tables | une par colonne |
 | `[tables.<id>.idxs.<iid>]` | sub-tables | une par index |
 | `[tables.<id>.compression]` | sub-table | uniquement avec Tier 2 |
@@ -192,14 +192,14 @@ L'identifiant prend la forme `col-N`, où `N` correspond à l'ordre naturel des 
 | `hidden`, `masked`, `encrypted`, `sparse` | bool | Observations facultatives du catalogue dans le schéma v6. L'absence signifie inconnu ; `false` explicite signifie que le catalogue a confirmé l'absence de la propriété. |
 | `has_check` | bool | Observation facultative d'un CHECK sur une seule colonne dans le schéma v6. Chaque `true` explicite est couvert par le `check_count` de la table. |
 | `null_fraction` | float | Fraction de valeurs NULL observée facultative, comprise entre `0.0` et `1.0`. Seul l'agrégat arrondi est conservé ; aucun bitmap de valeurs NULL n'est conservé. |
-| `native_type` | string | Type de base facultatif et assaini du moteur, par exemple `varchar` ou `longtext` ; aucun identifiant, membre d'énumération, valeur par défaut ou expression. Actuellement émis par la capture MySQL corrigée. |
+| `native_type` | string | Type de base facultatif et assaini du moteur, par exemple `varchar` ou `longtext` ; aucun identifiant, membre d'énumération, valeur par défaut ou expression. Émis par les collecteurs natifs MySQL et SQL Server. |
 | `declared_max_chars` | int | Capacité déclarée facultative en caractères. Exacte pour les valeurs de catalogue PostgreSQL `character`/`character varying` et dans les modes MySQL équilibré par défaut/exact ; arrondie grossièrement uniquement avec MySQL `--length-fidelity strict`. |
 | `declared_max_bytes` | int | Capacité déclarée facultative en octets. Exacte dans les modes MySQL équilibré par défaut et exact ; arrondie grossièrement uniquement avec `--length-fidelity strict`. |
 | `numeric_precision`, `numeric_scale`, `datetime_precision` | int | Précision scalaire facultative déclarée par le moteur. |
-| `charset`, `collation` | string | Métadonnées de caractères MySQL facultatives et assainies. Il s'agit de noms de catalogue, jamais d'identifiants ni de valeurs du client. |
+| `charset`, `collation` | string | Métadonnées de caractères facultatives et assainies. MySQL émet les noms de catalogue de son jeu de caractères et de sa collation. SQL Server émet `utf-16le` pour `nchar`/`nvarchar`/`ntext`, `utf-8` pour la page de codes 65001, `windows-N` pour les pages de codes Windows 1250 à 1258, ou `code-page-N` pour une autre page de codes positive du catalogue, ainsi que le nom de collation du catalogue. Ce sont des faits d'encodage et des noms de catalogue, jamais des identifiants ni des valeurs du client. |
 | `len_avg` | int | Moyenne échantillonnée des octets pour les valeurs de longueur variable. Les classes relatives par défaut ont une erreur maximale d'environ 3,2 % et conservent exactement les valeurs jusqu'à 32 octets ; valeur exacte avec `--length-fidelity exact --yes` ; arrondi grossier à la dizaine uniquement en mode strict. 0 = longueur fixe ou non mesurée. |
 | `len_p95` | int | 95e centile échantillonné avec les mêmes classes relatives par défaut ; valeur exacte avec `--length-fidelity exact --yes` ; arrondi grossier à la centaine uniquement en mode strict. 0 = non mesuré. |
-| `style` | string | Tier 2 uniquement. L'une des valeurs `"json"`, `"xml"`, `"natural-text"`, `"base64"`, `"hex"`, `"numeric-text"`, `"mixed"` ; vide si aucune classification n'est disponible. |
+| `style` | string | Tier 2 uniquement. L'une des valeurs `"json"`, `"xml"`, `"natural-text"`, `"base64"`, `"hex"`, `"numeric-text"`, `"mixed"` ou `"precompressed"` ; vide si aucune classification n'est disponible. `"precompressed"` n'est émis que pour un échantillon matériellement dominant en octets de valeurs binaires portant des signatures reconnues de conteneurs standard. La famille de conteneurs détectée n'est volontairement pas divulguée. |
 | `magnitude_min`, `magnitude_max` | int | Exposants décimaux signés facultatifs du schéma v6 délimitant l'ordre de grandeur des nombres non NULL échantillonnés. Ils sont émis avec `has_negative` ; les valeurs exactes ne sont jamais sérialisées. |
 | `has_negative` | bool | Observation facultative du signe dans le schéma v6, émise uniquement avec les deux limites d'ordre de grandeur. |
 | `time_span` | string | Plage date/heure échantillonnée facultative du schéma v6 : `intraday`, `days`, `weeks`, `months`, `years` ou `decades`. |
@@ -216,13 +216,19 @@ valeurs ni les empreintes ne sont sérialisées. Le bloc contient `measured`,
 `sample_rows`, `non_null_rows`, `observed_distinct_count`,
 `estimated_distinct_count`, `top_value_fraction`, `frequency_p50`,
 `frequency_p95`, `frequency_p99`, `frequency_max`, `sample_method`,
-`sampled_with_bias` et `bias_reason`.
+`sample_layout`, `sampled_with_bias` et `bias_reason`. `sample_layout` est une
+énumération facultative lisible par machine. La valeur actuellement émise est
+`primary-key-range-windows` ; son absence signifie qu'aucun contrat d'ordre
+n'est disponible. Les consommateurs ne doivent pas déduire la sémantique de
+génération en analysant le champ lisible `sample_method`.
 
 Les comptages et les fractions sont arrondis lorsque la confidentialité
 l'exige. Ces statistiques servent à reproduire la densité des doublons,
 l'asymétrie des valeurs fréquentes et les domaines finis dans les fixtures
-synthétiques ; elles ne permettent pas de reconstruire les valeurs source ni
-leur signification métier.
+synthétiques. Elles ne contiennent aucune valeur échantillonnée, mais une
+distribution distinctive peut caractériser une charge de travail ; ne les
+considérez ni comme irréversibles ni comme la preuve qu'une signification métier
+ne peut pas être déduite à partir de connaissances externes.
 
 ### `[tables.<id>.cols.<cid>.compression]` (Tier 2 uniquement)
 
@@ -249,10 +255,27 @@ sample_method = "column TABLESAMPLE SYSTEM(0.1) LIMIT N (text format)"
 sampled_with_bias = false
 ratio_zstd_3 = 8.4
 ratio_stddev = 0.25
-sample_encoding = "dbwarp-blueprint-rowframe-v1"
+sample_encoding = "blueprint-compression-probe-v2"
 ```
 
 Aucune valeur de colonne échantillonnée n'est écrite dans le fichier Blueprint.
+
+Pour les colonnes binaires, le même échantillon borné de Tier 2 peut émettre le
+profil grossier `style = "precompressed"`. La reconnaissance n'a lieu qu'aux
+limites des valeurs échantillonnées et exige une observation matériellement
+dominante en octets. Blueprint n'analyse ni ne décompresse la valeur, ne
+conserve pas sa signature et ne distingue pas les images, archives, médias
+compressés, données chiffrées et données aléatoires au-delà de cette seule
+étiquette à haute confiance. Les encodages textuels et base64 restent classés
+selon leur style de texte et ne sont pas traités comme des conteneurs binaires
+précompressés.
+
+Le générateur déterministe associe ce profil grossier à un conteneur ZIP neutre
+et valide comportant un membre stocké à forte entropie. Il préserve ainsi le
+comportement opérationnel de compression sans prétendre que la source contenait
+des fichiers ZIP ni révéler si la valeur source reconnue était une image, une
+archive ou un conteneur multimédia. La génération binaire ordinaire reste
+inchangée.
 
 ## `[tables.<id>.idxs.<iid>]`
 
@@ -274,7 +297,7 @@ L'identifiant prend la forme `idx-N`, où `N` est l'ordinal indexé à partir de
 
 ## `[tables.<id>.compression]` et `[tables.<id>.cols.<cid>.compression]` (Tier 2 uniquement)
 
-Présents uniquement lorsque le fichier a été généré avec `--measure-compression --yes`. Le bloc au niveau de la table mesure le flux complet des lignes échantillonnées et reste le ratio faisant autorité pour les estimations de transfert de la table entière. Les blocs au niveau des colonnes sont projetés à partir des mêmes lignes échantillonnées, colonne par colonne, et servent à aider les générateurs de fixtures synthétiques en aval à ajuster l'entropie de chaque colonne sans voir les valeurs du client. Ils ne déclenchent aucune lecture supplémentaire de la base de données.
+Présents uniquement lorsque le fichier a été généré avec `--measure-compression --yes`. Le bloc au niveau de la table mesure une projection colonnaire neutre de l'échantillon complet et reste le ratio faisant autorité pour les estimations de transfert de la table entière. Les blocs au niveau des colonnes sont projetés à partir des mêmes lignes échantillonnées, colonne par colonne, et servent à aider les générateurs de fixtures synthétiques en aval à ajuster l'entropie de chaque colonne sans voir les valeurs du client. Ils ne déclenchent aucune lecture supplémentaire de la base de données.
 
 | Champ | Type | Précision |
 |---|---|---|
@@ -284,16 +307,16 @@ Présents uniquement lorsque le fichier a été généré avec `--measure-compre
 | `sample_method` | string | description bornée de l'échantillonnage propre au moteur, par exemple `"TABLESAMPLE SYSTEM(0.1) LIMIT N"`, `"LIMIT N (fallback after empty TABLESAMPLE)"` ou `"SELECT TOP N"` |
 | `sampled_with_bias` | bool | vrai si l'échantillon n'est pas uniforme, par exemple en cas de repli sur LIMIT uniquement |
 | `bias_reason` | string | vide si `sampled_with_bias = false`, sinon balise telle que `"unordered_limit_after_empty_TABLESAMPLE"` |
-| `ratio_zstd_3` | float | arrondi au **0,05** le plus proche, zstd niveau 3 (valeur de production par défaut). Mesuré sur des octets encodés selon `sample_encoding`. |
+| `ratio_zstd_3` | float | arrondi au **0,05** le plus proche, selon la politique de mesure zstd niveau 3 du contrat. Mesuré sur des octets encodés selon `sample_encoding`. |
 | `ratio_zstd_19` | float | ratio hérité zstd niveau 19 accepté des captures plus anciennes ; l'outil ne le mesure plus et ne l'émet plus |
-| `ratio_stddev` | float | arrondi au **0,05** le plus proche, écart-type des ratios de niveau 3 sur des tronçons de 64 KiB alignés sur les lignes de l’échantillon. Les blocs de projection au niveau des colonnes émettent actuellement `0.0`, car il s'agit d'indications consultatives sur l'entropie et non d'un modèle de variance. |
-| `sample_encoding` | string | identifiant de l'encodage au niveau des octets auquel zstd a été appliqué. Valeur actuelle : `"dbwarp-blueprint-rowframe-v1"`. L'estimateur dbwarp DOIT valider cette chaîne avant d'utiliser le ratio : des encodages différents produisent des ratios différents pour les mêmes données logiques et ne sont PAS interchangeables. Les anciens fichiers Blueprint peuvent ne pas contenir ce champ ; les estimateurs ne doivent utiliser les ratios mesurés que lorsque la balise d'encodage est présente et reconnue. |
+| `ratio_stddev` | float | arrondi au **0,05** le plus proche, écart-type des ratios de niveau 3 sur des trames de sonde de table bornées. Les blocs de projection au niveau des colonnes émettent actuellement `0.0`, car il s'agit d'indications consultatives sur l'entropie et non d'un modèle de variance. |
+| `sample_encoding` | string | identifiant de l'encodage au niveau des octets et de la politique de session de compression utilisés pour la mesure. Les blocs de table PostgreSQL actifs utilisent actuellement `"blueprint-columnar-transfer-probe-v2"`. MySQL et SQL Server utilisent `"blueprint-columnar-transfer-probe-v3"`, qui effectue des vidages supplémentaires aux limites des blocs de sonde de 256 KiB. Les charges `nvarchar`/`nchar`/`ntext` de SQL Server conservent la distribution native des octets UTF-16LE ; `varchar`/`char`/`text` conservent leur largeur d'octet échantillonnée et le champ `charset` identifie la page de codes du catalogue nécessaire au consommateur. V1 reste un contrat de compatibilité en entrée uniquement. Les blocs par colonne utilisent `"blueprint-compression-probe-v2"`. L'estimateur dbwarp DOIT valider cette chaîne avant d'utiliser le ratio : des encodages ou politiques de session différents ne sont PAS interchangeables. Les anciens fichiers Blueprint peuvent ne pas contenir ce champ ; les estimateurs ne doivent utiliser les ratios mesurés que lorsque la balise d'encodage est présente et reconnue. |
 
 L'estimateur dbwarp doit privilégier les blocs de compression par colonne reconnus lors de la création de fixtures synthétiques, puis se rabattre sur la compression au niveau de la table et enfin sur les valeurs par défaut du type/style.
 
-### Encodage au niveau des octets `dbwarp-blueprint-rowframe-v1`
+### Encodage au niveau des octets `blueprint-compression-probe-v2`
 
-L'échantillonneur Tier 2 concatène les lignes ou les valeurs de colonnes échantillonnées dans un tampon en mémoire au format suivant, puis applique zstd au niveau 3. Le tampon est supprimé ; seuls les ratios arrondis obtenus sont émis dans le fichier Blueprint.
+L'échantillonneur Tier 2 concatène les lignes ou les valeurs de colonnes échantillonnées dans un tampon en mémoire au format suivant, puis applique zstd au niveau 3. Le tampon est supprimé. Le Blueprint conserve uniquement les champs agrégés documentés de compression, densité de valeurs NULL, cardinalité/fréquence, longueur et style.
 
 ```text
 Buffer = (Column)*       # flat stream; rows are NOT delimited
@@ -305,7 +328,8 @@ Column:
     length bytes payload
 ```
 
-Les balises de type font partie du contrat d'encodage et ne seront pas renumérotées sans incrément du suffixe `-v2`.
+Les balises de type font partie du contrat de la sonde et ne seront pas
+renumérotées sans nouvel identifiant de sonde versionné.
 
 | Balise | Nom | Utilisé pour |
 |---|---|---|
@@ -323,6 +347,33 @@ Les balises de type font partie du contrat d'encodage et ne seront pas renuméro
 | 0x10 | BinaryRaw | Octets `bytea`, `varbinary`, `image` ou blob |
 | 0xFE | UnknownText | Représentation textuelle de repli fournie par la base de données |
 
+### Encodage au niveau des octets `blueprint-columnar-transfer-probe-v1`, `v2` et `v3`
+
+Les ratios de table issus d'une base active transforment les mêmes échantillons
+bornés par colonne v2 en trames neutres de 1 000 lignes. Chaque trame possède un
+en-tête de sonde versionné et, pour chaque colonne, un ordinal, une balise de
+type, une longueur sur quatre octets par ligne, puis les octets de charge utile
+contigus par colonne. La longueur `0xffffffff` représente NULL. La
+représentation des octets est commune aux trois versions. V1 compressait la
+séquence de trames jointe en une seule opération zstd niveau 3 avec taille
+d'entrée annoncée. V2 alimente les trames dans un contexte zstd niveau 3
+persistant et effectue un vidage après chaque trame. V3 conserve ce contexte et
+la représentation neutre des groupes de lignes, mais effectue également un
+vidage à chaque limite de bloc de compression de sonde de 256 KiB dans un groupe.
+MySQL et SQL Server utilisent v3 ; v2 reste la mesure PostgreSQL actuelle. Le
+texte Unicode SQL Server est mesuré en UTF-16LE. Le texte étroit SQL Server
+conserve la largeur d'octet
+source et enregistre un jeu de caractères fermé et assaini dérivé de la page de
+codes de collation. Les sorties des groupes de lignes externes fournissent les
+observations `ratio_stddev`. Les balises versionnées empêchent qu'une politique
+de tramage ou de vidage soit silencieusement interprétée comme une autre.
+
+Cette représentation modélise les propriétés génériques pertinentes pour la
+compression d'un transfert en masse colonnaire. Il ne s'agit ni d'une capture
+de protocole de base de données, ni d'un format de transport de migration, ni
+d'un export de données encodé. Les octets échantillonnés restent uniquement en
+mémoire et sont supprimés après dérivation des mesures agrégées.
+
 ### Limites de précision
 
 `ratio_zstd_3` décrit le `sample_encoding` nommé ; il ne mesure pas les octets du protocole de base de données ni ceux d'un transfert de migration. La suite automatisée publique valide l'encodage déterministe, l'échantillonnage borné et la sérialisation, mais ne revendique pas une erreur en pourcentage universelle pour tous les moteurs et chemins d'extraction.
@@ -334,8 +385,8 @@ Avant d'utiliser ce ratio pour une décision de capacité importante, qualifiez 
 Facultatif. Table en ligne dont chaque clé est un identifiant `table-NNN`
 associé à une liste d'arêtes. Le schéma v3 conserve les ordinaux parents, les
 actions référentielles, le mode de correspondance, le caractère différable,
-l'état de validation/confiance et une synthèse relationnelle facultative
-respectueuse de la confidentialité. Les arêtes sont triées par destination,
+l'état de validation/confiance et une synthèse relationnelle facultative,
+bornée et sans noms. Les arêtes sont triées par destination,
 puis par liste de colonnes.
 
 ```toml
@@ -411,7 +462,7 @@ les instructions opérationnelles et la couverture des moteurs.
 | Ordre des identifiants | HMAC-SHA256 avec séparation de domaines et clé secrète locale au processus empêche la vérification hors ligne de noms candidats. Ne réutilisez une clé conservée par le client que si des libellés stables entre les exécutions sont nécessaires. |
 | Bits de poids faible des nombres | Les statistiques sont arrondies par défaut selon la précision documentée. Le mode de longueurs exactes est explicite, soumis au consentement, enregistré dans le journal d'audit et doit être traité comme une métadonnée plus sensible. |
 | Horodatage inférieur à la seconde | Un seul horodatage UTC au début, à la seconde uniquement |
-| Formatage TOML | Canonique : clés alphabétiques, indentation fixe, aucun commentaire inséré |
+| Formatage TOML | Canonique : clés alphabétiques, indentation fixe et uniquement les commentaires fixes d'en-tête/producteur ; aucun commentaire dérivé d'une entrée |
 | Aléa de l'échantillonnage | L’échantillonnage utilise des graines fixes (`TABLESAMPLE SYSTEM` déterministe de PG). Indépendamment, l’anonymisation des identifiants obtient volontairement une clé secrète auprès du CSPRNG du système d’exploitation, sauf si le client en fournit une. |
 | Champs inutilisés | Chaque champ est documenté ci-dessus ; aucun champ « metadata »/« comment »/« reserved » susceptible de transporter des données de taille illimitée |
 | Texte source des artefacts et éléments externes | Les définitions sont transitoires et effacées après l'analyse bornée ; noms, texte SQL, points de terminaison, chaînes de fournisseur, informations d'identification, clés, certificats, noms de paquets et binaires n'ont aucun champ sérialisé |
@@ -437,24 +488,28 @@ une mise à niveau, plutôt que d'ignorer silencieusement des champs.
 - Les comparaisons sont plus simples (une clé par ligne ; les sous-tables identifiées restent contiguës).
 - Le client peut effectuer des modifications manuelles s'il souhaite masquer un champ précis avant le partage.
 
-JSON est utilisé comme **format intermédiaire** dans le chemin de repli SQL (`sql/blueprint.pg.sql` produit du JSON ; `blueprint_format.py` le normalise en TOML). Le fichier final partagé avec dbwarp est toujours au format TOML.
+JSON est utilisé comme **format intermédiaire** dans le chemin de repli SQL. Chaque script `sql/blueprint.*.sql` produit du JSON et `blueprint_format.py` le normalise en TOML. Le JSON intermédiaire contient les identifiants source réels ; MySQL peut aussi inclure des déclarations enum/set dans `COLUMN_TYPE`. Il doit donc rester protégé dans l'environnement source. Le normaliseur utilise une nouvelle clé secrète par défaut et accepte le même contrat `--anonymization-key-file` protégé pour les comparaisons approuvées entre exécutions. Le fichier final vérifié pour partage avec DBWarp est toujours au format TOML.
 
 ## Extensions de provenance des fichiers structurés
 
-La version 3 du schéma et les versions ultérieures peuvent émettre les champs bornés suivants.
+Lorsque `engine` ou `source_kind` vaut `"parquet"` ou `"avro"`, la version 3 du
+schéma et les versions ultérieures peuvent aussi émettre les champs bornés
+suivants. Les anciens lecteurs doivent ignorer les champs qu'ils ne comprennent
+pas ; les lecteurs plus récents doivent préserver la distinction entre le
+stockage des fichiers source et les mesures bornées d'échantillons décodés.
 
 Les Blueprints de fichiers structurés utilisent les mêmes identifiants anonymisés
-que les Blueprints de bases de données : `table-NNN` dans l'ordre déterministe des
-entrées et `col-N` dans l'ordre ordinal du schéma. Les noms de fichiers, les
+que les Blueprints de bases de données : `table-NNN` dans l'ordre fondé sur la clé secrète et
+`col-N` dans l'ordre ordinal du schéma. Les noms de fichiers, les
 chemins Parquet, les noms de champs Avro et la valeur `logical_table` du
 manifeste ne deviennent jamais des identifiants de table ou de colonne.
 
-Lorsque `engine` ou `source_kind` vaut `"parquet"` ou `"avro"`, `table_bytes`
-est l'estimation logique utilisée pour dimensionner le transfert, tandis que
+Au niveau table, `table_bytes` est l'estimation logique utilisée pour
+dimensionner le transfert, tandis que
 `storage_bytes` est la taille réelle de l'objet source. Sans échantillonnage
 décodé, Parquet utilise les octets non compressés des segments de colonne pour
 `table_bytes` ; l'échantillonnage décodé facultatif les remplace par une
-projection des octets `dbwarp-blueprint-rowframe-v1`. Avro dérive la valeur de son
+projection des octets `blueprint-compression-probe-v2`. Avro dérive la valeur de son
 parcours intégral décodé. `source_partitions`, `row_group_count` et
 `source_codec` décrivent l'organisation et la provenance de planification. Les
 jeux multifichiers agrègent ces valeurs. `row_group_count` est propre à Parquet
@@ -462,17 +517,18 @@ et `source_partitions` vaut `1` pour un objet d'entrée unique.
 
 Au niveau colonne, `null_fraction` est une observation comprise entre `0.0` et
 `1.0`. `length_sample_rows` et `length_sample_method` indiquent l'origine de
-`len_avg` et `len_p95`. `source_semantics` conserve des faits bornés comme
-`"repeated-leaf"`, `"nested-json"` ou `"multi-type-union"`. La précision
-décimale, la précision et la sémantique UTC/locale des horodatages, les UUID et
-la taille binaire fixe utilisent les champs scalaires existants et
+`len_avg` et `len_p95`. `source_semantics` conserve des faits de compatibilité
+bornés comme `"repeated-leaf"`, `"nested-json"` ou `"multi-type-union"` ; il ne
+contient jamais de nom ni de valeur de champ client. La précision et l’échelle
+décimales, la précision et la sémantique UTC/locale des horodatages, les UUID et
+les métadonnées binaires de taille fixe utilisent les champs scalaires existants expurgés et
 `native_type`.
 
 Au niveau table, `ratio_storage` compare `table_bytes` aux octets réels de
 l'objet source. Au niveau d'une colonne Parquet, il compare les octets non
 compressés et compressés du segment de colonne dans le footer. Ce sont des
-signaux de planification de fichier, pas des estimations de transfert DBWarp.
+signaux de planification de fichier, pas des estimations d'échantillons décodés.
 `ratio_zstd_3` et `ratio_zstd_19` ne constituent des entrées valides pour
 l’étalonnage du transfert que lorsque
-`sample_encoding` vaut `"dbwarp-blueprint-rowframe-v1"`. Les ratios de footer
+`sample_encoding` vaut `"blueprint-compression-probe-v2"`. Les ratios de footer
 Parquet ou de conteneur Avro ne doivent jamais être copiés dans ces champs zstd.

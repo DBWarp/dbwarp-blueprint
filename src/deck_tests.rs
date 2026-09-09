@@ -142,7 +142,7 @@ mod tests {
             },
             ratio_zstd_3: ratio3,
             ratio_stddev: 0.1,
-            sample_encoding: "dbwarp-blueprint-rowframe-v1".to_string(),
+            sample_encoding: crate::sample_encode::SAMPLE_ENCODING_TAG.to_string(),
             ..BlueprintCompression::default()
         });
     }

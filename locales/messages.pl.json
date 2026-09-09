@@ -8,7 +8,7 @@
       "action": "Przejrzyj szczegóły techniczne i łańcuch przyczynowy, popraw podstawowy stan i spróbuj ponownie."
     },
     "DBP1000E": {
-      "summary": "Wymagane jest połączenie z bazą danych URI",
+      "summary": "Wymagany jest identyfikator URI połączenia z bazą danych",
       "cause": "Nie podano aktywnej bazy danych URI ani trybu wprowadzania offline.",
       "action": "Przekaż --connect URI lub wybierz jeden tryb wprowadzania offline."
     },
@@ -18,9 +18,9 @@
       "action": "Użyj polecenia --password-file, --password-env lub interaktywnego znaku zachęty TTY. Zobacz AUTH.md i SECURITY.md."
     },
     "DBP1002E": {
-      "summary": "Schemat bazy danych URI nie jest obsługiwany",
-      "cause": "Wartość --connect nie korzystała z obsługiwanego schematu PostgreSQL, MySQL, MariaDB lub SQL Server URI.",
-      "action": "Użyj postgresql://, postgres://, mysql://, mariadb://, sqlserver://, mssql:// lub tds://."
+      "summary": "Schemat URI bazy danych nie jest obsługiwany",
+      "cause": "Wartość --connect nie korzystała z obsługiwanego schematu URI PostgreSQL, MySQL ani SQL Server.",
+      "action": "Użyj postgresql://, postgres://, mysql://, sqlserver://, mssql:// lub tds://. mariadb:// jest akceptowany wyłącznie jako alias URI MySQL; MariaDB nie jest osobno kwalifikowanym silnikiem."
     },
     "DBP1003E": {
       "summary": "Zastąpienie nazwy serwera TLS jest niedostępne",
@@ -38,14 +38,14 @@
       "action": "Używaj sql-auth, cloud-token, entra-token lub integrated tylko z silnikiem bazy danych, który obsługuje dany tryb."
     },
     "DBP1006E": {
-      "summary": "Próbkowanie plików strukturalnych nie ma wyraźnej zgody",
+      "summary": "Próbkowanie kompresji plików strukturalnych nie ma wyraźnej zgody",
       "cause": "Tryby plików strukturalnych nie mogą pytać interaktywnie i wymagają --yes przed odczytem ograniczonych próbek.",
-      "action": "Sprawdź kontrakt wstępny i uruchom ponownie z --measure-compression --yes."
+      "action": "Sprawdź umowę kontroli wstępnej i uruchom ponownie z --measure-compression --yes."
     },
     "DBP1007E": {
       "summary": "Tryb wierności długości jest niedostępny dla tego silnika",
-      "cause": "Jawne kontrole wierności długości mają obecnie zastosowanie tylko do przechwytywania na żywo MySQL lub MariaDB.",
-      "action": "Usuń tryb jawny lub użyj obsługiwanego źródła MySQL lub MariaDB."
+      "cause": "Jawne kontrole wierności długości mają obecnie zastosowanie do przechwytywania na żywo PostgreSQL i MySQL, ale nie SQL Server.",
+      "action": "Usuń tryb jawny dla przechwytywania SQL Server. Aliasy zgodności URI nie rozszerzają kwalifikowanej macierzy silników."
     },
     "DBP1008E": {
       "summary": "Konflikt opcji wierności długości",
@@ -55,7 +55,7 @@
     "DBP1009E": {
       "summary": "Dokładna wierność długości nie ma wyraźnej zgody",
       "cause": "Dokładne długości próbek mogą ujawnić bardziej precyzyjne statystyki klienta i wymagają --yes.",
-      "action": "Przejrzyj umowę przed lotem i wykonaj ją ponownie z --length-fidelity exact --yes."
+      "action": "Sprawdź umowę kontroli wstępnej i uruchom ponownie z --length-fidelity exact --yes."
     },
     "DBP1010E": {
       "summary": "Wbudowany katalog lokalizacji jest niekompletny",
@@ -93,7 +93,7 @@
       "action": "Dodaj co najmniej jeden blok [[source]]."
     },
     "DBP1104E": {
-      "summary": "Zbiór zbiorczy nie wymaga wyraźnej zgody",
+      "summary": "Brak wyraźnej zgody na przechwytywanie wsadowe",
       "cause": "Nieinteraktywna kolekcja z wielu źródeł wymaga --yes.",
       "action": "Najpierw uruchom z --dry-run, przejrzyj plan, a następnie uruchom ponownie z --yes."
     },
@@ -124,7 +124,7 @@
     },
     "DBP1110E": {
       "summary": "Konfiguracja połączenia źródła bazy danych jest niejednoznaczna",
-      "cause": "Źródło wsadowe nie określiło dokładnie jednego z połączeń, connect_env lub connect_file.",
+      "cause": "Źródło wsadowe nie określiło dokładnie jednego z pól connect, connect_env lub connect_file.",
       "action": "Ustaw dokładnie jedno źródło połączenia."
     },
     "DBP1111E": {
@@ -160,7 +160,7 @@
     "DBP1200E": {
       "summary": "Selektor pakietu jest nieprawidłowy",
       "cause": "Wyrażenie blueprint:// lub --select było zniekształcone lub sprzeczne.",
-      "action": "Użyj source=ID, table=ID, engine=VALUE lub tag=NAME raz na każdy klawisz selektora."
+      "action": "Użyj source=ID, table=ID, engine=VALUE lub tag=NAME raz na każdy klucz selektora."
     },
     "DBP1201E": {
       "summary": "Selektor pakietu nie pasuje do żadnych źródeł",
@@ -193,7 +193,7 @@
       "action": "Sprawdź ścieżkę docelową, uprawnienia i wolne miejsce, a następnie spróbuj ponownie."
     },
     "DBP1301E": {
-      "summary": "Wymagana jest ścieżka wyjściowa pokładu",
+      "summary": "Wymagana jest ścieżka wyjściowa prezentacji",
       "cause": "Dostarczono --from-toml bez --deck.",
       "action": "Przekaż --deck output.pptx."
     },
@@ -209,7 +209,7 @@
     },
     "DBP1402E": {
       "summary": "Przechwytywanie Blueprint MySQL nie powiodło się",
-      "cause": "Połączenie MySQL lub MariaDB, zapytanie do katalogu, operacja sondy RTT, próbkowanie lub dekodowanie nie powiodło się.",
+      "cause": "Połączenie MySQL, zapytanie do katalogu, operacja sondy RTT, próbkowanie lub dekodowanie nie powiodło się.",
       "action": "Przejrzyj szczegóły techniczne, łączność, uprawnienia, zasady TLS i stan źródła, a następnie spróbuj ponownie."
     },
     "DBP1403E": {
@@ -229,13 +229,13 @@
     },
     "DBP1406W": {
       "summary": "Wyczerpano budżet czasu próbkowania",
-      "cause": "Tier 2 osiągnął skonfigurowany limit czasu, zanim można było pobrać próbki wszystkich tabel lub kolumn tekstowych.",
+      "cause": "Poziom 2 osiągnął skonfigurowany limit czasu, zanim można było pobrać próbki wszystkich tabel lub kolumn tekstowych.",
       "action": "Zwiększ --max-wall-secs albo zaakceptuj częściowe próbkowanie i sprawdź ostrzeżenia audytu."
     },
     "DBP1407W": {
-      "summary": "Próbka kompresji była niedostępna",
+      "summary": "Próbka kompresji była niekompletna lub niedostępna",
       "cause": "Ograniczone zapytanie próbkujące, strumień, kodowanie albo operacja kompresji nie powiodły się dla co najmniej jednej tabeli, podczas gdy przechwytywanie Blueprint było kontynuowane.",
-      "action": "Sprawdź szczegóły techniczne i uprawnienia tabel; uruchom Tier 2 ponownie, jeśli wymagane są kompletne dane o kompresji."
+      "action": "Sprawdź szczegóły techniczne i uprawnienia tabel; uruchom Poziom 2 ponownie, jeśli wymagane są kompletne dane o kompresji."
     },
     "DBP1408W": {
       "summary": "Próbka stylu kolumny była niedostępna",
@@ -304,7 +304,7 @@
     },
     "DBP1701E": {
       "summary": "Operacja anulowana przed zgodą",
-      "cause": "Interaktywny monit przed lotem został odrzucony lub nie otrzymał zgody kanonicznej y/yes.",
+      "cause": "Interaktywny monit wstępny został odrzucony lub nie otrzymał zgody kanonicznej y/yes.",
       "action": "Przejrzyj plan i uruchom go ponownie lub przekaż --yes po wyraźnej zgodzie."
     },
     "DBP1702E": {
@@ -319,7 +319,7 @@
     },
     "DBP1014E": {
       "summary": "Brak wyraźnej zgody na szczegóły artefaktów",
-      "cause": "Anonimowe grafy zależności mogą charakteryzować aplikację, a tryb analyzed tymczasowo odczytuje definicje obiektów.",
+      "cause": "Anonimowe grafy zależności mogą posłużyć jako odcisk jednoznacznie identyfikujący aplikację, a tryb analyzed tymczasowo odczytuje definicje obiektów.",
       "action": "Sprawdź umowę prywatności artefaktów i uruchom ponownie z --yes albo użyj --artifact-detail summary."
     },
     "DBP1015E": {

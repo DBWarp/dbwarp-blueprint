@@ -5,6 +5,30 @@ Common `dbwarp-blueprint` failures and what to do next.
 Operator-owned failures now start with a stable `DBPnnnnS` message code, for example `DBP1001E`.
 Use the code when searching docs or opening a support ticket. See [Operator Message Codes](MESSAGES.md).
 
+## Source Build Exits With Status 2 or 3
+
+`build.sh` exits with status 2 when the installed `rustc` does not match the
+version pinned in `rust-toolchain.toml` and network access has not been
+explicitly approved. Install that exact Rust version, or—after reviewing the
+download boundary—allow the script to fetch its pinned, checksum-verified
+bootstrap:
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
+`build.sh` exits with status 3 when `DBWARP_BLUEPRINT_OFFLINE=1` is set but the
+source tree has no `vendor-crates/` directory. A normal source checkout cannot
+satisfy that mode. Download and verify the same release's vendored source
+archive, extract it, and run the build inside that extracted tree:
+
+```bash
+DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh
+```
+
+Do not copy dependencies between release versions. See [Build from
+Source](../BUILD.md) for the complete online and offline procedures.
+
 ## Requested Language Is Not Used
 
 Use an explicit supported value when diagnosing locale selection:

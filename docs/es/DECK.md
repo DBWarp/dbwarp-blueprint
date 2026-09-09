@@ -9,7 +9,9 @@
 `dbwarp-blueprint --from-toml blueprint.toml --deck blueprint.pptx` genera posteriormente
 la misma presentación a partir de un archivo Blueprint existente y revisado,
 sin conectarse a una base de datos. Es una presentación de los mismos datos
-anonimizados: no se lee, envía ni calcula nada más sobre su base de datos.
+anonimizados: no se lee nada más de su base de datos ni se le envía nada. La
+presentación calcula únicamente los resúmenes y proyecciones locales
+documentados a partir de campos ya presentes en el Blueprint.
 
 ```bash
 ./dbwarp-blueprint \
@@ -52,8 +54,9 @@ literalmente; entrecomille los valores que contengan espacios, por ejemplo
 espacios iniciales o finales, caracteres de control o de formato bidireccional,
 ni superar 48 unidades de ancho de visualización. Omita la opción para no
 mostrar ninguna etiqueta. La configuración solo cambia la presentación; no
-modifica el archivo Blueprint ni los datos resumidos en la presentación, y
-sigue siendo determinista cuando se fija `--generated-at`.
+modifica el archivo Blueprint ni los datos resumidos en la presentación. Con
+exactamente el mismo Blueprint revisado, idioma, etiqueta y marca de tiempo,
+los bytes de la presentación son reproducibles.
 
 ## Propiedades de confianza
 
@@ -62,8 +65,9 @@ sigue siendo determinista cuando se fija `--generated-at`.
   ninguna consulta adicional a la base de datos ni una segunda pasada por el
   catálogo. En modo `--from-toml`, el Blueprint en memoria se carga en cambio desde
   el archivo TOML revisado.
-- **Sin red.** La generación de la presentación no establece ninguna conexión
-  saliente de ningún tipo.
+- **Sin red de la aplicación.** La generación de la presentación no abre
+  ninguna conexión de red; la lectura de un Blueprint desde una ruta montada
+  en red sigue dependiendo de la pila de almacenamiento del host.
 - **Sin bibliotecas de terceros.** El OOXML se crea directamente en
   `src/deck.rs`; el archivo `.pptx` es un ZIP sencillo de partes XML que puede
   abrir con `unzip` y leer. No hay automatización de PowerPoint, servicios de
@@ -74,12 +78,16 @@ sigue siendo determinista cuando se fija `--generated-at`.
   ejecución.
 - **Sin identificadores reales ni datos de filas.** Las tablas, columnas e
   índices aparecen como los mismos marcadores anónimos que en el archivo de
-  Blueprint (`table-001`, `col-1`, `idx-1`, `schema-A`), y cada número conserva la
-  misma precisión documentada. La presentación no contiene hechos específicos
-  del cliente aparte de los incluidos en el archivo Blueprint.
-- **Determinista.** Con un valor fijado de `--generated-at`, el mismo Blueprint
-  produce un `.pptx` idéntico byte a byte para el mismo idioma seleccionado
-  (orden fijo de partes y marcas de tiempo fijas).
+  Blueprint (`table-001`, `col-1`, `idx-1`, `schema-A`). Las mediciones de origen
+  conservan la precisión documentada; cualquier proyección se calcula solo a
+  partir de campos ya presentes en el Blueprint. La presentación no contiene
+  información específica del cliente más allá de esa entrada.
+- **Reproducible a partir de una entrada fija.** El mismo Blueprint revisado
+  produce un `.pptx` idéntico byte a byte para el mismo idioma, etiqueta de
+  confidencialidad y marca de tiempo fijada (orden y marcas de tiempo fijos).
+  Esto no hace idénticas dos capturas en vivo: también requieren el mismo
+  `--anonymization-key-file` protegido, el mismo estado de origen y las mismas
+  opciones de captura.
 
 ## Contenido
 
@@ -88,8 +96,8 @@ La presentación se adapta al tamaño del esquema:
 - **Título:** logotipo y lema de DBWarp, motor, versión, clase de origen, número
   de tablas y marca de tiempo de generación.
 - **Resumen ejecutivo:** señales para dirección sobre escala de migración,
-  concentración de datos, complejidad de relaciones y evidencia lista para
-  compartir.
+  concentración de datos, complejidad de relaciones e indicadores de evidencia
+  para revisión.
 - **Resumen:** totales de tablas, filas, tamaño de datos y tamaño de índices,
   además de los números de columnas, índices, claves foráneas y esquemas.
 - **Esquemas pequeños** (unas pocas tablas): un panel dimensionado por tabla

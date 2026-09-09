@@ -48,8 +48,9 @@ use crate::audit::AuditLog;
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 static ANONYMIZATION_KEY_SOURCE: OnceLock<&'static str> = OnceLock::new();
 
+use crate::engine_common::LengthFidelity;
 use crate::engine_mssql::{MssqlConnectParams, MssqlRunOpts};
-use crate::engine_mysql::{LengthFidelity, MyConnectParams, MyRunOpts};
+use crate::engine_mysql::{MyConnectParams, MyRunOpts};
 use crate::engine_pg::{PgConnectParams, PgRunOpts, SourceKind};
 use crate::format::{emit_toml, BlueprintFile};
 use crate::secret::{Secret, SecretSource};
@@ -250,7 +251,7 @@ struct Cli {
     )]
     banner_mode: CliBannerMode,
 
-    /// Database connection URI (postgresql://[user[:password]@]host[:port]/database).
+    /// Database connection URI (postgresql://[user@]host[:port]/database).
     /// Required unless an offline input mode is used.
     #[arg(
         long,
@@ -502,8 +503,7 @@ struct Cli {
     )]
     select: Vec<String>,
 
-    /// Source kind annotation propagated to the report. Drives the
-    /// estimator's compression_source_confidence on the dbwarp side.
+    /// Source kind annotation propagated to the report.
     #[arg(
         long,
         value_name = "KIND",
@@ -526,7 +526,7 @@ struct Cli {
     #[arg(long, value_enum, default_value_t = ArtifactDetail::Summary)]
     artifact_detail: ArtifactDetail,
 
-    /// Length metadata policy for live MySQL capture.
+    /// Length metadata policy for live PostgreSQL and MySQL capture.
     /// balanced (default): exact schema/index lengths plus <=~3.2% relative
     /// rounding for sampled value lengths; strict: legacy coarse anonymization;
     /// exact: preserve all lengths exactly and require --yes.
@@ -699,8 +699,7 @@ struct Cli {
     /// require the same protected customer key, source state, options, and
     /// producer. Without this flag the current UTC time at run start is used.
     /// Recorded in the audit log when set. This CLI flag is the only way to
-    /// pin the timestamp — no environment variable is consulted, matching
-    /// the "no env vars read by default" trust contract.
+    /// pin the timestamp — no environment variable is consulted for that purpose.
     #[arg(long, value_name = "ISO8601_UTC", hide_short_help = true)]
     generated_at: Option<String>,
 
@@ -1450,11 +1449,11 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
         );
     }
     if (cli.preserve_exact_lengths || length_fidelity != LengthFidelity::Balanced)
-        && !matches!(engine_kind, EngineKind::MySQL)
+        && matches!(engine_kind, EngineKind::Mssql)
     {
         bail!(
-            "DBP1007E explicit --length-fidelity modes currently apply to live MySQL capture only. \
-             Next: remove the explicit mode for this engine; PostgreSQL and SQL Server exact declared-length support is not yet advertised."
+            "DBP1007E explicit --length-fidelity modes currently apply to live PostgreSQL and MySQL capture only. \
+             Next: remove the explicit mode for SQL Server capture."
         );
     }
     if matches!(
@@ -1695,6 +1694,7 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
                     .compression_workers
                     .unwrap_or_else(default_compression_workers)
                     as usize,
+                length_fidelity,
                 sample_rows: cli.sample_rows,
                 sample_timeout_secs: cli.max_wall_secs,
                 source_kind: source_kind.clone(),
@@ -1980,12 +1980,12 @@ fn run_blueprint_from_structured_file(
         dbwarp_blueprint_core::DecodedCompressionOptions::enabled(
             cli.sample_rows,
             format!(
-                "{} decoded first {} rows; rowframe-v1 zstd",
+                "{} decoded first {} rows; compression-probe-v2 zstd",
                 kind.label(),
                 cli.sample_rows
             ),
             format!(
-                "{} decoded first {} rows per column; rowframe-v1 zstd",
+                "{} decoded first {} rows per column; compression-probe-v2 zstd",
                 kind.label(),
                 cli.sample_rows
             ),

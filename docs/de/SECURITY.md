@@ -25,7 +25,7 @@ der Meldung erforderlich ist.
 | `--batch-manifest` | Eine Datenbanktreibersitzung für jede Datenbankquelle im Manifest, die sequenziell verarbeitet wird. Lokale Parquet- und Avro-Quellen verwenden kein Netzwerk. Die obigen DNS- und integrierten Authentifizierungsbedingungen gelten weiterhin. |
 | `--from-toml`, `--from-parquet`, `--from-avro`, `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Keine von der Anwendung initiierte Netzwerkverbindung. Eingaben auf Netzwerk-Dateisystemen bleiben eine Angelegenheit des Betriebssystems beziehungsweise Speichersystems. |
 
-Das Werkzeug ruft weder einen DBWarp-Dienst noch eine Cloud-API auf. Datenbanktreiber und Host-Betriebssystem können den oben beschriebenen Protokollhilfsverkehr erzeugen.
+Das Werkzeug ruft weder einen DBWarp-Dienst noch eine Cloud-API auf. Datenbanktreiber und Host-Betriebssystem können den oben beschriebenen Protokollhilfsverkehr erzeugen und System-Trust-Stores, DNS-Konfiguration, dynamische Bibliotheken sowie Konfiguration oder Anmeldedatencaches der integrierten Authentifizierung konsultieren.
 
 `--max-wall-secs` setzt zwei unabhängige Schutzmechanismen. PostgreSQL verwendet
 ein sitzungslokales `statement_timeout`, MySQL ein sitzungslokales
@@ -40,13 +40,13 @@ erneuten Versuch, dass die Serverarbeit beendet ist.
 
 ## Gelesene Dateien
 
-Zur Laufzeit liest das Werkzeug nur Eingaben, die auf der Befehlszeile ausgewählt oder von einer Batch-/Bundle-Eingabe referenziert werden:
+Zur Laufzeit liest die Anwendung direkt nur Eingaben, die auf der Befehlszeile ausgewählt oder von einer Batch-/Bundle-Eingabe referenziert werden:
 
 | Datei | Zeitpunkt/Zweck |
 |---|---|
 | `--user-file` | Quelle des Benutzernamens |
 | `--password-file` | Quelle des Passworts |
-| `--anonymization-key-file` | optionaler kundenseitig verwahrter HMAC-Schlüssel, der anonyme Objektkennzeichnungen über genehmigte Läufe hinweg erhält; der Dateimodus darf unter Unix keinen Lesezugriff für Gruppe/Andere zulassen |
+| `--anonymization-key-file` | optionaler kundenseitig verwahrter HMAC-Schlüssel, den die Binärdatei oder der SQL-Fallback-Normalisierer verwendet, um anonyme Objektkennzeichnungen über genehmigte Läufe hinweg zu erhalten; der Dateimodus darf unter Unix keinen Lesezugriff für Gruppe/Andere zulassen |
 | `--azure-token-file` | Quelle des SQL-Server-Entra-ID-Tokens |
 | `--tls-ca` | vertrauenswürdiges CA-Bundle |
 | `--tls-cert` | TLS-Clientzertifikat |
@@ -56,9 +56,9 @@ Zur Laufzeit liest das Werkzeug nur Eingaben, die auf der Befehlszeile ausgewäh
 | `--from-avro` | Metadaten und Datensätze eines Avro-Objektcontainers; zum Zählen der Datensätze muss der Container durchlaufen werden |
 | `--batch-manifest` | Batch-Manifest sowie jede darin referenzierte lokale strukturierte Datei, Anmeldedaten-, Token- und TLS-Datei |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Bundle-TOML und alle für die ausgewählte Operation erforderlichen relativen Blueprint-Dateien |
-| `/dev/tty` | interaktive Passworteingabe auf Unix-ähnlichen Systemen |
+| steuerndes Terminal oder Konsole | interaktive Passworteingabe (`/dev/tty` auf Unix-ähnlichen Systemen) |
 
-Es liest weder `~/.pgpass`, `~/.my.cnf`, Cloud-Anmeldedateien, SSH-Schlüssel, Shell-Verläufe noch standardmäßige Passwort-Umgebungsvariablen.
+Die Anwendung besitzt keinen ausdrücklichen Fallback zum Lesen von `~/.pgpass`, `~/.my.cnf`, Cloud-Anmeldedateien, SSH-Schlüsseln, Shell-Verläufen oder standardmäßigen Datenbankpasswort-Umgebungsvariablen. Plattformbibliotheken für Datenbank, TLS, DNS und Identität können weiterhin eigene Systemkonfiguration und Anmeldedatencaches konsultieren; verwenden Sie eine Betriebssystemablaufverfolgung, wenn Ihre Richtlinie ein vollständiges Prozess- und Bibliotheksinventar verlangt.
 
 Bei PostgreSQL und MySQL ersetzt ein bereitgestelltes `--tls-ca`-PEM-Bundle die
 einkompilierten Mozilla-Stammzertifikate. SQL Server verwendet den Trust Store
@@ -98,6 +98,10 @@ Anmeldedaten werden in einen Typ `Secret` eingeschlossen, der bewusst weder `Deb
 
 Anmeldedaten werden nur zum Verbindungsaufbau an den Datenbanktreiber übergeben. Sie werden weder in die Ausgabedatei noch in das Auditprotokoll geschrieben. Das Auditprotokoll zeichnet die Quelle der Anmeldedaten auf, etwa `file:/etc/dbwarp/db.pass`, nicht deren Wert.
 
+## Treibereigene Kopien von Anmeldedaten
+
+Die Nullung deckt den von DBWarp Blueprint verwalteten `Secret`-Puffer ab; sie kann die Löschung von Kopien nicht garantieren, die ein Datenbanktreiber, eine TLS-Bibliothek, ein Betriebssystem-Authentifizierungsanbieter oder der Allocator erstellt. Die aktuelle MySQL-Treiber-API verlangt einen eigenen `String`, daher kopiert `src/engine_mysql.rs` das Passwort ausdrücklich aus `Secret` in `OptsBuilder`. Diese Kopie wird nicht genullt und bleibt erhalten, bis Builder/Optionen verworfen werden. PostgreSQL, SQL Server und Plattform-Authentifizierungsbibliotheken können ebenfalls interne Kopien außerhalb des Wrappers erstellen. Schränken Sie Prozessinspektion und Swap auf Hosts mit sensiblen Anmeldedaten angemessen ein.
+
 ## Abgelehnte Anmeldedatenmuster
 
 In die Verbindungs-URI eingebettete Passwörter werden abgelehnt. Das folgende Beispiel wird nicht akzeptiert:
@@ -113,20 +117,28 @@ Verwenden Sie stattdessen `--password-file`, `--password-env` oder die interakti
 Die Blueprint-Datei ist menschenlesbar und prüfbar gestaltet:
 
 - echte Bezeichner werden durch schlüsselgebundene anonyme Namen wie `table-001` und `col-1` ersetzt;
-- numerische Werte werden auf dokumentierte Buckets gerundet;
+- numerische Werte verwenden die für jedes Feld dokumentierte exakte oder gerundete Genauigkeit; exakte Längenmodi erfordern ausdrückliche Zustimmung;
 - Kommentare sind fest vorgegeben und werden nicht als Datenkanal verwendet;
 - Zeilenwerte werden niemals ausgegeben;
 - Komprimierungsstichproben werden, falls aktiviert, lokal komprimiert und verworfen.
 
-Live-Tier-2 wendet eine harte Obergrenze von 16 MiB für die projizierte Nutzlast
-je Tabelle an, bevor der Datenbanktreiber Zeilendaten empfängt. Bei extrem
-breiten Tabellen wird die angeforderte Zeilenanzahl reduziert; Spalten
-variabler Breite werden über Engine-eigene serverseitige Kürzung projiziert.
+Live-Tier-2 budgetiert höchstens 16 MiB projizierte Stichprobenwert-Nutzlast je
+Tabelle. Bei extrem breiten Tabellen wird die angeforderte Zeilenanzahl
+reduziert; Zellen variabler Breite werden über Engine-eigene serverseitige
+Kürzung projiziert, auch bei adaptiven Wiederholungen für MySQL und SQL Server.
 Stilprüfungen besitzen eigene Grenzen in ihrer SQL-Projektion. Der lokale
-Zeilenframe-Encoder erzwingt unabhängig dieselbe Tabellenobergrenze. Dadurch
-kann ein kleiner Wert für `--sample-rows` keine unbegrenzte LOB-Nutzlast
-übertragen. Sehr große Werte tragen daher nur mit ihren begrenzten Präfixen zu
-Komprimierungs- und Längenschätzungen bei.
+Prüfpuffer-Encoder erzwingt seine Tabellenobergrenze unabhängig davon.
+
+Dies ist keine Obergrenze von 16 MiB für Netzwerkverkehr oder Prozessspeicher:
+Protokollrahmen, getrennt zurückgegebene Metadaten der ursprünglichen Länge,
+die hexadezimale Binärdarstellung von PostgreSQL, Wiederholungen und
+Treiberpuffer verursachen zusätzlichen Aufwand. Sehr große Werte können nur
+mit begrenzten Präfixen zu Komprimierungs- und Wertzusammenfassungsmessungen
+beitragen. Der Collector ermittelt die ursprünglichen Längen der
+Stichprobenwerte getrennt auf dem Server und wendet die ausgewählte
+Längentreuerichtlinie auf diese Längen an, nicht nur auf die Längen der
+zurückgegebenen Präfixe. Die Stichprobenherkunft dokumentiert die geltenden
+Einschränkungen; eine begrenzte Ausgabe belegt keine Messung vollständiger Werte.
 
 Die Reihenfolge von Tabellen, Schemas, Indizes und Nicht-Tabellenobjekten
 verwendet domänengetrenntes HMAC-SHA256. Standardmäßig bezieht das Werkzeug vom
@@ -138,6 +150,10 @@ genau 32 Rohbytes oder 64 Hexadezimalzeichen enthalten und wie ein
 Zugangsdatengeheimnis geschützt werden. Das Audit zeichnet nur auf, ob ein
 temporärer oder kundenseitig verwahrter Schlüssel verwendet wurde, niemals den
 Schlüsselwert.
+
+Der nur die Standardbibliothek verwendende Normalisierer `blueprint_format.py` des SQL-Fallbacks besitzt denselben Vertrag für schlüsselgebundene Reihenfolge. Er bezieht standardmäßig einen neuen zufälligen Betriebssystemschlüssel, sofern `--anonymization-key-file` nicht angegeben ist, und fügt nach dem kanonischen Header einen festen Kommentar mit Producer/Schlüsselquelle hinzu, damit seine Ausgabe nicht mit der des Rust-Collectors verwechselt werden kann.
+
+Vor der Normalisierung enthält das Zwischen-JSON des SQL-Fallbacks echte Schema-, Tabellen-, Spalten- und Indexnamen. MySQL `COLUMN_TYPE` kann außerdem deklarierte enum/set-Mitglieder enthalten. Die SQL-Skripte besitzen keinen Selektor für eine Teilmenge von Schemata und erzeugen kein Anwendungsaudit. Behalten Sie das Zwischen-JSON als sensibles Schemamaterial in der Quellumgebung, normalisieren Sie es lokal und übertragen Sie nur die geprüfte TOML-Datei. Verwenden Sie den Rust-Collector, wenn nur ausgewählte Schemata genehmigt sind oder vollständige Audit-, Topologie-, Artefakt- oder Stichprobenevidenz erforderlich ist.
 
 Dies reduziert das Offenlegungsrisiko, macht jedoch nicht jede Ausgabe für jeden Empfänger sicher. Anonyme Schemastrukturen, Abhängigkeitsgraphen, Engine-Versionen, exakte Opt-in-Felder und ungewöhnliche Größenverteilungen können einen Workload identifizieren. Prüfen Sie Blueprint- und Bundle-Ausgaben vor der Weitergabe gemäß der Datenklassifizierungsrichtlinie Ihrer Organisation. Senden Sie Auditprotokolle oder `errors.txt` nicht so, als wären sie anonymisierte Blueprints.
 

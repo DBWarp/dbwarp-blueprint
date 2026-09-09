@@ -6,7 +6,7 @@
 
 人が読めます。差分を取れます。フォレンジックレビューが可能です。
 
-> **この形式は、境界付きスキーマ、決定論的な識別子、文書化された数値精度により、
+> **この形式は、境界付きスキーマ、秘密キーに基づく識別子、文書化された数値精度により、
 > 隠れチャネルと直接開示のリスクを低減します。匿名グラフ構造や明示的に有効化した
 > 正確なフィールドからワークロードを識別できる場合があるため、組織のデータ分類
 > ポリシーに従ってファイルをレビューしてください。**
@@ -23,19 +23,20 @@
 
 ```
 
-空行も契約の一部です。ツールはこのヘッダーだけを正確に出力し、他のコメントは
-出力しません。これにより予期しないコメント内容を容易に検出できますが、残りの
-構造化フィールドから特徴的なスキーマや依存関係グラフを識別できないという主張では
-ありません。
+空行も正規ヘッダーの一部です。Rust コレクターはこのヘッダーだけを正確に出力し、
+他のコメントは出力しません。SQL フォールバックの正規化ツールはヘッダーをそのまま
+保持し、受信者が生成元を区別できるよう、キーの取得元を示す固定コメント
+`Producer: blueprint_format.py SQL fallback` を 1 つ追加します。残りの構造化
+フィールドから特徴的なスキーマや依存関係グラフを識別できないという主張ではありません。
 
 ## トップレベルフィールド
 
 | フィールド | 型 | 説明 |
 |---|---|---|
 | `schema_version` | int | 形式バージョン。現在は `6`。バージョン 1～5 も引き続き読み取り可能です。 |
-| `generated_at` | ISO-8601 string | UTC タイムスタンプ。秒精度で小数部なし。バイト単位で同一の再現性実行では、CLI フラグ `--generated-at "2026-04-26T00:00:00Z"` により**固定可能**です。このフラグが設定されると監査ログに `generated_at_pin: ...` が記録されるため、固定がフォレンジック上可視になります。この値を固定する唯一の方法はこのフラグであり、README の「既定では環境変数を読み取らない」という信頼契約に従い、環境変数は一切読み取られません。 |
-| `engine` | string | `"postgresql"`、`"mysql"`、または `"sqlserver"`。 |
-| `engine_version` | string | データベースエンジンから返されたバージョン文字列。 |
+| `generated_at` | ISO-8601 string | UTC タイムスタンプ。秒精度で小数部なし。CLI フラグ `--generated-at "2026-04-26T00:00:00Z"` により**固定可能**です。バイト単位で同一のライブ取得には、同じ保護済み `--anonymization-key-file`、ソース状態、オプション、生成元も必要です。このフラグが設定されると監査ログに `generated_at_pin: ...` が記録されるため、固定がフォレンジック上可視になります。環境変数でこの値を固定することはできません。 |
+| `engine` | string | `"postgresql"`、`"mysql"`、`"sqlserver"`、`"parquet"`、または `"avro"`。 |
+| `engine_version` | string | バージョン対応のライブデータベース取得と生成に使う限定的な数値製品バージョン。構造化ファイルソースでは空です。生成元やディストリビューションのバナーは除外されます。 |
 | `source_kind` | string | `"production"`、`"staging"`、`"scrubbed-replica"`、`"synthetic"` のいずれか。顧客が宣言します。 |
 | `length_metadata` | string | 従来の互換性マーカー: `"hybrid-v2"`、`"exact"`、`"rounded"`、または `"not-captured"`。新しい consumer は下記の 3 フィールドを使用する必要があります。 |
 | `declared_length_fidelity` | string | PostgreSQL の宣言文字容量、および既定の balanced/exact MySQL モードでは `"exact"`、厳格な MySQL プライバシーでは `"coarse-rounded-v1"`、利用できない場合は `"not-captured"`。 |
@@ -43,11 +44,11 @@
 | `observed_length_fidelity` | string | サンプリング時の既定値は `"relative-rounded-v2"`、exact モードでは `"exact"`、strict モードでは `"coarse-rounded-v1"`、または `"not-sampled"`。サンプリングのカバレッジは、引き続き列ごとに独立した要件です。 |
 | `[totals]` | inline table | 集約された件数（下記参照）。 |
 | `[network]` | table | クライアントからデータベースへの接続とクエリ RTT の任意の証拠。 |
-| `[database_topology]` | table | スキーマ v6 のデータベースソースでは必須。プライバシーを保護した deployment、local role、visibility、catalog evidence。構造化ファイルでは省略。 |
+| `[database_topology]` | table | スキーマ v6 のデータベースソースでは必須。境界付きで名前を含まない deployment、local role、visibility、catalog evidence。構造化ファイルでは省略。 |
 | `[dataset_scope]` | table | すべてのスキーマ v6 Blueprint で必須。合計値の範囲と、テーブル、行、バイトの網羅性を宣言します。 |
 | `[tables.X]` | tables | テーブルごとに 1 つ。匿名化 ID。 |
 | `[fk_edges]` | inline table | 匿名化テーブル間の FK グラフ。任意。 |
-| `[artifact_inventory]` | table | プライバシーを保護した非テーブルオブジェクト件数、任意の匿名依存グラフ、外部前提条件、任意の有界言語調査。データベースソースのみ。 |
+| `[artifact_inventory]` | table | 境界付きで名前を含まない非テーブルオブジェクト件数、任意の匿名依存グラフ、外部前提条件、任意の有界言語調査。データベースソースのみ。 |
 
 ## `[totals]`
 
@@ -165,7 +166,7 @@ HMAC-SHA256 順に並べた 1 始まりの序数です。既定のキーは実�
 | `index_bytes` | int | `table_bytes` と同じ丸め |
 | `schema` | string | 匿名化 ID `schema-A`、`schema-B`、...、`schema-AA` |
 | `kind` | string | Schema v6 の任意の閉じたトークン: `partitioned`、`materialized-view`、`temporal-current`、`temporal-history`、`memory-optimized`、`external`、`graph-node`、`graph-edge`。通常テーブルまたは証拠が不明な場合は省略。 |
-| `unlogged` | bool | Schema v6 の任意の PostgreSQL カタログ観測。未取得の場合は省略し、明示的な `false` はカタログが logged table を確認したことを示します。 |
+| `unlogged` | bool | Schema v6 の任意の PostgreSQL logged 状態の観測。未取得の場合は省略し、明示的な `false` はカタログが logged table を確認したことを示します。 |
 | `partition_strategy` | string | Schema v6 の `partitioned` 用任意トークン: `range`、`list`、`hash`、`key`、`linear-hash`。 |
 | `partition_count` | int | Schema v6 の正確な正の leaf partition 数。`kind = "partitioned"` の場合は必須。 |
 | `partition_key_cols` | array of int | Schema v6 の単純な partition key の列序数。expression key またはカタログ証拠がない場合は省略し、式はシリアル化しません。 |
@@ -174,7 +175,7 @@ HMAC-SHA256 順に並べた 1 始まりの序数です。既定のキーは実�
 | `counted_in_totals` | bool | Schema v6。省略時はすべての集計に含めます。`external` は明示的な `false` が必須で、`table_count`、`row_count`、`table_bytes`、`index_bytes` から除外します。ほかの明示値は正規形式ではありません。 |
 | `check_count` | int | Schema v6 の任意の正確な構造的 CHECK 制約数。省略は不明、`0` は該当カタログが制約なしを確認したことを示します。 |
 | `has_clustered_index` | bool | PostgreSQL では常に `false` |
-| `stats_freshness` | string | `"fresh"` / `"stale"` / `"never_analyzed"` (PG)。SQL fallback の場合は空 |
+| `stats_freshness` | string | PostgreSQL では `"fresh"` / `"stale"` / `"never_analyzed"`。`pg_stat_all_tables` の分析タイムスタンプから導出する。より広いアクセス権なしでは統計の鮮度を確認できない MySQL、SQL Server、構造化ファイル、SQL fallback 経路では空。MySQL の `UPDATE_TIME` はソースデータの変更を示すものであり、`ANALYZE TABLE` の実行がどれほど最近かを示すものではないため、意図的に使用しない。 |
 | `[tables.<id>.cols.<cid>]` | sub-tables | 列ごとに 1 つ |
 | `[tables.<id>.idxs.<iid>]` | sub-tables | インデックスごとに 1 つ |
 | `[tables.<id>.compression]` | sub-table | Tier 2 の場合のみ |
@@ -198,14 +199,14 @@ HMAC-SHA256 順に並べた 1 始まりの序数です。既定のキーは実�
 | `hidden`, `masked`, `encrypted`, `sparse` | bool | Schema v6 の任意のカタログ観測。省略は不明、明示的な `false` はその特性がないことをカタログが確認したことを示します。 |
 | `has_check` | bool | Schema v6 の任意の単一列 CHECK 観測。明示的な `true` はすべてテーブルの `check_count` に含まれます。 |
 | `null_fraction` | float | `0.0` から `1.0` までの任意の観測 NULL 比率。丸められた集計値のみで、NULL bitmap は保持しません。 |
-| `native_type` | string | `varchar` や `longtext` など、任意のサニタイズ済みエンジン基本型。識別子、enum member、default、expression は含みません。現在は修正済み MySQL capture により出力されます。 |
+| `native_type` | string | `varchar` や `longtext` など、任意のサニタイズ済みエンジン基本型。識別子、enum member、default、expression は含みません。ネイティブ MySQL および SQL Server collector が出力します。 |
 | `declared_max_chars` | int | 任意の宣言済み文字容量。PostgreSQL の `character`/`character varying` カタログ値、および既定の balanced/exact MySQL モードでは exact。MySQL で `--length-fidelity strict` を使った場合のみ粗く丸めます。 |
 | `declared_max_bytes` | int | 任意の宣言済みバイト容量。既定の balanced/exact MySQL モードでは exact。`--length-fidelity strict` の場合のみ粗く丸めます。 |
 | `numeric_precision`, `numeric_scale`, `datetime_precision` | int | 任意のエンジン宣言済み scalar precision。 |
-| `charset`, `collation` | string | 任意のサニタイズ済み MySQL 文字メタデータ。これらはカタログ名であり、顧客の識別子や値ではありません。 |
+| `charset`, `collation` | string | 任意のサニタイズ済み文字メタデータ。MySQL はカタログの charset 名と collation 名を出力します。SQL Server は `nchar`/`nvarchar`/`ntext` に `utf-16le`、コードページ 65001 に `utf-8`、Windows コードページ 1250–1258 に `windows-N`、その他の正のカタログコードページに `code-page-N` を出力し、カタログの collation 名も出力します。これらはエンコード上の事実とカタログ名であり、顧客の識別子や値ではありません。 |
 | `len_avg` | int | 可変長値についてサンプリングされた平均バイト数。既定の relative bucket は最大誤差が約 3.2% で、32 バイトまでの値を正確に保持します。`--length-fidelity exact --yes` では exact。strict モードのみ 10 単位で粗く丸めます。0 = 固定長または未測定。 |
 | `len_p95` | int | 同じ既定の relative bucket を使用するサンプリング済み 95 パーセンタイル。`--length-fidelity exact --yes` では exact。strict モードのみ 100 単位で粗く丸めます。0 = 未測定。 |
-| `style` | string | Tier 2 のみ。`"json"`、`"xml"`、`"natural-text"`、`"base64"`、`"hex"`、`"numeric-text"`、`"mixed"` のいずれか。分類されない場合は空。 |
+| `style` | string | Tier 2 のみ。`"json"`、`"xml"`、`"natural-text"`、`"base64"`、`"hex"`、`"numeric-text"`、`"mixed"`、`"precompressed"` のいずれか。分類されない場合は空。`"precompressed"` は、認識済みの標準コンテナシグネチャを持つ、バイト量で実質的に支配的なバイナリ値サンプルにだけ出力されます。検出したコンテナファミリーは意図的に開示しません。 |
 | `magnitude_min`, `magnitude_max` | int | Schema v6 の任意の符号付き 10 進指数で、サンプリングした非 NULL 数値の桁を表します。`has_negative` と一緒に出力し、正確な値はシリアル化しません。 |
 | `has_negative` | bool | Schema v6 の任意の符号観測。両方の magnitude 境界と一緒にのみ出力。 |
 | `time_span` | string | Schema v6 の任意のサンプリング日時範囲: `intraday`、`days`、`weeks`、`months`、`years`、`decades`。 |
@@ -215,9 +216,9 @@ HMAC-SHA256 順に並べた 1 始まりの序数です。既定のキーは実�
 
 ### `[tables.<id>.cols.<cid>.cardinality]`（スキーマ v3）
 
-行サンプリングが有効な場合、コレクターは列ごとに最大 8,192 個の一時的な 64-bit fingerprint をメモリに保持し、NDV と偏りの集計統計を導出した後、fingerprint を破棄します。値も fingerprint もシリアライズしません。このブロックには `measured`、`sample_rows`、`non_null_rows`、`observed_distinct_count`、`estimated_distinct_count`、`top_value_fraction`、`frequency_p50`、`frequency_p95`、`frequency_p99`、`frequency_max`、`sample_method`、`sampled_with_bias`、`bias_reason` が含まれます。
+行サンプリングが有効な場合、コレクターは列ごとに最大 8,192 個の一時的な 64-bit fingerprint をメモリに保持し、NDV と偏りの集計統計を導出した後、fingerprint を破棄します。値も fingerprint もシリアライズしません。このブロックには `measured`、`sample_rows`、`non_null_rows`、`observed_distinct_count`、`estimated_distinct_count`、`top_value_fraction`、`frequency_p50`、`frequency_p95`、`frequency_p99`、`frequency_max`、`sample_method`、`sample_layout`、`sampled_with_bias`、`bias_reason` が含まれます。`sample_layout` は任意の機械可読 enum です。現在の出力値は `primary-key-range-windows` であり、省略時は順序契約が利用できないことを意味します。consumer は、人間向けの `sample_method` フィールドを解析して生成セマンティクスを推測してはなりません。
 
-件数と比率は、必要に応じてプライバシー保護のために丸められます。この統計は、合成フィクスチャで重複密度、頻出値の偏り、有限ドメインを再現するためのもので、ソース値や業務上の意味を復元することはできません。
+件数と比率は、必要に応じてプライバシー保護のために丸められます。この統計は、合成フィクスチャで重複密度、頻出値の偏り、有限ドメインを再現するためのものです。サンプリング値は含みませんが、特徴的な分布はワークロードを識別し得ます。不可逆である、または外部知識から業務上の意味を推測できない証拠として扱わないでください。
 
 ### `[tables.<id>.cols.<cid>.compression]`（Tier 2 のみ）
 
@@ -249,10 +250,24 @@ sample_method = "column TABLESAMPLE SYSTEM(0.1) LIMIT N (text format)"
 sampled_with_bias = false
 ratio_zstd_3 = 8.4
 ratio_stddev = 0.25
-sample_encoding = "dbwarp-blueprint-rowframe-v1"
+sample_encoding = "blueprint-compression-probe-v2"
 ```
 
 サンプリングされた列の値は、Blueprintファイルへ書き込まれません。
+
+バイナリ列では、同じ制限付き Tier 2 サンプルから、粗い
+`style = "precompressed"` プロファイルが出力される場合があります。認識は
+サンプル値の境界でのみ行われ、バイト量で実質的に支配的な観測を必要とします。
+Blueprint は値を解析または展開せず、シグネチャを保持せず、この 1 つの高信頼
+ラベルを超えて画像、アーカイブ、圧縮メディア、暗号化済み、ランダムなペイロードを
+区別しません。テキストおよび base64 エンコードは引き続きテキストスタイルで分類し、
+事前圧縮済みバイナリコンテナとして扱いません。
+
+決定論的 generator は、この粗いプロファイルを、高エントロピーの格納済みメンバーを
+持つ中立で有効な ZIP コンテナへ変換します。これにより、ソースに ZIP ファイルが
+含まれていたと主張したり、認識済みソース値が画像、アーカイブ、メディアコンテナの
+どれだったかを明らかにしたりせず、運用上の圧縮特性を保持します。通常のバイナリ
+生成は変わりません。
 
 ## `[tables.<id>.idxs.<iid>]`
 
@@ -276,7 +291,7 @@ sample_encoding = "dbwarp-blueprint-rowframe-v1"
 ## `[tables.<id>.compression]` および `[tables.<id>.cols.<cid>.compression]`（Tier 2 のみ）
 
 ファイルが `--measure-compression --yes` で生成された場合にのみ存在します。
-テーブルレベルのブロックはサンプリングされた行ストリーム全体を測定し、
+テーブルレベルのブロックはサンプル全体の中立な列指向投影を測定し、
 テーブル全体の転送見積もりについて権威ある比率であり続けます。
 列レベルのブロックは同じサンプリング行から列ごとに投影され、下流の
 合成フィクスチャジェネレーターが顧客値を見ずに列ごとのエントロピーを
@@ -290,19 +305,19 @@ sample_encoding = "dbwarp-blueprint-rowframe-v1"
 | `sample_method` | string | エンジン固有の制限付きサンプリング説明。例: `"TABLESAMPLE SYSTEM(0.1) LIMIT N"`、`"LIMIT N (fallback after empty TABLESAMPLE)"`、`"SELECT TOP N"` |
 | `sampled_with_bias` | bool | LIMIT-only fallback など、サンプルが不均一な場合は true |
 | `bias_reason` | string | `sampled_with_bias = false` の場合は空。それ以外は `"unordered_limit_after_empty_TABLESAMPLE"` などのタグ |
-| `ratio_zstd_3` | float | 最も近い **0.05** に丸める zstd level 3（本番既定値）。`sample_encoding` でエンコードされたバイトについて測定。 |
-| `ratio_zstd_19` | float | 旧キャプチャから受け入れるレガシー zstd level 19 比率。ツールはもう測定も出力も行いません |
-| `ratio_stddev` | float | 最も近い **0.05** に丸める行境界に揃えた 64 KiB チャンクごとの level-3 比率の stddev。列レベル投影ブロックは、分散モデルではなく補助的なエントロピーヒントであるため、現在 `0.0` を出力します。 |
-| `sample_encoding` | string | サンプルを zstd 圧縮する際に使用した byte-level encoding の識別子。現在の値: `"dbwarp-blueprint-rowframe-v1"`。dbwarp estimator は比率を使用する前にこの文字列を検証しなければなりません。同じ論理データでも encoding が異なると異なる比率になり、互換性は**ありません**。古いBlueprintファイルにはこのフィールドが含まれない場合があります。estimator は encoding tag が存在し、認識可能な場合に限って測定比率を使用する必要があります。 |
+| `ratio_zstd_3` | float | contract の zstd level 3 測定ポリシーに従い、最も近い **0.05** に丸めます。`sample_encoding` でエンコードされたバイトについて測定。 |
+| `ratio_zstd_19` | float | 旧キャプチャから受け入れるレガシー zstd level 19 の上限。ツールはもう測定も出力も行いません |
+| `ratio_stddev` | float | 最も近い **0.05** に丸める、制限付きテーブル probe frame ごとの level-3 比率の stddev。列レベル投影ブロックは、分散モデルではなく補助的なエントロピーヒントであるため、現在 `0.0` を出力します。 |
+| `sample_encoding` | string | 測定に使用した byte-level encoding と compression-session policy の識別子。PostgreSQL のライブテーブルブロックは現在 `"blueprint-columnar-transfer-probe-v2"` を使用します。MySQL と SQL Server は、256 KiB の probe chunk 境界でも flush する `"blueprint-columnar-transfer-probe-v3"` を使用します。SQL Server の `nvarchar`/`nchar`/`ntext` payload はネイティブ UTF-16LE バイト分布を保持します。`varchar`/`char`/`text` はサンプリング時のバイト幅を保持し、`charset` フィールドは consumer が必要とするカタログコードページを示します。V1 は入力専用 compatibility contract として残ります。列ブロックは `"blueprint-compression-probe-v2"` を使用します。dbwarp estimator は比率を使用する前にこの文字列を検証しなければなりません。異なる encoding または session policy は互換性が**ありません**。古いBlueprintファイルにはこのフィールドが含まれない場合があります。estimator は encoding tag が存在し、認識可能な場合に限って測定比率を使用する必要があります。 |
 
 dbwarp estimator は合成フィクスチャを構築するとき、認識可能な列単位の圧縮ブロックを
 優先し、次にテーブル単位の圧縮、最後に type/style 既定値へフォールバックする必要があります。
 
-### `dbwarp-blueprint-rowframe-v1` byte-level encoding
+### `blueprint-compression-probe-v2` byte-level encoding
 
 Tier 2 sampler は、この形式で行またはサンプリングされた列値をメモリ内バッファへ連結し、
-その後 zstd level 3 を実行します。バッファは破棄され、結果として得られた
-丸め済み比率だけがBlueprintファイルへ出力されます。
+その後 zstd level 3 を実行します。バッファは破棄されます。Blueprint が保持するのは、
+文書化された圧縮、NULL 密度、カーディナリティ/頻度、長さ、スタイルの集約フィールドだけです。
 
 ```text
 Buffer = (Column)*       # flat stream; rows are NOT delimited
@@ -314,7 +329,8 @@ Column:
     length bytes payload
 ```
 
-型タグは encoding contract の一部であり、`-v2` suffix bump なしに番号を変更しません。
+型タグは probe contract の一部であり、新しい versioned probe identifier なしに
+番号を変更しません。
 
 | タグ | 名前 | 用途 |
 |---|---|---|
@@ -332,6 +348,29 @@ Column:
 | 0x10 | BinaryRaw | `bytea`、`varbinary`、`image`、または blob bytes |
 | 0xFE | UnknownText | DB が提供する textual representation への fallback |
 
+### `blueprint-columnar-transfer-probe-v1`、`v2`、`v3` の byte-level encoding
+
+ライブデータベースのテーブル比率では、同じ制限付き列 v2 サンプルを中立な
+1,000 行 frame に変換します。各 frame には versioned probe header があり、各列に
+ordinal、1 つの type tag、行ごとの 4-byte length、その後に列連続の payload bytes
+が続きます。`0xffffffff` の length は NULL を表します。バイト表現は 3 つの
+version で共通です。V1 は連結した frame sequence を、入力サイズを宣言した 1 回の
+zstd level-3 operation として圧縮しました。V2 は frame を 1 つの永続的な zstd
+level-3 context に渡し、各 frame 後に flush します。V3 はその context と中立な
+row-group 表現を保持しつつ、row group 内の 256 KiB probe compression chunk 境界
+でも flush します。MySQL と SQL Server の capture は v3 を使用し、v2 は現在の
+PostgreSQL measurement です。SQL Server Unicode text は UTF-16LE として測定します。
+SQL Server narrow text は source
+byte width を保持し、collation code page から得た closed かつ sanitized な charset
+を記録します。外側の row-group output が `ratio_stddev` の observation を提供します。
+versioned tag により、framing または flushing policy が別の policy として暗黙に
+再解釈されることを防ぎます。
+
+この表現は、列指向 bulk transfer に共通する、圧縮に関連する一般的な特性をモデル化
+します。データベースプロトコルの capture、migration wire format、または encoded
+data export ではありません。sample bytes はメモリ内だけに保持され、集約測定値の
+導出後に破棄されます。
+
 ### 精度の境界
 
 `ratio_zstd_3` は指定された `sample_encoding` を表すもので、データベースプロトコルや移行転送のバイトを測定したものではありません。公開された自動テストスイートは、決定論的なエンコード、制限付きサンプリング、シリアライズを検証しますが、すべてのエンジンと抽出経路に共通する誤差率を保証するものではありません。
@@ -340,7 +379,7 @@ Column:
 
 ## `[fk_edges]`
 
-任意の inline table で、各キーは edge のリストに対応する `table-NNN` ID です。スキーマ v3 は、親列の序数、参照アクション、match mode、遅延可能性、validation/trust state、および任意のプライバシー保護された関係サマリーを保持します。edge は宛先、次に列リストの順でソートされます。
+任意の inline table で、各キーは edge のリストに対応する `table-NNN` ID です。スキーマ v3 は、親列の序数、参照アクション、match mode、遅延可能性、validation/trust state、および任意の境界付きで名前を含まない関係サマリーを保持します。edge は宛先、次に列リストの順でソートされます。
 
 ```toml
 [fk_edges]
@@ -401,7 +440,7 @@ table-005 = [{ to = "table-001", cols = [2], to_cols = [1], on_delete = "CASCADE
 | 識別子の順序 | 秘密のプロセス固有キーを使うドメイン分離 HMAC-SHA256 により、オフラインの候補名検証を防ぎます。安定した実行間ラベルが必要な場合にだけ、顧客管理キーを再利用します。 |
 | 数値の low-bit | 統計値は既定で文書化された精度に丸められます。exact-length mode は明示的で同意を必要とし、監査ログに記録され、より機密性の高いメタデータとして扱う必要があります。 |
 | 秒未満のタイムスタンプ | 最上部に 1 つの UTC タイムスタンプ。秒精度のみ |
-| TOML formatting | 正規化: キーはアルファベット順、固定インデント、挿入コメントなし |
+| TOML formatting | 正規化: キーはアルファベット順、固定インデント、固定のヘッダー/生成元コメントだけを使用し、入力由来のコメントはなし |
 | Sampling randomness | サンプリングは固定 seed（PG の決定論的 `TABLESAMPLE SYSTEM`）を使用します。別途、識別子の匿名化は、顧客がキーを提供しない限り、意図的にオペレーティングシステムの CSPRNG から秘密キーを取得します。 |
 | 未使用フィールド | すべてのフィールドを上記で文書化。無制限のデータを保持する "metadata"/"comment"/"reserved" フィールドなし |
 | 成果物ソーステキストと外部素材 | 定義は一時的で、有界解析後にゼロ化されます。名前、SQL テキスト、エンドポイント、プロバイダー文字列、資格情報、鍵、証明書、パッケージ名、バイナリにはシリアライズされるフィールドがありません |
@@ -425,26 +464,32 @@ Blueprint 契約識別子より前の形式です。Reader は以前の v4 識�
   （`[tables.table-001.cols.col-2]` と nested JSON の比較）。
 - 差分を取りやすくなります（1 行につき 1 キー。identifier-based sub-table が
   連続した状態を維持）。
-- 顧客は、共有前に特定のフィールドを編集して redact できます。
+- 顧客は、共有前に手動編集で特定のフィールドの機密情報を削除またはマスキングできます。
 
-JSON は SQL fallback パスで**中間形式**として使用されます
-（`sql/blueprint.pg.sql` が JSON を生成し、`blueprint_format.py` が TOML へ正規化します）。
-dbwarp と共有する最終状態のファイルは常に TOML です。
+JSON は SQL fallback パスで**中間形式**として使用されます。各
+`sql/blueprint.*.sql` スクリプトが JSON を生成し、`blueprint_format.py` が TOML へ
+正規化します。中間 JSON には実際のソース識別子が含まれ、MySQL では `COLUMN_TYPE` を
+通じて enum/set 宣言も含まれる場合があるため、ソース環境内で保護する必要があります。
+正規化ツールは既定で新しい秘密キーを使用し、承認済みの実行間比較には同じ保護済み
+`--anonymization-key-file` 契約を受け付けます。DBWarp と共有するためにレビューする
+最終状態のファイルは常に TOML です。
 
 ## 構造化ファイルの来歴拡張
 
-スキーマバージョン 3 以降では、次の有界フィールドを出力できます。
+`engine` または `source_kind` が `"parquet"` か `"avro"` の場合、スキーマバージョン 3 以降は
+次の有界フィールドも出力できます。古いリーダーは理解できないフィールドを
+無視しなければなりません。新しいリーダーは、ソースファイルのストレージ測定値と
+有界なデコード済みサンプル測定値の区別を保持しなければなりません。
 
 構造化ファイルのBlueprintは、データベースのBlueprintと同じ匿名識別子を使用します。
-入力の決定論的な順序で `table-NNN`、スキーマの ordinal 順で `col-N` です。
+秘密キーに基づく順序で `table-NNN`、スキーマの ordinal 順で `col-N` です。
 ファイルの stem、Parquet path、Avro field name、manifest の `logical_table` は、
 table または column identifier として出力されません。
 
-`engine` または `source_kind` が `"parquet"` か `"avro"` の場合、
-`table_bytes` は転送サイズの論理推定値、`storage_bytes` はソースオブジェクトの
-実サイズです。デコードサンプリングを行わない Parquet では、非圧縮 column-chunk
+テーブル単位では、`table_bytes` は転送サイズの論理推定値、`storage_bytes` は
+ディスク上のソースオブジェクトの実サイズです。デコードサンプリングを行わない Parquet では、非圧縮 column-chunk
 bytes を `table_bytes` に使用します。任意のデコードサンプリングを行うと、推定した
-`dbwarp-blueprint-rowframe-v1` bytes に置き換わります。Avro は完全なデコード走査から
+`blueprint-compression-probe-v2` bytes に置き換わります。Avro は完全なデコード走査から
 値を導出します。`source_partitions`、`row_group_count`、`source_codec` は配置と
 スケジューリング来歴を示し、複数ファイルの dataset では集約されます。
 `row_group_count` は Parquet 固有で、単一入力の `source_partitions` は `1` です。
@@ -452,13 +497,14 @@ bytes を `table_bytes` に使用します。任意のデコードサンプリ�
 列単位の `null_fraction` は `0.0` から `1.0` の観測値です。
 `length_sample_rows` と `length_sample_method` は `len_avg` と `len_p95` の取得方法を
 示します。`source_semantics` は `"repeated-leaf"`、`"nested-json"`、
-`"multi-type-union"` などの有限な互換性情報を保持します。小数精度、タイムスタンプ
+`"multi-type-union"` などの有界な互換性情報を記録し、顧客のフィールド名や値を
+含むことは決してありません。十進数の精度とスケール、タイムスタンプ
 精度と UTC/ローカル意味論、UUID、固定長バイナリ情報は既存のスカラーフィールドと
 `native_type` に保持されます。
 
 table 単位の `ratio_storage` は `table_bytes` とソースオブジェクトの実 bytes を
 比較します。Parquet column 単位では、footer の非圧縮/圧縮 column-chunk bytes を
-比較します。どちらもファイル計画用であり、DBWarp の転送見積もりではありません。
-`ratio_zstd_3` と `ratio_zstd_19` は `sample_encoding` が
-`"dbwarp-blueprint-rowframe-v1"` の場合だけ有効です。Parquet footer または Avro
+比較します。どちらもファイル計画用であり、デコード済みサンプルの見積もりではありません。
+`ratio_zstd_3` と `ratio_zstd_19` は、`sample_encoding` が認識可能な
+`"blueprint-compression-probe-v2"` 値である場合に限り、転送較正の入力として有効です。Parquet footer または Avro
 コンテナの比率をこれらの zstd フィールドへコピーしてはなりません。

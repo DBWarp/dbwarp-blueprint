@@ -28,13 +28,27 @@ Elija una etiqueta de versión exacta, por ejemplo `https://github.com/DBWarp/db
 
 Cada versión también incluye `SHA256SUMS.txt`.
 
+Los archivos de plataforma son paquetes listos para el operador, no árboles de
+código fuente. Incluyen referencias operativas y de auditoría, pero no se
+pueden reconstruir en el mismo lugar. Para una auditoría del código fuente o
+una compilación de comparación, utilice la etiqueta exacta de la versión o el
+recurso `dbwarp-blueprint-source-vendored.tar.gz` de esa misma versión.
+
 ## Verificar la descarga
 
-Linux/macOS:
+Linux:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
+
+macOS:
+
+```bash
+shasum -a 256 dbwarp-blueprint-macos-arm64.tar.gz
+```
+
+Compare el valor mostrado con la línea correspondiente de `SHA256SUMS.txt`.
 
 Windows PowerShell:
 

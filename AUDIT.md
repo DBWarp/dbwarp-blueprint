@@ -265,7 +265,13 @@ The audit log:
 - Records a deterministic, dimensioned Blueprint fidelity estimate. The score
   describes captured evidence coverage for structure, sizing, column
   statistics, relationships, and artifacts. It is not measured error against
-  source truth and is not a statistical confidence interval.
+  source truth and is not a statistical confidence interval. Reported stale or
+  never-analyzed PostgreSQL statistics reduce the sizing dimension and appear
+  as explicit `table-statistics-stale` or
+  `table-statistics-never-analyzed` limitations. Freshness cannot compensate
+  for missing row-count coverage. Engines that use live
+  counters or cannot establish statistics freshness are not assigned invented
+  freshness evidence.
 - Declares trust assertions appropriate to the mode (Tier 1 vs Tier 2).
 - Uses a stable text format, but values can differ with database state, timing,
   warnings, and the default fresh anonymization key. For approved comparisons,
@@ -273,7 +279,7 @@ The audit log:
   fields still vary.
 
 **Trust-assertion conditional emission.** The
-"credential read once via Secret wrapper..." line is emitted only on
+"credential entered through the Secret wrapper..." line is emitted only on
 runs where a credential was actually read. Failure paths that abort
 before credential acquisition (URI parse errors, refusal of
 URI-embedded passwords, dry-run, etc.) intentionally do *not* emit
@@ -348,8 +354,11 @@ When compression measurement is accepted interactively, or non-interactively
 with `--measure-compression --yes`, the tool additionally:
 
 - For each table not proven empty, runs an engine-specific bounded sampling
-  path. PostgreSQL starts with `TABLESAMPLE SYSTEM(0.1) LIMIT N` and falls back
-  to `LIMIT N` when needed; MySQL uses `LIMIT N`; SQL Server uses `TOP N`.
+  path. PostgreSQL starts with an adaptive `TABLESAMPLE SYSTEM` percentage
+  derived from the row estimate and requested sample size, with `LIMIT N`,
+  and falls back to `LIMIT N` when needed. MySQL uses four bounded numeric-primary-key range
+  windows when that safe access path exists, otherwise `LIMIT N`; SQL Server
+  uses `TOP N`.
   Biased paths set `sampled_with_bias = true` in the output.
 - Reads the sampled rows into a local in-memory buffer.
 - Keeps database reads sequential. `--compression-workers N` may run 1–32
@@ -387,33 +396,52 @@ row counts, wire-byte measurements, or source-accuracy claims.
 
 ## Verification protocol
 
+A downloaded platform archive and a source reproduction are two different
+trust checks. First verify the archive and its executable against the checksum
+published on the same release. The platform archive is an operator bundle, not
+a source tree: its documentation and `verify.sh` are reference material for a
+matching source checkout. Obtain the exact release tag from the public
+repository, or use the release's vendored source archive, before attempting a
+source audit or rebuild. Do not expect a platform archive to rebuild in place.
+
 If you want to *prove* the tool is doing only what's documented:
 
-1. **Source audit**: clone the repo, read `src/secret.rs`, then grep
-   for `\.expose\(\)` outside that file:
+1. **Download integrity**: verify the platform archive with the matching entry
+   in `SHA256SUMS.txt`, then verify the extracted executable against its
+   `*.binary.sha256` file. Both checksum files must come from the same immutable
+   release tag. See [Download binaries](binaries/README.md).
+2. **Source audit**: in the matching source checkout or vendored source
+   archive, read `src/secret.rs`, then search for `\.expose\(\)` outside that
+   file. If `rg` is installed, the concise command is:
    ```
    $ rg -n '\.expose\(\)' src --glob '!secret.rs'
    ```
+   Otherwise use the recursive text-search tool approved for your platform;
+   `rg` is not a build or verification prerequisite.
    The production call sites immediately hand the exposed `&str` to a driver's
    connection-builder. MySQL additionally calls `.to_string()` because
-   `mysql_async`'s API requires `String`; that copy is non-zeroizing and lives
-   until the `OptsBuilder` is dropped. Tier 1 and Tier 2 reuse the same MySQL
-   connection. See **Driver-owned credential copies** in SECURITY.md for the
-   full discussion.
-2. **Build from source**: `./build.sh`. Release CI performs an independent
-   same-runner rebuild in a separate Cargo target directory and rejects a
-   byte mismatch. A local comparison is meaningful only with the same source
+   `mysql_async`'s API requires `String`. That non-zeroizing copy moves into
+   driver-owned options and can outlive the `OptsBuilder`, remaining for the
+   options/connection lifetime; dropping the builder does not prove erasure.
+   Tier 1 and Tier 2 reuse the same MySQL connection. See **Driver-owned
+   credential copies** in SECURITY.md for the full discussion.
+3. **Build from source**: `./build.sh`. When using the vendored source archive,
+   run `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`. Release CI performs an independent
+   same-runner rebuild, clearing and reusing the same Cargo target directory
+   between builds while retaining the first executable separately, and rejects
+   a byte mismatch. A local comparison is meaningful only with the same source
    revision, target, features, pinned Rust toolchain, linker, and build flags.
-3. **Compare to release**: from a build of the matching source revision, run
+4. **Compare to release**: from the matching source checkout or vendored
+   source tree, run
    `./verify.sh /path/to/extracted/dbwarp-blueprint`. See **Reproducing a
    release binary** in BUILD.md for the required target, features, toolchain,
    linker, source-date epoch, and build flags.
-4. **Runtime trace**: on Linux, run with
+5. **Runtime trace**: on Linux, run with
    `strace -f -e trace=open,connect,read,write` in a sandbox. If `strace` or
    `rg` is unavailable, use the equivalent file/network tracer and recursive
    text-search tool approved for your platform. Compare against the lists
    above.
-5. **Network trace**: `tcpdump` on the host. In a password-authenticated live
+6. **Network trace**: `tcpdump` on the host. In a password-authenticated live
    run, verify the database session plus expected DNS traffic. For integrated
    authentication, also account for expected KDC/domain-controller traffic. In
    batch mode, reconcile one database session per database source.

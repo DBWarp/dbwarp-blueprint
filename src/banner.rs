@@ -203,27 +203,24 @@ fn asset_for(width: u16, dialect: Dialect, color: bool) -> &'static str {
         (56, Dialect::Half, false) => asset!(56, "half", "txt"),
         (56, Dialect::Blocks, true) => asset!(56, "blocks", "ans"),
         (56, Dialect::Blocks, false) => asset!(56, "blocks", "txt"),
-        (56, Dialect::Ascii, true) => asset!(56, "ascii", "ans"),
-        (56, Dialect::Ascii, false) => asset!(56, "ascii", "txt"),
         (56, Dialect::Braille, true) => asset!(56, "braille", "ans"),
         (56, Dialect::Braille, false) => asset!(56, "braille", "txt"),
         (80, Dialect::Half, true) => asset!(80, "half", "ans"),
         (80, Dialect::Half, false) => asset!(80, "half", "txt"),
         (80, Dialect::Blocks, true) => asset!(80, "blocks", "ans"),
         (80, Dialect::Blocks, false) => asset!(80, "blocks", "txt"),
-        (80, Dialect::Ascii, true) => asset!(80, "ascii", "ans"),
-        (80, Dialect::Ascii, false) => asset!(80, "ascii", "txt"),
         (80, Dialect::Braille, true) => asset!(80, "braille", "ans"),
         (80, Dialect::Braille, false) => asset!(80, "braille", "txt"),
         (120, Dialect::Half, true) => asset!(120, "half", "ans"),
         (120, Dialect::Half, false) => asset!(120, "half", "txt"),
         (120, Dialect::Blocks, true) => asset!(120, "blocks", "ans"),
         (120, Dialect::Blocks, false) => asset!(120, "blocks", "txt"),
-        (120, Dialect::Ascii, true) => asset!(120, "ascii", "ans"),
-        (120, Dialect::Ascii, false) => asset!(120, "ascii", "txt"),
         (120, Dialect::Braille, true) => asset!(120, "braille", "ans"),
         (120, Dialect::Braille, false) => asset!(120, "braille", "txt"),
-        (_, Dialect::Auto, _) => unreachable!("auto resolved before asset lookup"),
+        // The drawn lockup is rendered before the raster asset lookup.
+        (_, Dialect::Auto | Dialect::Ascii, _) => {
+            unreachable!("drawn lockup handled before raster asset lookup")
+        }
         (_, _, _) => asset!(80, "half", "txt"),
     }
 }
@@ -339,6 +336,38 @@ mod tests {
         assert_eq!(resolve_dialect(Dialect::Half, false), Dialect::Half);
         assert_eq!(resolve_dialect(Dialect::Ascii, true), Dialect::Ascii);
         assert_eq!(resolve_dialect(Dialect::Braille, false), Dialect::Braille);
+    }
+
+    #[test]
+    fn drawn_modes_use_the_hand_lockup_at_every_width_and_colour() {
+        for cols in [56, 67, 68, 80, 109, 110, 120] {
+            for color in [false, true] {
+                for kind in [Kind::Lockup, Kind::Help] {
+                    let expected = render_hand(kind, color, cols);
+                    for dialect in [Dialect::Auto, Dialect::Ascii] {
+                        assert_eq!(render_with(kind, color, dialect, cols), expected);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn raster_modes_render_every_width_and_colour() {
+        for cols in [56, 80, 120] {
+            for color in [false, true] {
+                for dialect in [Dialect::Half, Dialect::Blocks, Dialect::Braille] {
+                    let asset = asset_for(cols as u16, dialect, color).trim_end();
+                    assert!(!asset.is_empty());
+                    assert_eq!(asset.contains('\u{1b}'), color);
+                    for kind in [Kind::Lockup, Kind::Help] {
+                        let rendered = render_with(kind, color, dialect, cols);
+                        assert!(rendered.starts_with(asset));
+                        assert_eq!(rendered.contains("Global Data"), kind == Kind::Help);
+                    }
+                }
+            }
+        }
     }
 
     #[test]

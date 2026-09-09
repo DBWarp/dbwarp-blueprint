@@ -12,9 +12,11 @@ mod format;
 mod generation_plan;
 mod generator;
 mod io;
+mod payload_profile;
 mod rounding;
 #[cfg(feature = "sampling")]
 pub mod sample;
+mod transfer_probe;
 
 #[cfg(feature = "avro")]
 pub mod avro;
@@ -29,6 +31,8 @@ pub use format::*;
 pub use generation_plan::*;
 pub use generator::*;
 pub use io::*;
+pub use payload_profile::*;
 pub use rounding::*;
 #[cfg(feature = "sampling")]
 pub use sample::*;
+pub use transfer_probe::*;

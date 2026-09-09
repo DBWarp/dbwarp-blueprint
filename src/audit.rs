@@ -140,7 +140,7 @@ pub struct BytesAudit {
     /// fabricated zero or an encoded local buffer size as network evidence.
     pub catalog_wire_bytes: Option<u64>,
     pub row_wire_bytes: Option<u64>,
-    /// Exact bytes in the local rowframe buffers passed to the compression
+    /// Exact bytes in the local probe buffers passed to the compression
     /// routines. This is processing evidence, not a database wire-byte count.
     pub encoded_sample_bytes: u64,
 }

@@ -19,7 +19,9 @@ Utilice una cuenta específica con pocos privilegios y acceso de lectura a los m
 Propiedades recomendadas:
 
 - sin privilegios de escritura;
-- sin privilegios de DDL;
+- sin privilegios de DDL, salvo que la revisión apruebe explícitamente la
+  captura MySQL mejorada, cuyos privilegios de metadatos `TRIGGER` y `EVENT`
+  permiten operaciones DDL;
 - sin rol de superusuario o administrador;
 - acceso de lectura limitado a la base de datos que se evalúa;
 - contraseña o token suministrado mediante archivo o solicitud interactiva, no incrustado en la URI.
@@ -32,7 +34,7 @@ aprobada, elimine la cuenta dedicada del recopilador con el script
 correspondiente de `sql/revoke/`; revise la base de datos, el patrón de host, el
 rol y los destinos de inicio de sesión exactos antes de ejecutarlo.
 
-## Nivel 1: solo catálogo
+## Nivel 1: solo metadatos (sin muestreo de filas)
 
 El nivel 1 es el valor predeterminado cuando no se utiliza `--measure-compression`.
 
@@ -45,6 +47,9 @@ Lee:
 - familias de tipos de columnas, posibilidad de valores nulos y estadísticas de longitud redondeadas cuando están disponibles;
 - tipo de índice, unicidad y ordinales de columnas anonimizados;
 - estructura del grafo de claves foráneas cuando está disponible;
+- recuentos acotados de objetos no tabulares y requisitos externos obtenidos
+  de los catálogos de objetos con el valor predeterminado
+  `--artifact-detail summary` (sin definiciones);
 - sonda opcional de RTT desde el entorno del cliente, salvo que se establezca `--no-rtt-probe`.
 
 No lee valores de filas.
@@ -67,7 +72,11 @@ El nivel 2 solo se habilita mediante el par explícito:
 --measure-compression --yes
 ```
 
-Además, el nivel 2 lee muestras acotadas de filas en la memoria del proceso. Los bytes muestreados se codifican en un búfer interno de tramas de filas, se comprimen localmente con zstd en el nivel 3, se resumen en forma de proporciones redondeadas y se descartan.
+Además, el nivel 2 lee muestras acotadas de filas en la memoria del proceso.
+Los bytes muestreados se codifican en un búfer interno de tramas de filas y se
+usan para derivar mediciones agregadas de compresión, densidad de NULL,
+cardinalidad/frecuencia, longitud y estilo antes de descartar los valores y las
+huellas temporales.
 
 Los bytes de las muestras:
 
@@ -93,9 +102,20 @@ Deshabilítela con:
 
 ## Archivos leídos
 
-Durante la ejecución, la herramienta solo lee archivos indicados explícitamente en la línea de comandos, como archivos de contraseña y usuario, archivos de CA/certificado/clave TLS, archivos de tokens Entra o un archivo de entrada `--from-toml`.
+Durante la ejecución, la herramienta solo lee archivos seleccionados
+explícitamente en la línea de comandos o referenciados por un manifiesto por
+lotes o paquete seleccionado explícitamente. Pueden ser archivos de contraseña,
+usuario o clave de anonimización, archivos de CA/certificado/clave TLS,
+archivos de tokens Entra, entradas de archivos estructurados y entradas
+Blueprint o de paquetes.
 
 Deliberadamente no lee ubicaciones implícitas habituales de credenciales como `~/.pgpass`, `~/.my.cnf`, archivos de credenciales de nube, claves SSH, el historial del shell ni variables de entorno de contraseñas predeterminadas.
+
+Esa declaración cubre la detección de credenciales controlada por la
+aplicación. Las bibliotecas de base de datos, TLS, DNS y autenticación integrada
+pueden consultar almacenes de confianza, configuración y cachés de credenciales
+del sistema operativo. Revise o rastree por separado esas dependencias de
+plataforma cuando lo exija la política del host.
 
 Consulte [`AUDIT.md`](AUDIT.md) para conocer la lista completa.
 
@@ -125,8 +145,12 @@ Antes de compartir `blueprint.toml`, verifique que:
 - no aparezcan nombres reales de tablas, columnas, índices, esquemas ni usuarios;
 - no haya nombres de objetos no tabulares, texto de definiciones, cadenas de puntos de conexión, credenciales, material de claves/certificados, nombres de paquetes ni binarios;
 - no aparezcan valores de filas;
-- los valores numéricos estén redondeados como se documenta en [`FORMAT.md`](FORMAT.md);
-- las secciones opcionales de compresión contengan únicamente proporciones y metadatos de muestras.
+- los valores numéricos utilicen la precisión exacta o redondeada documentada
+  en [`FORMAT.md`](FORMAT.md); revise los campos exactos opcionales como datos
+  más sensibles;
+- las secciones opcionales derivadas de muestras contengan metadatos agregados
+  de compresión, densidad de NULL, cardinalidad/frecuencia, longitud, estilo y
+  procedencia de muestra, nunca valores muestreados.
 - los campos de integridad de artefactos declaren la visibilidad filtrada, los catálogos ilegibles y las familias conocidas sin modelar.
 
 La salida MySQL balanced predeterminada contiene capacidades declaradas y
@@ -139,7 +163,7 @@ no deben tratarse como metadatos aptos para pruebas de rendimiento.
 
 El marcador no afirma que el muestreo haya abarcado todas las tablas. Una
 entrega para pruebas de rendimiento también debe mostrar en el manifiesto del
-estimador cero columnas indexadas, de anchura variable y sin muestrear; aumente
+estimador cero columnas indexadas de anchura variable, no vacías y sin muestrear; aumente
 `--max-wall-secs` y vuelva a capturar si no se supera este control.
 
 ## Seguridad operativa

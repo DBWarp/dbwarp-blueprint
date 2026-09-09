@@ -52,14 +52,25 @@ pub fn estimate_blueprint_fidelity(blueprint: &BlueprintFile) -> BlueprintFideli
     };
     let structure_score = weighted_average(&[(table_inventory_score, 3), (topology_score, 1)]);
 
-    let row_score = scope
+    let row_coverage_score = scope
         .map(|scope| completeness_score(scope.row_count_completeness.as_str()))
         .unwrap_or(25);
+    let row_score = table_statistics_freshness_score(blueprint, &mut limitations)
+        .map(|freshness| {
+            // Freshness qualifies the evidence we have; it cannot compensate
+            // for missing row-count coverage.
+            let freshness_factor = weighted_average(&[(100, 3), (freshness, 1)]);
+            rounded_ratio(
+                u64::from(row_coverage_score) * u64::from(freshness_factor),
+                100,
+            )
+        })
+        .unwrap_or(row_coverage_score);
     let size_score = scope
         .map(|scope| completeness_score(scope.size_completeness.as_str()))
         .unwrap_or(25);
     let sizing_score = weighted_average(&[(row_score, 1), (size_score, 1)]);
-    if row_score < 100 {
+    if row_coverage_score < 100 {
         limitations.push("row-count-coverage-not-complete".to_string());
     }
     if size_score < 100 {
@@ -231,6 +242,34 @@ fn completeness_score(value: &str) -> u8 {
     }
 }
 
+fn table_statistics_freshness_score(
+    blueprint: &BlueprintFile,
+    limitations: &mut Vec<String>,
+) -> Option<u8> {
+    let mut total = 0u64;
+    let mut count = 0u64;
+    for table in blueprint.tables.values() {
+        let score = match table.stats_freshness.as_str() {
+            "fresh" => 100,
+            "stale" => {
+                limitations.push("table-statistics-stale".to_string());
+                60
+            }
+            "never_analyzed" => {
+                limitations.push("table-statistics-never-analyzed".to_string());
+                30
+            }
+            // Empty is the schema-v6 representation for engines and fallback
+            // paths that cannot defensibly establish freshness. Do not invent
+            // evidence or infer staleness for counter-based engines here.
+            _ => continue,
+        };
+        total = total.saturating_add(score);
+        count = count.saturating_add(1);
+    }
+    (count > 0).then(|| rounded_ratio(total, count))
+}
+
 fn is_variable_width(column: &BlueprintColumn) -> bool {
     matches!(
         column.column_type.as_str(),
@@ -294,6 +333,7 @@ mod tests {
         };
         let table = BlueprintTable {
             rows: 1_000,
+            stats_freshness: "fresh".to_string(),
             cols: BTreeMap::from([("col-1".to_string(), column)]),
             ..Default::default()
         };
@@ -459,6 +499,85 @@ mod tests {
         assert!(!estimate
             .limitations
             .contains(&"column-statistics-partial".to_string()));
+    }
+
+    #[test]
+    fn reported_stale_statistics_reduce_sizing_evidence() {
+        let mut blueprint = complete_blueprint();
+        blueprint
+            .tables
+            .get_mut("table-001")
+            .unwrap()
+            .stats_freshness = "stale".to_string();
+
+        let stale = estimate_blueprint_fidelity(&blueprint);
+        assert_eq!(stale.sizing_score, 95);
+        assert!(stale
+            .limitations
+            .contains(&"table-statistics-stale".to_string()));
+
+        blueprint
+            .tables
+            .get_mut("table-001")
+            .unwrap()
+            .stats_freshness = "never_analyzed".to_string();
+        let never_analyzed = estimate_blueprint_fidelity(&blueprint);
+        assert!(never_analyzed.sizing_score < stale.sizing_score);
+        assert!(never_analyzed
+            .limitations
+            .contains(&"table-statistics-never-analyzed".to_string()));
+    }
+
+    #[test]
+    fn unknown_freshness_does_not_penalize_counter_based_engines() {
+        let mut blueprint = complete_blueprint();
+        blueprint.engine = "sqlserver".to_string();
+        blueprint
+            .tables
+            .get_mut("table-001")
+            .unwrap()
+            .stats_freshness = String::new();
+
+        let estimate = estimate_blueprint_fidelity(&blueprint);
+        assert_eq!(estimate.sizing_score, 100);
+        assert!(!estimate
+            .limitations
+            .iter()
+            .any(|limitation| limitation.starts_with("table-statistics-")));
+    }
+
+    #[test]
+    fn freshness_never_compensates_for_missing_row_count_coverage() {
+        for coverage in ["complete", "incomplete", "unknown"] {
+            let mut blueprint = complete_blueprint();
+            blueprint
+                .dataset_scope
+                .as_mut()
+                .unwrap()
+                .row_count_completeness = coverage.to_string();
+            blueprint
+                .tables
+                .get_mut("table-001")
+                .unwrap()
+                .stats_freshness
+                .clear();
+            let baseline = estimate_blueprint_fidelity(&blueprint).sizing_score;
+            for freshness in ["fresh", "stale", "never_analyzed"] {
+                blueprint
+                    .tables
+                    .get_mut("table-001")
+                    .unwrap()
+                    .stats_freshness = freshness.to_string();
+                let score = estimate_blueprint_fidelity(&blueprint).sizing_score;
+                assert!(
+                    score <= baseline,
+                    "{coverage}/{freshness}: {score} > {baseline}"
+                );
+                if freshness == "fresh" {
+                    assert_eq!(score, baseline);
+                }
+            }
+        }
     }
 
     #[test]

@@ -13,8 +13,7 @@ This repository contains the public source for `DBWarp Blueprint` and the
   and the message documentation in the same change.
 - English documentation is authoritative. Machine-translated documentation
   must state that it may contain errors and must never be presented as
-  contract-grade. It is supplemental, may follow the English source on a later
-  translation cycle, and must not block an otherwise qualified release.
+  contract-grade; refer readers to `MACHINE_TRANSLATIONS.md`.
 - Run `cargo fmt --all --check`, `cargo test --locked --all-targets`,
   `tools/check_blueprint_core_sync.sh`, and `tools/check_public_tree.py` before
   proposing a release.

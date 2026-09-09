@@ -8,8 +8,9 @@
 programie PowerPoint (`.pptx`) obok pliku TOML wskazanego przez `--out`.
 `dbwarp-blueprint --from-toml blueprint.toml --deck blueprint.pptx` tworzy później tę samą
 prezentację z istniejącego, sprawdzonego pliku Blueprint, bez łączenia się z bazą
-danych. Jest to prezentacja tych samych zanonimizowanych danych — żadne
-dodatkowe informacje o bazie danych nie są odczytywane, wysyłane ani obliczane.
+danych. Jest to prezentacja tych samych zanonimizowanych danych — nic więcej nie
+jest odczytywane z bazy danych ani do niej wysyłane. Prezentacja oblicza wyłącznie
+udokumentowane lokalne podsumowania i prognozy z pól już obecnych w Blueprint.
 
 ```bash
 ./dbwarp-blueprint \
@@ -51,7 +52,8 @@ spacji na początku ani na końcu, znaków sterujących lub dwukierunkowego
 formatowania ani przekraczać 48 jednostek szerokości wyświetlania. Pomiń tę
 opcję, aby nie wyświetlać etykiety. Ustawienie zmienia wyłącznie prezentację;
 nie zmienia pliku Blueprint ani danych podsumowanych w prezentacji. Przy
-ustalonym `--generated-at` wynik pozostaje deterministyczny.
+dokładnie tym samym sprawdzonym Blueprint, języku, etykiecie i znaczniku czasu
+bajty prezentacji są powtarzalne.
 
 ## Właściwości zaufania
 
@@ -59,8 +61,9 @@ ustalonym `--generated-at` wynik pozostaje deterministyczny.
   Blueprint w pamięci, który tworzy `blueprint.toml`. Nie jest wykonywane dodatkowe
   zapytanie do bazy danych ani drugi przebieg po katalogu. W trybie `--from-toml`
   Blueprint w pamięci jest zamiast tego ładowany ze sprawdzonego pliku TOML.
-- **Bez sieci.** Generowanie prezentacji nie nawiązuje żadnego połączenia
-  wychodzącego.
+- **Bez sieci aplikacji.** Generowanie prezentacji nie otwiera żadnego połączenia
+  sieciowego; odczyt Blueprint ze ścieżki zamontowanej w sieci nadal podlega
+  stosowi pamięci masowej hosta.
 - **Bez bibliotek stron trzecich.** OOXML jest tworzony bezpośrednio w
   `src/deck.rs`; plik `.pptx` jest zwykłym archiwum ZIP części XML, które można
   rozpakować poleceniem `unzip` i odczytać. Bez automatyzacji programu PowerPoint,
@@ -70,12 +73,15 @@ ustalonym `--generated-at` wynik pozostaje deterministyczny.
   generowanie nie odczytuje ścieżki zasobu w czasie działania.
 - **Bez rzeczywistych identyfikatorów i danych wierszy.** Tabele, kolumny i
   indeksy występują jako te same anonimowe symbole zastępcze co w pliku Blueprint
-  (`table-001`, `col-1`, `idx-1`, `schema-A`), a każda liczba ma tę samą
-  udokumentowaną dokładność. Prezentacja nie zawiera faktów specyficznych dla
-  klienta poza tymi, które znajdują się w pliku Blueprint.
-- **Deterministyczna.** Przy ustalonej wartości `--generated-at` ten sam Blueprint
-  tworzy identyczny bajtowo plik `.pptx` dla tego samego wybranego języka (stała
-  kolejność części i stałe znaczniki czasu).
+  (`table-001`, `col-1`, `idx-1`, `schema-A`). Pomiary źródłowe zachowują
+  udokumentowaną dokładność; każda prognoza jest obliczana wyłącznie z pól już
+  obecnych w Blueprint. Prezentacja nie zawiera informacji specyficznych dla
+  klienta poza tym wejściem.
+- **Powtarzalna ze stałego wejścia.** Ten sam sprawdzony Blueprint tworzy
+  identyczny bajtowo plik `.pptx` dla tego samego języka, etykiety poufności i
+  ustalonego znacznika czasu (stała kolejność części i znaczniki czasu). Nie
+  oznacza to identyczności dwóch przechwyceń na żywo: wymagają one także tego
+  samego chronionego `--anonymization-key-file`, stanu źródła i opcji przechwycenia.
 
 ## Co zawiera
 
@@ -84,8 +90,8 @@ Prezentacja dostosowuje się do rozmiaru schematu:
 - **Tytuł** — logo i hasło DBWarp, silnik, wersja, rodzaj źródła, liczba tabel i
   znacznik czasu wygenerowania.
 - **Podsumowanie zarządcze** — sygnały dla kierownictwa dotyczące skali
-  migracji, koncentracji danych, złożoności relacji i dowodów gotowych do
-  udostępnienia.
+  migracji, koncentracji danych, złożoności relacji i sygnałów dowodowych do
+  przeglądu.
 - **Przegląd** — sumy tabel, wierszy, rozmiaru danych i rozmiaru indeksów, a
   także liczby kolumn, indeksów, kluczy obcych i schematów.
 - **Małe schematy** (kilka tabel) — panel o dopasowanym rozmiarze dla każdej

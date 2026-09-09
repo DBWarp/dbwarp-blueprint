@@ -25,13 +25,25 @@
 
 每个发布版本还包括 `SHA256SUMS.txt`。
 
+平台归档是可直接运行的操作人员包，而不是源代码树。其中包含操作和审计参考资料，
+但无法在归档中直接重新构建。进行源代码审计或对比构建时，请使用确切的发布标签，
+或同一发布版本中的 `dbwarp-blueprint-source-vendored.tar.gz` 资产。
+
 ## 验证下载内容
 
-Linux/macOS：
+Linux：
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
+
+macOS：
+
+```bash
+shasum -a 256 dbwarp-blueprint-macos-arm64.tar.gz
+```
+
+将输出值与 `SHA256SUMS.txt` 中对应的行比较。
 
 Windows PowerShell：
 

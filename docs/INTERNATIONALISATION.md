@@ -9,8 +9,7 @@ English source text is authoritative. The non-English presentation catalogs
 are machine-assisted and may contain errors even though their key/token
 coverage is validated. Compare security, contractual, regulatory, and
 least-privilege decisions with the English text. See
-[`TRANSLATIONS.md`](TRANSLATIONS.md) for the separate, non-blocking
-translated-document maintenance cycle.
+[`TRANSLATIONS.md`](TRANSLATIONS.md) for the scope and limitations of translated material.
 
 | Value | Language | Locale tag used in generated decks |
 |---|---|---|
@@ -97,35 +96,3 @@ Missing or extra entries, placeholder changes, altered operational tokens,
 invalid JSON, or invisible/bidirectional format controls fail closed with
 `DBP1010E`. The program does not silently substitute English for a missing
 translation.
-
-## Maintainer Workflow
-
-The canonical source is the English Rust help and the message/UI definitions
-in `src/i18n.rs`. When any customer-visible phrase changes:
-
-1. update every locale catalog under `locales/` in the same commit;
-2. retain all placeholders and canonical operational tokens exactly;
-3. run the focused exact-coverage test;
-4. add or update the relevant operator-boundary case in
-   `tests/cli_errors.rs` when a failure or warning changes;
-5. run the full test suite and inspect representative help/deck output;
-6. obtain native technical review before treating new wording as final for a
-   customer contract, regulatory filing, or public marketing material.
-
-This exact-coverage workflow applies to runtime catalogs embedded in the
-binary. Translated Markdown is supplemental and follows the non-blocking cycle
-described in [`TRANSLATIONS.md`](TRANSLATIONS.md); English documentation alone
-is release-blocking.
-
-Focused validation:
-
-```bash
-mkdir -p tmp/test-runtime
-TMPDIR="$PWD/tmp/test-runtime" \
-  cargo test --locked every_embedded_locale_exactly_covers_the_live_cli
-TMPDIR="$PWD/tmp/test-runtime" cargo test --locked --test i18n
-```
-
-The integration tests also prove that option tokens are identical across
-languages, localized DBP codes stay stable, emitted TOML is language-invariant,
-and generated deck prose carries the selected locale.

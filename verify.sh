@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # verify.sh — compare a shipped release binary's sha256 against the binary
-# this repo would produce. Lets a security-conscious customer prove that
-# the released binary is the same code they just audited.
+# this repo produced. This compares bytes, not semantic equivalence or source
+# authenticity; reproducing release bytes requires the full release inputs.
 #
 # Usage:
 #   ./verify.sh /path/to/extracted/dbwarp-blueprint
 #
-# Returns 0 on match and non-zero on mismatch or invalid input.
+# Returns 0 only on byte identity and non-zero on mismatch or invalid input.
+# A mismatch alone is not evidence of tampering.
 #
 # This script does NOT build by itself. Run ./build.sh first to produce
 # target/release/dbwarp-blueprint, then run this to compare.
@@ -40,6 +41,13 @@ if [[ ! -f "$SOURCE_BIN" ]]; then
   exit 1
 fi
 
+echo "verify.sh: This is a byte-identity check, not a functional-equivalence test."
+echo "verify.sh: DIFFER is expected unless the full release build inputs were"
+echo "verify.sh: reproduced. A normal ./build.sh alone does not establish that."
+echo "verify.sh: CI checks two builds on the same runner; it does not establish"
+echo "verify.sh: cross-machine reproducibility. See BUILD.md: Reproducing a release binary."
+echo
+
 RELEASE_SHA="$(sha256_file "$RELEASE_BIN")"
 SOURCE_SHA="$(sha256_file "$SOURCE_BIN")"
 
@@ -58,8 +66,8 @@ fi
 
 echo "verify.sh: DIFFER — sha256 differs between release and source build."
 echo "verify.sh:"
-echo "verify.sh: The local build did not reproduce the released binary."
-echo "verify.sh: Do not treat the two binaries as equivalent. Confirm the"
+echo "verify.sh: Byte identity was not established. This result alone neither"
+echo "verify.sh: proves tampering nor establishes functional equivalence. Confirm the"
 echo "verify.sh: source revision, target, features, pinned toolchain, linker,"
 echo "verify.sh: and release build flags. To investigate, run:"
 echo "verify.sh:   cmp -l \"$RELEASE_BIN\" \"$SOURCE_BIN\" | head -20"

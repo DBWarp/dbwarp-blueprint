@@ -7,7 +7,7 @@
 [Polski](../pl/ARTIFACT_INVENTORY.md) | [日本語](../ja/ARTIFACT_INVENTORY.md) |
 [简体中文](../zh/ARTIFACT_INVENTORY.md)
 
-Desde el esquema v4, los Blueprints describen objetos de base de datos que no son tablas y requisitos
+Desde el esquema v4, los Blueprints pueden describir objetos de base de datos que no son tablas y requisitos
 de despliegue sin publicar sus nombres de origen, definiciones, cadenas de
 puntos de conexión, secretos, certificados, claves ni binarios. El inventario ayuda a
 DBWarp a estimar la complejidad de la migración y a identificar trabajo que
@@ -53,7 +53,9 @@ lectura transitoria de definiciones.
 La salida de artefactos contiene únicamente metadatos limitados y de
 vocabulario cerrado:
 
-- identificadores anónimos estables como `view-001`, `function-002` y `schema-A`;
+- identificadores anónimos coherentes dentro de una ejecución, como
+  `view-001`, `function-002` y `schema-A`; la estabilidad entre ejecuciones
+  requiere reutilizar el mismo archivo protegido `--anonymization-key-file`;
 - símbolos cerrados de clase, subclase, nivel, visibilidad y modo de seguridad;
 - dependencias expresadas solo mediante identificadores anónimos de artefacto o tabla;
 - recuentos y bandas limitadas, no descripciones libres;
@@ -68,8 +70,9 @@ cargables.
 
 En modo `analyzed`, las definiciones permanecen solo el tiempo necesario para
 eliminar comentarios y literales y obtener agregados léxicos limitados. Un
-propietario las sobrescribe al liberarlas; no se serializan, registran ni envían
-a otro servicio. Es una reducción de exposición en memoria, no una promesa
+propietario las sobrescribe al liberarlas; no se serializan, no se escriben en
+los registros ni en el registro de auditoría, ni se envían a otro servicio. Es
+una reducción de exposición en memoria, no una promesa
 frente a paginación del sistema o un depurador privilegiado.
 
 Incluso un grafo anónimo puede identificar una aplicación por sus recuentos y
@@ -142,7 +145,7 @@ enlazador semántico ni garantía de traducción.
 
 Registra bandas limitadas de tamaño, sentencias, símbolos, anidación,
 complejidad ciclomática y regiones opacas/dinámicas. Un vocabulario cerrado
-describe control, uniones, subconsultas, CTE, agregados, ventanas, DML, DDL,
+describe control, joins, subconsultas, CTE, agregados, ventanas, DML, DDL,
 objetos temporales, SQL dinámico, JSON, XML, espacial, vector y seguridad. El
 contexto incluye el perfil gramatical normalizado, modos SQL de MySQL y, para
 SQL Server, compatibilidad, `ANSI_NULLS` y `QUOTED_IDENTIFIER`.
@@ -155,7 +158,9 @@ sin cambiar el contrato exterior.
 
 ## Flujo de revisión recomendado
 
-1. Ejecute `summary` con la revisión normal de catálogos.
+1. Ejecute el nivel predeterminado `summary` con una revisión de los catálogos
+   de artefactos. Si la política solo permite catálogos de tablas, use en su
+   lugar `--artifact-detail none` y omita este inventario.
 2. Revise recuentos, clases externas, visibilidad, catálogos ilegibles y familias no modeladas.
 3. Apruebe `graph` solo si acepta la topología anónima.
 4. Apruebe `analyzed` solo si acepta la lectura transitoria de definiciones.

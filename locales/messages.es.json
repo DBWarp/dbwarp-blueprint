@@ -8,19 +8,19 @@
       "action": "Revise los detalles técnicos y la cadena causal, corrija la condición subyacente y vuelva a intentarlo."
     },
     "DBP1000E": {
-      "summary": "Se requiere conexión a la base de datos URI",
+      "summary": "Se requiere el URI de conexión a la base de datos",
       "cause": "No se proporcionó ninguna base de datos activa URI ni modo de entrada fuera de línea.",
       "action": "Pase --connect URI o seleccione un modo de entrada fuera de línea."
     },
     "DBP1001E": {
-      "summary": "Se rechazó la contraseña en la conexión URI",
+      "summary": "Se rechazó la contraseña en el URI de conexión",
       "cause": "Los URI de conexión son visibles para la inspección del proceso y el historial del shell, por lo que las credenciales integradas no son seguras.",
       "action": "Utilice --password-file, --password-env o el mensaje interactivo TTY. Consulte AUTH.md y SECURITY.md."
     },
     "DBP1002E": {
       "summary": "El esquema de base de datos URI no es compatible",
-      "cause": "El valor --connect no utilizó un esquema PostgreSQL, MySQL, MariaDB o SQL Server URI compatible.",
-      "action": "Utilice postgresql://, postgres://, mysql://, mariadb://, sqlserver://, mssql:// o tds://."
+      "cause": "El valor --connect no utilizó un esquema de URI compatible de PostgreSQL, MySQL o SQL Server.",
+      "action": "Utilice postgresql://, postgres://, mysql://, sqlserver://, mssql:// o tds://. mariadb:// se acepta solo como alias de URI de MySQL; MariaDB no es un motor homologado por separado."
     },
     "DBP1003E": {
       "summary": "La sustitución del nombre de servidor TLS no está disponible",
@@ -40,12 +40,12 @@
     "DBP1006E": {
       "summary": "El muestreo de archivos estructurados carece de consentimiento explícito",
       "cause": "Los modos de archivo estructurado no pueden pedir confirmación y requieren --yes antes de leer muestras acotadas.",
-      "action": "Revise el contrato previo al vuelo y vuelva a ejecutarlo con --measure-compression --yes."
+      "action": "Revise el contrato de comprobación previa y vuelva a ejecutarlo con --measure-compression --yes."
     },
     "DBP1007E": {
       "summary": "El modo de fidelidad de longitud no está disponible para este motor",
-      "cause": "Actualmente, los controles explícitos de fidelidad de longitud se aplican solo a la captura en vivo MySQL o MariaDB.",
-      "action": "Elimine el modo explícito o utilice una fuente MySQL o MariaDB compatible."
+      "cause": "Los controles explícitos de fidelidad de longitud se aplican actualmente a la captura activa de PostgreSQL y MySQL, pero no a SQL Server.",
+      "action": "Elimine el modo explícito para la captura de SQL Server. Los alias de URI de compatibilidad no amplían la matriz de motores cualificada."
     },
     "DBP1008E": {
       "summary": "Las opciones de fidelidad de longitud entran en conflicto",
@@ -55,7 +55,7 @@
     "DBP1009E": {
       "summary": "La fidelidad de la longitud exacta carece de consentimiento explícito",
       "cause": "Las longitudes exactas de las muestras pueden revelar estadísticas de clientes más precisas y requieren --yes.",
-      "action": "Revise el contrato previo al vuelo y vuelva a ejecutarlo con --length-fidelity exact --yes."
+      "action": "Revise el contrato de comprobación previa y vuelva a ejecutarlo con --length-fidelity exact --yes."
     },
     "DBP1010E": {
       "summary": "El catálogo de localización integrado está incompleto",
@@ -109,7 +109,7 @@
     },
     "DBP1107E": {
       "summary": "Fuente del archivo resuelta sin entradas",
-      "cause": "La ruta configurada, las rutas o el global no coinciden con archivos estructurados.",
+      "cause": "La ruta, las rutas o el patrón glob configurados no coinciden con ningún archivo estructurado.",
       "action": "Corrija las rutas de origen relativas al manifiesto."
     },
     "DBP1108E": {
@@ -124,7 +124,7 @@
     },
     "DBP1110E": {
       "summary": "La configuración de la conexión de origen de la base de datos es ambigua",
-      "cause": "El origen del lote no especificó exactamente uno de los de conexión, connect_env o connect_file.",
+      "cause": "El origen del lote no especificó exactamente uno de connect, connect_env o connect_file.",
       "action": "Establezca exactamente una fuente de conexión."
     },
     "DBP1111E": {
@@ -160,7 +160,7 @@
     "DBP1200E": {
       "summary": "El selector de paquetes no es válido",
       "cause": "Una expresión blueprint:// o --select tenía un formato incorrecto o era contradictoria.",
-      "action": "Utilice source=ID, table=ID, engine=VALUE o tag=NAME una vez por tecla selectora."
+      "action": "Utilice source=ID, table=ID, engine=VALUE o tag=NAME una vez por cada clave de selector."
     },
     "DBP1201E": {
       "summary": "El selector de paquetes no coincide con ninguna fuente",
@@ -209,7 +209,7 @@
     },
     "DBP1402E": {
       "summary": "MySQL error en la captura de Blueprint",
-      "cause": "Error en una conexión MySQL o MariaDB, una consulta de catálogo, una sonda RTT, un muestreo o una operación de decodificación.",
+      "cause": "Error en una conexión MySQL, consulta de catálogo, sonda RTT, muestreo o operación de decodificación.",
       "action": "Revise los detalles técnicos, la conectividad, los privilegios, la política TLS y el estado del origen y luego vuelva a intentarlo."
     },
     "DBP1403E": {
@@ -233,7 +233,7 @@
       "action": "Aumente --max-wall-secs o acepte un muestreo parcial y revise las advertencias de auditoría."
     },
     "DBP1407W": {
-      "summary": "La muestra de compresión no estaba disponible",
+      "summary": "La muestra de compresión estaba incompleta o no disponible",
       "cause": "Una consulta de muestra acotada, un flujo, una codificación o una operación de compresión falló para al menos una tabla mientras continuaba la captura de Blueprint.",
       "action": "Revise el detalle técnico y los permisos de las tablas; vuelva a ejecutar Tier 2 si necesita pruebas completas de compresión."
     },
@@ -270,7 +270,7 @@
     "DBP1601E": {
       "summary": "Error en la adquisición de credenciales",
       "cause": "La contraseña, el token, el archivo, el entorno, TTY o la fuente de autenticación integrada seleccionados no se pudieron utilizar de forma segura.",
-      "action": "Corrija la fuente de credenciales y los permisos sin colocar secretos en la conexión URI."
+      "action": "Corrija la fuente de credenciales y los permisos sin colocar secretos en el URI de conexión."
     },
     "DBP1602E": {
       "summary": "Error en la configuración TLS",
@@ -298,19 +298,19 @@
       "action": "Verifique la identidad del proceso, la asignación del inicio de sesión, el punto de conexión y el principal esperado; vuelva a ejecutar sin ampliar los permisos de la base de datos."
     },
     "DBP1607E": {
-      "summary": "Falló la inicialización de la clave de anonimato",
+      "summary": "Falló la inicialización de la clave de anonimización",
       "cause": "El archivo de clave custodiado por el cliente no era seguro, no se podía leer o tenía un formato incorrecto, o la fuente aleatoria del sistema operativo no estaba disponible.",
       "action": "Use un archivo con permisos restringidos que contenga exactamente 32 bytes sin procesar o 64 caracteres hexadecimales, u omita --anonymization-key-file para generar una clave nueva local al proceso."
     },
     "DBP1701E": {
-      "summary": "Operación cancelada antes del consentimiento.",
-      "cause": "El mensaje interactivo previo al vuelo fue rechazado o no recibió el consentimiento canónico y/yes.",
-      "action": "Revise el plan y vuelva a ejecutarlo, o apruebe --yes después de una aprobación explícita."
+      "summary": "Operación cancelada antes del consentimiento",
+      "cause": "El mensaje interactivo de comprobación previa fue rechazado o no recibió el consentimiento canónico y/yes.",
+      "action": "Revise el plan y vuelva a ejecutarlo, o pase --yes después de una aprobación explícita."
     },
     "DBP1702E": {
       "summary": "No se pudo leer la respuesta de consentimiento",
       "cause": "La solicitud interactiva previa no pudo leer de la entrada estándar.",
-      "action": "Ejecute el comando en un terminal interactivo o pase --yes después de revisar y aprobar la operación de Blueprint independiente."
+      "action": "Ejecute el comando en un terminal interactivo o pase --yes después de revisar y aprobar la operación de forma independiente."
     },
     "DBP1801E": {
       "summary": "No se pudo inicializar el entorno de ejecución asíncrono",

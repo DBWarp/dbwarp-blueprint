@@ -15,6 +15,7 @@
 ./dbwarp-blueprint --lang ja \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full --tls-ca /etc/pki/internal-root.crt \
   --out pg-appdb.blueprint.toml --yes
 ```
@@ -118,6 +119,7 @@ chmod 600 "$TOKEN_FILE"
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out catalog-only.blueprint.toml \
@@ -325,16 +327,12 @@ tags = ["lake", "events"]
 
 ## 方案：批处理交接包
 
-创建如下目录：
+请遵循[交接政策](QUICKSTART.md#review-and-share)。将工作清单、审计、命令记录和审阅笔记保留在本地，仅使用已审阅的打包 Blueprint 创建此独立目录。
 
 ```text
 customer-blueprint-handoff/
   customer-blueprint-bundle.packed.toml
-  customer.batch.toml.redacted
-  reviewer-notes.md       # optional
 ```
-
-请从经过审阅的副本构建此独立目录。将工作用的 `bundle.toml`、`blueprints/`、`audits/` 和任何 `errors.txt` 保留在本地并实施访问控制。`customer.batch.toml.redacted` 应仅显示已批准的源 ID、种类、标签和数据集模式。不要包含机密、私有主机名、密码文件、令牌文件、私钥、数据库日志或解码后的行样本。
 
 ## 方案：从已审阅 TOML 离线生成演示文稿
 
@@ -348,30 +346,36 @@ customer-blueprint-handoff/
 
 ## 方案：字节级完全一致的可重现性
 
-固定时间戳：
+固定时间戳，并重复使用同一个受保护、由客户保管的匿名化密钥：
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal/appdb \
   --password-file /etc/dbwarp/pg.pass \
+  --anonymization-key-file /etc/dbwarp/anonymization.key \
   --generated-at "2026-04-26T00:00:00Z" \
   --out blueprint.toml \
   --audit-log audit.txt \
   --yes
 ```
 
-用于取证审查、快照比较或确定性演示文稿生成。
+密钥文件必须恰好包含 32 个原始字节或 64 个十六进制字符；在 Unix 上不得允许组用户
+或其他用户读取，并且绝不能包含在交接材料中。若不使用此选项，每次运行都会使用新的
+操作系统随机密钥，有意改变匿名标签的顺序。仅固定 `--generated-at` 并不足够。
+请使用完整方案生成经批准的取证快照；只要时间戳和语言不变，从完全相同的已审阅
+Blueprint 两次生成的演示文稿仍会逐字节完全相同。
 
 ## 方案：DBWarp 交接包
 
-创建如下目录：
+请遵循[交接政策](QUICKSTART.md#review-and-share)。
 
 ```text
 customer-blueprint-handoff/
   blueprint.toml
-  blueprint.pptx              # optional
-  command-used.redacted.txt
-  reviewer-notes.md           # optional
 ```
 
-`command-used.redacted.txt` 可记录已批准的选项和采样预算，但须删除凭据、令牌、私有主机名和本地路径。将 `audit.txt` 作为访问受控的运维证据保留在本地。仅在有明确支持需求时通过批准的安全渠道提供该文件。不要包含密码文件、令牌文件、私钥或数据库日志。
+默认只分享已审阅的 `blueprint.toml` 或打包后的捆绑包。演示文稿 `blueprint.pptx` 只有在其内容和保密级别经过审阅，并依据组织政策单独获批后，才可一并提供。
+
+审计、命令记录、审阅笔记和未获批的演示文稿应作为受访问控制的本地证据保存。其中可能包含端点、已认证主体、本地路径、计时数据和清单标识符。仅在有明确的支持需求时，通过已批准的安全渠道发送运维证据。
+
+工具不会创建 `command-used.redacted.txt`；它是操作员可选记录的文件，而非标准交接成果。切勿包含密码或令牌文件、匿名化密钥、CA 私钥、客户数据转储或数据库日志。

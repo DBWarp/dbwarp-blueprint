@@ -1,0 +1,143 @@
+# DBWarp Blueprint schema-v6 illustrative sampled example.
+# Hand-authored synthetic metadata and aggregates, not measured qualification.
+# Sample values and their temporary fingerprints are not included.
+
+schema_version = 6
+generated_at = "2026-09-07T00:00:00Z"
+engine = "mysql"
+engine_version = "8.4.0"
+source_kind = "synthetic"
+length_metadata = "hybrid-v2"
+declared_length_fidelity = "exact"
+index_length_fidelity = "exact"
+observed_length_fidelity = "relative-rounded-v2"
+
+[totals]
+table_count = 1
+row_count = 500
+table_bytes = 131072
+index_bytes = 16384
+
+[network]
+sample_count = 5
+connect_total_ms = 12
+query_rtt_ms_p50 = 1
+query_rtt_ms_p95 = 2
+
+[database_topology]
+contract = "dbwarp-blueprint-topology/v1"
+deployment = "unknown"
+local_role = "unknown"
+visibility = "partial"
+member_count = 1
+identifiers_redacted = true
+catalogs_read = ["mysql-server-identity"]
+
+[database_topology.role_counts]
+unknown = 1
+
+[dataset_scope]
+contract = "dbwarp-blueprint-dataset-scope/v1"
+layout = "full-copy"
+table_inventory_completeness = "complete"
+row_count_completeness = "complete"
+size_completeness = "complete"
+row_count_method = "mysql-table-statistics"
+size_method = "mysql-information-schema"
+limitations = ["row-counts-statistical", "selection-limited", "topology-visibility-partial"]
+
+# MySQL stats_freshness is deliberately absent: UPDATE_TIME is not ANALYZE evidence.
+[tables.table-001]
+rows = 500
+table_bytes = 131072
+index_bytes = 16384
+schema = "schema-A"
+has_clustered_index = true
+
+[tables.table-001.cols.col-1]
+ordinal = 1
+type = "integer"
+nullable = false
+null_fraction = 0.0
+native_type = "bigint"
+declared_max_bytes = 8
+numeric_precision = 19
+len_avg = 8
+len_p95 = 8
+
+[tables.table-001.cols.col-2]
+ordinal = 2
+type = "text"
+nullable = true
+null_fraction = 0.2
+native_type = "varchar"
+declared_max_chars = 512
+declared_max_bytes = 2048
+charset = "utf8mb4"
+len_avg = 80
+len_p95 = 160
+length_sample_rows = 100
+length_p95_sample_rows = 100
+length_sample_method = "decoded bounded SQL sample"
+style = "json"
+
+[tables.table-001.cols.col-2.compression]
+measured = true
+sample_rows = 100
+sample_bytes = 0
+sample_method = "primary-key-range-windows"
+sampled_with_bias = true
+bias_reason = "primary_key_range_windows"
+ratio_zstd_3 = 4.0
+ratio_stddev = 0.0
+sample_encoding = "blueprint-compression-probe-v2"
+
+[tables.table-001.cols.col-2.cardinality]
+measured = true
+sample_rows = 100
+non_null_rows = 80
+observed_distinct_count = 8
+estimated_distinct_count = 8
+top_value_fraction = 0.125
+frequency_p50 = 10
+frequency_p95 = 10
+frequency_p99 = 10
+frequency_max = 10
+sample_method = "primary-key-range-windows"
+sample_layout = "primary-key-range-windows"
+sampled_with_bias = true
+bias_reason = "primary_key_range_windows"
+
+[tables.table-001.idxs.idx-1]
+type = "btree"
+primary = true
+unique = true
+cols = [1]
+
+# A small positive buffer can round to zero at the documented 64 KiB granularity.
+[tables.table-001.compression]
+measured = true
+sample_rows = 100
+sample_bytes = 0
+sample_method = "primary-key-range-windows"
+sampled_with_bias = true
+bias_reason = "primary_key_range_windows"
+ratio_zstd_3 = 3.0
+ratio_stddev = 0.0
+sample_encoding = "blueprint-columnar-transfer-probe-v3"
+
+[artifact_inventory]
+contract = "dbwarp-blueprint-artifacts/v1"
+detail = "summary"
+visibility = "privilege_filtered"
+inventory_complete = false
+dependencies_complete = false
+analysis_complete = false
+object_count = 1
+dependency_edge_count = 0
+external_prerequisite_count = 0
+catalogs_read = ["information_schema.views"]
+families_not_inventoried = ["events", "routines", "triggers"]
+
+[artifact_inventory.counts_by_kind]
+view = 1

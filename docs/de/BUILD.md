@@ -20,6 +20,17 @@ Die Binärdatei wird hierhin geschrieben:
 target/release/dbwarp-blueprint
 ```
 
+Alle anderen Beispiele verwenden `./dbwarp-blueprint`. Führen Sie nach einem
+Quell-Build entweder `target/release/dbwarp-blueprint` direkt aus oder kopieren
+Sie die Datei nach `./dbwarp-blueprint`, bevor Sie den Beispielen folgen.
+
+Wenn die festgeschriebene Rust-Toolchain noch nicht installiert ist und ein
+geprüfter Netzwerkzugriff zulässig ist, stimmen Sie ausdrücklich zu:
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
 ## Funktionsweise des Build-Skripts
 
 `build.sh` ist absichtlich konservativ:
@@ -46,6 +57,13 @@ Vorkompilierte Binärdateien sind auf der Releases-Seite verfügbar:
 
 Sie werden der Einfachheit halber bereitgestellt. Fixieren Sie vor der Verwendung ein exaktes Release-Tag und prüfen Sie den SHA-256; verwenden Sie für einen reproduzierbaren Lauf keine veränderliche Download-URL. Wenn Ihre Richtlinie eine Quellcodeprüfung verlangt, erstellen Sie das Programm lokal aus demselben Tag.
 
+Plattform-Binärarchive sind Betreiberpakete und keine Quellcodebäume; sie
+können nicht an Ort und Stelle neu gebaut werden. Die enthaltene Kopie dieses
+Leitfadens und `verify.sh` beschreiben den Verifizierungspfad mit passendem
+Quellcode. Verwenden Sie einen Checkout des exakten Release-Tags oder das
+Quellcodearchiv mit gebündelten Abhängigkeiten, wenn Sie `build.sh`, die
+Cargo-Quellen oder einen lokalen Vergleichs-Build benötigen.
+
 Release-Dateien:
 
 | Plattform | Datei |
@@ -57,11 +75,19 @@ Release-Dateien:
 
 ## Ein heruntergeladenes Archiv verifizieren
 
-Linux/macOS:
+Linux:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
+
+macOS:
+
+```bash
+shasum -a 256 dbwarp-blueprint-macos-arm64.tar.gz
+```
+
+Vergleichen Sie den ausgegebenen Wert mit der passenden Zeile in `SHA256SUMS.txt`.
 
 Windows PowerShell:
 
@@ -103,6 +129,30 @@ Linux-Kerberos-Build:
 ```bash
 cargo build --release --locked --features integrated-auth-gssapi
 ```
+
+## Eine Release-Binärdatei reproduzieren
+
+`./build.sh` belegt, dass der geprüfte Quellcode gebaut werden kann. Bytegleichheit
+erfordert zusätzlich sämtliche nativen Build-Eingaben des Releases. Checken Sie
+die in `PROVENANCE.json` verzeichnete Quellrevision aus und verwenden Sie deren
+Ziel und Feature-Liste, die festgeschriebene Rust-Toolchain, den verzeichneten
+nativen Compiler/Linker, den Commit-Zeitstempel als `SOURCE_DATE_EPOCH` sowie
+Pfad-Remapping und Linker-Flags des Release-Workflows. Windows-Releases verwenden
+zusätzlich `clang-cl` und `/Brepro`.
+
+Vergleichen Sie nach der Reproduktion dieser Eingaben die extrahierte
+Release-Binärdatei mit dem lokalen Ergebnis:
+
+```bash
+SOURCE_BIN=target/release/dbwarp-blueprint \
+  ./verify.sh /path/to/extracted/dbwarp-blueprint
+```
+
+Unterscheiden sich die Hashes, behandeln Sie die Binärdateien nicht als
+gleichwertig. Die Release-CI baut auf demselben Runner zweimal in getrennten
+Cargo-Zielverzeichnissen und weist Byteabweichungen zurück. `PROVENANCE.json`
+zeichnet Quellrevision, Ziel, Features, Toolchain, Source-Date-Epoch, nativen
+Compiler, Binärgröße und Hash für die Bewertung einer lokalen Reproduktion auf.
 
 ## Gebündelte Abhängigkeiten
 

@@ -19,7 +19,9 @@ Verwenden Sie ein dediziertes Konto mit geringen Berechtigungen und Lesezugriff 
 Empfohlene Eigenschaften:
 
 - keine Schreibberechtigungen;
-- keine DDL-Berechtigungen;
+- keine DDL-Berechtigungen, außer die Prüfung genehmigt ausdrücklich die
+  erweiterte MySQL-Erfassung, deren Metadatenberechtigungen `TRIGGER` und
+  `EVENT` DDL-fähig sind;
 - keine Superuser-/Administratorrolle;
 - Lesezugriff ist auf die zu prüfende Datenbank begrenzt;
 - Passwort oder Token wird per Datei oder Eingabeaufforderung bereitgestellt und nicht in die URI eingebettet.
@@ -32,7 +34,7 @@ dedizierte Erfassungskonto nach der genehmigten Erfassung mit dem passenden
 Skript unter `sql/revoke/`; prüfen Sie vor der Ausführung genau die Ziele für
 Datenbank, Hostmuster, Rolle und Login.
 
-## Tier 1: Nur Katalog
+## Tier 1: Nur Metadaten (keine Zeilenstichprobe)
 
 Tier 1 ist die Standardeinstellung, wenn `--measure-compression` fehlt.
 
@@ -45,6 +47,9 @@ Es liest:
 - Spaltentypfamilien, NULL-Zulässigkeit und gerundete Längenstatistiken, soweit verfügbar;
 - Indextyp, Eindeutigkeit und anonymisierte Spaltenordnungsnummern;
 - Struktur des Fremdschlüsselgraphen, soweit verfügbar;
+- begrenzte Anzahlen von Nicht-Tabellenobjekten und externen Voraussetzungen
+  aus Objektkatalogen unter der Voreinstellung `--artifact-detail summary`
+  (keine Definitionen);
 - optionale kundenseitige RTT-Prüfung, sofern `--no-rtt-probe` nicht gesetzt ist.
 
 Es liest keine Zeilenwerte.
@@ -67,7 +72,11 @@ Tier 2 wird ausschließlich durch das explizite Paar aktiviert:
 --measure-compression --yes
 ```
 
-Tier 2 liest zusätzlich begrenzte Zeilenstichproben in den Prozessspeicher. Die Stichprobenbytes werden in einen internen Row-Frame-Puffer codiert, lokal mit zstd auf Stufe 3 komprimiert, als gerundete Verhältnisse zusammengefasst und verworfen.
+Tier 2 liest zusätzlich begrenzte Zeilenstichproben in den Prozessspeicher. Die
+Stichprobenbytes werden in einen internen Row-Frame-Puffer codiert und zur
+Ableitung aggregierter Komprimierungs-, NULL-Dichte-,
+Kardinalitäts-/Häufigkeits-, Längen- und Stilmessungen verwendet, bevor Werte
+und temporäre Fingerprints verworfen werden.
 
 Die Stichprobenbytes werden:
 
@@ -93,9 +102,20 @@ Deaktivieren Sie sie mit:
 
 ## Gelesene Dateien
 
-Zur Laufzeit liest das Werkzeug ausschließlich Dateien, die ausdrücklich in der Befehlszeile angegeben wurden, etwa Passwortdateien, Benutzerdateien, TLS-CA-/Zertifikat-/Schlüsseldateien, Entra-Tokendateien oder eine Eingabedatei für `--from-toml`.
+Zur Laufzeit liest das Werkzeug ausschließlich Dateien, die ausdrücklich in
+der Befehlszeile ausgewählt oder von einem ausdrücklich ausgewählten
+Batch-Manifest oder Bundle referenziert werden. Dazu können Passwort- und
+Benutzerdateien, Anonymisierungsschlüsseldateien, TLS-CA-/Zertifikat-/
+Schlüsseldateien, Entra-Tokendateien, Eingaben strukturierter Dateien sowie
+Blueprint- oder Bundle-Eingaben gehören.
 
 Es liest bewusst keine üblichen impliziten Speicherorte für Anmeldedaten wie `~/.pgpass`, `~/.my.cnf`, Cloud-Anmeldedateien, SSH-Schlüssel, Shell-Verläufe oder standardmäßige Passwort-Umgebungsvariablen.
+
+Diese Aussage betrifft die von der Anwendung gesteuerte Suche nach
+Anmeldedaten. Datenbank-, TLS-, DNS- und integrierte
+Authentifizierungsbibliotheken können Vertrauensspeicher, Konfiguration und
+Anmeldedatencaches des Betriebssystems verwenden. Prüfen oder verfolgen Sie
+diese Plattformabhängigkeiten separat, wenn die Hostrichtlinie dies verlangt.
 
 Die vollständige Liste finden Sie in [`../AUDIT.md`](AUDIT.md).
 
@@ -126,8 +146,11 @@ Prüfen Sie vor der Weitergabe von `blueprint.toml`:
 - es sind keine echten Tabellen-, Spalten-, Index-, Schema- oder Benutzernamen enthalten;
 - keine Namen von Nicht-Tabellenobjekten, Definitionstexte, Endpunktzeichenfolgen, Anmeldedaten, Schlüssel-/Zertifikatsmaterial, Paketnamen oder Binärdateien vorhanden sind;
 - es sind keine Zeilenwerte enthalten;
-- numerische Werte sind wie in [`../FORMAT.md`](FORMAT.md) dokumentiert gerundet;
-- optionale Komprimierungsabschnitte enthalten ausschließlich Verhältnisse und Stichprobenmetadaten.
+- numerische Werte verwenden die in [`../FORMAT.md`](FORMAT.md) dokumentierte
+  exakte oder gerundete Genauigkeit; exakte Opt-in-Felder sind als sensibler zu prüfen;
+- optionale aus Stichproben abgeleitete Abschnitte enthalten aggregierte
+  Komprimierungs-, NULL-Dichte-, Kardinalitäts-/Häufigkeits-, Längen-, Stil-
+  und Stichprobenherkunftsmetadaten, niemals beprobte Werte.
 - Artefakt-Vollständigkeitsfelder gefilterte Sichtbarkeit, unlesbare Kataloge und bekannte unmodellierte Familien offenlegen.
 
 Die standardmäßige, ausgewogene MySQL-Ausgabe enthält exakte deklarierte Kapazitäten und Indexpräfixlängen sowie relativ gerundete Durchschnitts-/p95-Stichproben. Prüfen Sie die drei Treuemarkierungen ausdrücklich. Wenn `--length-fidelity exact --yes` verwendet wurde, genehmigen Sie auch die exakten Stichprobenstatistiken. Zeilenwerte und echte Objektnamen müssen weiterhin fehlen. Fehlende Treuemarkierungen bedeuten Legacy-/unbekannte Daten und dürfen nicht als benchmarkfähige Metadaten behandelt werden.

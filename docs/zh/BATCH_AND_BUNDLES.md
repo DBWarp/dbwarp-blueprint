@@ -171,7 +171,7 @@ dbwarp-blueprint \
 对于 Parquet 和 Avro 源：
 
 - `single_file` 要求解析后恰好得到一个文件，并将其保留为一个逻辑表。
-- `one_table_per_file` 将每个文件映射为一个子 Blueprint 文件中的单独净化表。
+- `one_table_per_file` 将每个文件映射为一个子 Blueprint 文件中的单独匿名标签表。
 - `merge_same_schema` 在列数匹配时，将多个文件合并为一个逻辑表。
 - `partitioned_dataset` 目前使用与 `merge_same_schema` 相同的合并行为；它为 Hive 风格的分区发现保留了语义区别。
 
@@ -233,8 +233,8 @@ dbwarp-blueprint \
 
 捆绑包不会放宽隐私模型：
 
-- 实时数据库源仍会生成经过净化的表/列/索引 ID；
-- 仅当启用 `--measure-compression --yes` 时才会解码结构化文件值；
+- 实时数据库源仍会生成由秘密密钥保护的匿名表/列/索引 ID；
+- 仅当启用 `--measure-compression --yes` 时才会解码 Parquet 值；Avro 采集始终遍历容器记录以得出计数、长度和空值比例，即使未进行压缩测量也是如此；
 - 解码后的样本仅保留在内存中；
 - 捆绑包元数据使用客户选择的源 ID 和标签；
 - 任何捆绑包命令都不会发送遥测或上传文件。

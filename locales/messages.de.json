@@ -18,9 +18,9 @@
       "action": "Verwenden Sie --password-file, --password-env oder die interaktive Eingabeaufforderung TTY. Siehe AUTH.md und SECURITY.md."
     },
     "DBP1002E": {
-      "summary": "Das Datenbankschema URI wird nicht unterstützt",
-      "cause": "Der Wert --connect verwendete kein unterstütztes Schema PostgreSQL, MySQL, MariaDB oder SQL Server URI.",
-      "action": "Verwenden Sie postgresql://, postgres://, mysql://, mariadb://, sqlserver://, mssql:// oder tds://."
+      "summary": "Das URI-Schema der Datenbank wird nicht unterstützt",
+      "cause": "Der Wert --connect verwendete kein unterstütztes URI-Schema für PostgreSQL, MySQL oder SQL Server.",
+      "action": "Verwenden Sie postgresql://, postgres://, mysql://, sqlserver://, mssql:// oder tds://. mariadb:// wird nur als MySQL-URI-Alias akzeptiert; MariaDB ist keine separat qualifizierte Engine."
     },
     "DBP1003E": {
       "summary": "Die Überschreibung des TLS-Servernamens ist nicht verfügbar",
@@ -40,12 +40,12 @@
     "DBP1006E": {
       "summary": "Für die Kompressionsprobe strukturierter Dateien fehlt die ausdrückliche Zustimmung",
       "cause": "Strukturierte Dateimodi können nicht interaktiv fragen und benötigen vor begrenzten Stichproben daher --yes.",
-      "action": "Prüfen Sie den Preflight-Vertrag und führen Sie den Lauf mit --measure-compression --yes erneut aus."
+      "action": "Prüfen Sie den Vorabprüfungsvertrag und führen Sie den Lauf mit --measure-compression --yes erneut aus."
     },
     "DBP1007E": {
       "summary": "Der Längentreuemodus ist für diese Engine nicht verfügbar",
-      "cause": "Explizite Längentreuekontrollen gelten derzeit nur für die Live-Erfassung von MySQL oder MariaDB.",
-      "action": "Entfernen Sie den expliziten Modus oder verwenden Sie eine unterstützte MySQL- oder MariaDB-Quelle."
+      "cause": "Explizite Längentreuekontrollen gelten derzeit für die Live-Erfassung von PostgreSQL und MySQL, jedoch nicht für SQL Server.",
+      "action": "Entfernen Sie den expliziten Modus für die SQL-Server-Erfassung. Kompatibilitätsaliase für URIs erweitern die qualifizierte Engine-Matrix nicht."
     },
     "DBP1008E": {
       "summary": "Konflikt zwischen Längentreue-Optionen",
@@ -55,7 +55,7 @@
     "DBP1009E": {
       "summary": "Für die genaue Längentreue bedarf es einer ausdrücklichen Zustimmung",
       "cause": "Exakte Stichprobenlängen können genauere Kundenstatistiken offenlegen und erfordern --yes.",
-      "action": "Prüfen Sie den Preflight-Vertrag und führen Sie den Lauf mit --length-fidelity exact --yes erneut aus."
+      "action": "Prüfen Sie den Vorabprüfungsvertrag und führen Sie den Lauf mit --length-fidelity exact --yes erneut aus."
     },
     "DBP1010E": {
       "summary": "Der eingebettete Lokalisierungskatalog ist unvollständig",
@@ -93,9 +93,9 @@
       "action": "Fügen Sie mindestens einen [[source]]-Block hinzu."
     },
     "DBP1104E": {
-      "summary": "Für die Sammelsammlung bedarf es einer ausdrücklichen Zustimmung",
-      "cause": "Für die nicht interaktive Multi-Source-Sammlung ist --yes. erforderlich.",
-      "action": "Zuerst mit --dry-run ausführen, den Plan überprüfen und dann mit --yes. erneut ausführen"
+      "summary": "Für die Batch-Erfassung bedarf es einer ausdrücklichen Zustimmung",
+      "cause": "Für die nicht interaktive Erfassung mehrerer Quellen ist --yes erforderlich.",
+      "action": "Zuerst mit --dry-run ausführen, den Plan überprüfen und dann mit --yes erneut ausführen."
     },
     "DBP1105E": {
       "summary": "Eine Batch-Quelle ist fehlgeschlagen",
@@ -124,7 +124,7 @@
     },
     "DBP1110E": {
       "summary": "Die Konfiguration der Datenbankquellenverbindung ist nicht eindeutig",
-      "cause": "Die Batchquelle hat nicht genau eine Verbindung, connect_env oder connect_file angegeben.",
+      "cause": "Die Batchquelle hat nicht genau einen der Schlüssel connect, connect_env oder connect_file angegeben.",
       "action": "Stellen Sie genau eine Verbindungsquelle ein."
     },
     "DBP1111E": {
@@ -175,7 +175,7 @@
     "DBP1203E": {
       "summary": "Der Bündelselektor stimmte mit keiner extrahierbaren Blueprint überein",
       "cause": "Die ausgewählte Quelle verfügt über keine passende eingebettete oder referenzierte Blueprint/Tabelle.",
-      "action": "Quell- und Tabellenselektoren mit --bundle-list. prüfen"
+      "action": "Quell- und Tabellenselektoren mit --bundle-list prüfen."
     },
     "DBP1204E": {
       "summary": "Die Bundle-Eingabe konnte nicht gelesen werden",
@@ -194,7 +194,7 @@
     },
     "DBP1301E": {
       "summary": "Der Ausgabepfad des Decks ist erforderlich",
-      "cause": "--from-toml wurde ohne --deck. bereitgestellt",
+      "cause": "--from-toml wurde ohne --deck angegeben.",
       "action": "Übergeben Sie --deck output.pptx."
     },
     "DBP1302E": {
@@ -209,7 +209,7 @@
     },
     "DBP1402E": {
       "summary": "MySQL Blueprint-Erfassung fehlgeschlagen",
-      "cause": "Eine MySQL- oder MariaDB-Verbindung, eine Katalogabfrage, ein RTT-Probe-, Sampling- oder Dekodierungsvorgang ist fehlgeschlagen.",
+      "cause": "Eine MySQL-Verbindung, eine Katalogabfrage, ein RTT-Probe-, Sampling- oder Dekodierungsvorgang ist fehlgeschlagen.",
       "action": "Überprüfen Sie die technischen Details, die Konnektivität, die Berechtigungen, die TLS-Richtlinie und den Quellzustand und versuchen Sie es dann erneut."
     },
     "DBP1403E": {
@@ -233,7 +233,7 @@
       "action": "Erhöhen Sie --max-wall-secs oder akzeptieren Sie eine teilweise Stichprobe und prüfen Sie die Auditwarnungen."
     },
     "DBP1407W": {
-      "summary": "Die Kompressionsstichprobe war nicht verfügbar",
+      "summary": "Kompressionsstichprobe war unvollständig oder nicht verfügbar",
       "cause": "Eine begrenzte Zeilenstichprobenabfrage, ein Datenstrom, eine Kodierung oder ein Kompressionsvorgang ist für mindestens eine Tabelle fehlgeschlagen, während die Blueprint-Erfassung fortgesetzt wurde.",
       "action": "Prüfen Sie technische Details und Tabellenberechtigungen und führen Sie Tier 2 erneut aus, wenn vollständige Kompressionsergebnisse erforderlich sind."
     },
@@ -304,7 +304,7 @@
     },
     "DBP1701E": {
       "summary": "Operation vor Zustimmung abgebrochen",
-      "cause": "Die interaktive Aufforderung vor dem Flug wurde abgelehnt oder erhielt keine kanonische y/yes-Zustimmung.",
+      "cause": "Die interaktive Vorabprüfung wurde abgelehnt oder erhielt keine kanonische y/yes-Zustimmung.",
       "action": "Überprüfen Sie den Plan und führen Sie ihn erneut aus, oder übergeben Sie --yes nach ausdrücklicher Genehmigung."
     },
     "DBP1702E": {

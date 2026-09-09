@@ -16,6 +16,7 @@ kanoniczne polecenia, wartości, identyfikatory i schematy danych wyjściowych:
 ./dbwarp-blueprint --lang ja \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full --tls-ca /etc/pki/internal-root.crt \
   --out pg-appdb.blueprint.toml --yes
 ```
@@ -136,6 +137,7 @@ chmod 600 "$TOKEN_FILE"
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out catalog-only.blueprint.toml \
@@ -344,16 +346,12 @@ Spakowany plik zachowuje identyfikatory źródeł, tagi, identyfikatory grup zes
 
 ## Przepis: wsadowy pakiet do przekazania
 
-Utwórz katalog o następującej strukturze:
+Przestrzegaj [zasad przekazywania](QUICKSTART.md#review-and-share). Zachowaj lokalnie manifest roboczy, audyty, zapisy poleceń i notatki z przeglądu. Utwórz ten oddzielny katalog wyłącznie ze sprawdzonego spakowanego Blueprint.
 
 ```text
 customer-blueprint-handoff/
   customer-blueprint-bundle.packed.toml
-  customer.batch.toml.redacted
-  reviewer-notes.md       # optional
 ```
-
-Utwórz ten oddzielny katalog ze sprawdzonych kopii. Zachowaj robocze `bundle.toml`, `blueprints/`, `audits/` oraz wszelkie pliki `errors.txt` lokalnie i pod kontrolą dostępu. `customer.batch.toml.redacted` powinien zawierać tylko zatwierdzone identyfikatory źródeł, rodzaje, tagi i tryby zestawów danych. Nie dołączaj sekretów, prywatnych nazw hostów, plików haseł, plików tokenów, kluczy prywatnych, dzienników bazy danych ani zdekodowanych próbek wierszy.
 
 ## Przepis: prezentacja offline ze sprawdzonego TOML
 
@@ -367,30 +365,41 @@ Ten tryb odczytuje wyłącznie plik TOML i zapisuje prezentację. Odrzuca flagi 
 
 ## Przepis: odtwarzalność bajt w bajt
 
-Ustal znacznik czasu:
+Ustal znacznik czasu i ponownie użyj tego samego chronionego klucza
+anonimizacji przechowywanego przez klienta:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal/appdb \
   --password-file /etc/dbwarp/pg.pass \
+  --anonymization-key-file /etc/dbwarp/anonymization.key \
   --generated-at "2026-04-26T00:00:00Z" \
   --out blueprint.toml \
   --audit-log audit.txt \
   --yes
 ```
 
-Użyj tej funkcji do analizy kryminalistycznej, porównań migawek lub deterministycznego generowania prezentacji.
+Plik klucza musi zawierać dokładnie 32 surowe bajty albo 64 znaki
+szesnastkowe, w systemie Unix nie może zezwalać na odczyt grupie ani innym
+użytkownikom i nigdy nie może znaleźć się w przekazywanym pakiecie. Bez tej
+opcji nowy losowy klucz systemu operacyjnego celowo zmienia kolejność
+anonimowych etykiet przy każdym uruchomieniu. Samo ustalenie `--generated-at`
+nie wystarczy. Użyj kompletnego przepisu dla zatwierdzonych migawek
+kryminalistycznych; prezentacja wygenerowana dwukrotnie z dokładnie tego samego
+sprawdzonego Blueprint pozostaje identyczna bajt w bajt, gdy znacznik czasu i
+język są niezmienione.
 
 ## Przepis: pakiet do przekazania do DBWarp
 
-Utwórz katalog o następującej strukturze:
+Przestrzegaj [zasad przekazywania](QUICKSTART.md#review-and-share).
 
 ```text
 customer-blueprint-handoff/
   blueprint.toml
-  blueprint.pptx              # optional
-  command-used.redacted.txt
-  reviewer-notes.md           # optional
 ```
 
-`command-used.redacted.txt` może rejestrować zatwierdzone flagi i budżety próbkowania, ale należy z niego usunąć dane uwierzytelniające, tokeny, prywatne nazwy hostów i ścieżki lokalne. Zachowaj `audit.txt` lokalnie jako dowód operacyjny objęty kontrolą dostępu. Dołącz go tylko w przypadku wskazanej potrzeby pomocy technicznej i przekaż zatwierdzonym bezpiecznym kanałem. Nie dołączaj plików haseł, plików tokenów, kluczy prywatnych ani dzienników bazy danych.
+Domyślnie udostępniaj tylko sprawdzony `blueprint.toml` lub spakowany pakiet. Prezentację `blueprint.pptx` można dołączyć wyłącznie po sprawdzeniu jej treści i oznaczenia poufności oraz odrębnym zatwierdzeniu zgodnie z polityką organizacji.
+
+Audyty, zapisy poleceń, notatki z przeglądu i niezatwierdzone prezentacje zachowaj lokalnie z kontrolą dostępu. Mogą zawierać punkty końcowe, uwierzytelnione podmioty, lokalne ścieżki, dane czasowe i identyfikatory manifestu. Dowody operacyjne wysyłaj tylko dla konkretnej potrzeby wsparcia, zatwierdzonym bezpiecznym kanałem.
+
+Narzędzie nie tworzy `command-used.redacted.txt`; to opcjonalny zapis operatora, nie standardowy element przekazania. Nigdy nie dołączaj plików haseł lub tokenów, kluczy anonimizacji, prywatnych kluczy CA, zrzutów danych klienta ani dzienników bazy danych.

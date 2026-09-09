@@ -28,6 +28,9 @@ COMMON_REQUIRED = {
     "SECURITY.md",
     "STATUS.md",
     "BUILD.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SUPPORT.md",
     "TLS.md",
     "THIRD_PARTY_NOTICES.md",
     "LICENSE-APACHE",
@@ -50,6 +53,10 @@ COMMON_REQUIRED = {
     "samples/ecommerce-large.toml",
     "samples/erp-enterprise.toml",
     "samples/saas-medium.toml",
+    "samples/README.md",
+    "samples/postgresql-v6-catalog.toml",
+    "samples/mysql-v6-sampled.toml",
+    "samples/sqlserver-v6-analyzed.toml",
     "sql/blueprint.mysql.sql",
     "sql/blueprint.pg.sql",
     "sql/blueprint.sqlserver.sql",
@@ -82,6 +89,9 @@ COMMON_REQUIRED = {
 
 TRANSLATED_LOCALES = ("de", "fr", "es", "pl", "ja", "zh")
 TRANSLATED_DOCUMENTS = {
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SUPPORT.md",
     "ARTIFACT_INVENTORY.md",
     "AUDIT.md",
     "AUTH.md",
@@ -110,9 +120,8 @@ SUPPLEMENTAL_TRANSLATIONS = {
 }
 OPERATOR_ALLOWED = COMMON_REQUIRED | SUPPLEMENTAL_TRANSLATIONS
 
-# These operator-facing subtrees are intentionally closed allowlists. The
-# internal checkout also contains planning notes and translation-maintenance
-# records; an archive must fail if broad directory copying adds either class.
+# Operator-facing subtrees use closed allowlists so broad directory copying
+# cannot silently add unreviewed documents or scripts to an archive.
 OPERATOR_SUBTREE_PREFIXES = ("docs/", "samples/", "sql/")
 
 TARGETS = {
@@ -349,6 +358,7 @@ def validate_sbom(
     files: dict[str, ArchiveMember],
     kind: str,
     failures: list[str],
+    release_version: str | None = None,
 ) -> None:
     if sbom.get("bomFormat") != "CycloneDX" or sbom.get("specVersion") != "1.5":
         failures.append("SBOM.cdx.json must be CycloneDX 1.5")
@@ -364,6 +374,8 @@ def validate_sbom(
         application = {}
     if not isinstance(application.get("version"), str) or not application.get("version"):
         failures.append("SBOM metadata component has no version")
+    elif release_version is not None and application["version"] != release_version:
+        failures.append("SBOM application version does not match the provenance release tag")
 
     properties = metadata.get("properties")
     if not isinstance(properties, list):
@@ -565,6 +577,12 @@ def validate_archive(
         )
     sbom = require_json(files, "SBOM.cdx.json", failures)
     if sbom is not None:
+        source_ref = provenance.get("source_ref") if provenance is not None else None
+        release_version = (
+            source_ref.removeprefix("refs/tags/v")
+            if isinstance(source_ref, str) and source_ref.startswith("refs/tags/v")
+            else None
+        )
         validate_sbom(
             sbom,
             revision=revision,
@@ -572,6 +590,7 @@ def validate_archive(
             files=files,
             kind=kind,
             failures=failures,
+            release_version=release_version,
         )
 
     if kind == "source":

@@ -1221,8 +1221,8 @@ fn batch_structured_file_blueprint(
     let options = if measure {
         dbwarp_blueprint_core::DecodedCompressionOptions::enabled(
             sample_rows,
-            format!("{kind} batch decoded first {sample_rows} rows; rowframe-v1 zstd"),
-            format!("{kind} batch decoded first {sample_rows} rows per column; rowframe-v1 zstd"),
+            format!("{kind} batch decoded first {sample_rows} rows; compression-probe-v2 zstd"),
+            format!("{kind} batch decoded first {sample_rows} rows per column; compression-probe-v2 zstd"),
         )
         .with_limits(
             dbwarp_blueprint_core::DEFAULT_MAX_SAMPLE_BYTES,

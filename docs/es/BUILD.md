@@ -21,6 +21,17 @@ El binario se escribe en:
 target/release/dbwarp-blueprint
 ```
 
+Los demás ejemplos utilizan `./dbwarp-blueprint`. Después de compilar desde el
+código fuente, ejecute directamente `target/release/dbwarp-blueprint` o copie
+ese archivo a `./dbwarp-blueprint` antes de seguirlos.
+
+Si la cadena de herramientas Rust fijada aún no está instalada y se permite el
+acceso de red revisado, autorícelo explícitamente:
+
+```bash
+ALLOW_NETWORK=1 ./build.sh
+```
+
 ## Qué hace el script de compilación
 
 `build.sh` es deliberadamente conservador:
@@ -48,6 +59,14 @@ Hay binarios precompilados disponibles en la página Releases:
 
 Se proporcionan por comodidad. Fije una etiqueta de versión exacta y verifique su SHA-256 antes de usarlos; no utilice una URL de descarga mutable para una ejecución reproducible. Si su política exige revisar el código fuente, compile localmente a partir de la misma etiqueta.
 
+Los archivos binarios de plataforma son paquetes para el operador, no árboles
+de código fuente, y no se pueden reconstruir en el mismo lugar. La copia de
+esta guía y `verify.sh` que contienen describe la ruta de verificación con el
+código fuente coincidente. Utilice una copia de la etiqueta exacta de la
+versión o el archivo de código fuente con dependencias de la versión cuando
+necesite `build.sh`, el código fuente de Cargo o una compilación local para
+comparar.
+
 Archivos de la versión:
 
 | Plataforma | Archivo |
@@ -59,11 +78,19 @@ Archivos de la versión:
 
 ## Verificar un archivo descargado
 
-Linux/macOS:
+Linux:
 
 ```bash
 sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
+
+macOS:
+
+```bash
+shasum -a 256 dbwarp-blueprint-macos-arm64.tar.gz
+```
+
+Compare el valor mostrado con la línea correspondiente de `SHA256SUMS.txt`.
 
 Windows PowerShell:
 
@@ -108,6 +135,27 @@ Compilación Kerberos para Linux:
 ```bash
 cargo build --release --locked --features integrated-auth-gssapi
 ```
+
+## Reproducir un binario de versión
+
+`./build.sh` demuestra que el código revisado compila; la identidad byte a byte
+requiere además todas las entradas nativas de la versión. Use la revisión exacta
+registrada en `PROVENANCE.json`, su destino y lista de funciones, la cadena Rust
+fijada, el compilador/enlazador nativo registrado, la fecha del commit como
+`SOURCE_DATE_EPOCH` y las opciones de reasignación de rutas y enlazado del flujo
+de publicación. Las versiones de Windows también usan `clang-cl` y `/Brepro`.
+
+Tras reproducir esas entradas, compare el binario extraído con el resultado local:
+
+```bash
+SOURCE_BIN=target/release/dbwarp-blueprint \
+  ./verify.sh /path/to/extracted/dbwarp-blueprint
+```
+
+Si los hashes difieren, no trate los binarios como equivalentes. La CI de
+publicación compila dos veces en el mismo runner y en directorios Cargo distintos,
+y rechaza cualquier diferencia; `PROVENANCE.json` registra los datos necesarios
+para evaluar una reproducción local.
 
 ## Dependencias incluidas
 

@@ -182,7 +182,7 @@ comparison runs.
 | `counted_in_totals` | bool | Schema v6. Omitted means included in all aggregate totals. `external` requires explicit `false`, excluding that table from `table_count`, `row_count`, `table_bytes`, and `index_bytes`; no other explicit value is canonical. |
 | `check_count` | int | Schema v6 optional exact structural CHECK-constraint count. Omitted means unknown; `0` means the relevant catalog proved none. |
 | `has_clustered_index` | bool | always `false` for PostgreSQL |
-| `stats_freshness` | string | `"fresh"` / `"stale"` / `"never_analyzed"` (PG) — empty if SQL fallback |
+| `stats_freshness` | string | `"fresh"` / `"stale"` / `"never_analyzed"` for PostgreSQL, derived from `pg_stat_all_tables` analysis timestamps; empty for MySQL, SQL Server, structured files, and SQL fallback paths that cannot establish statistics freshness without broader access. MySQL `UPDATE_TIME` is deliberately not used because it describes source-data modification, not `ANALYZE TABLE` recency. |
 | `[tables.<id>.cols.<cid>]` | sub-tables | one per column |
 | `[tables.<id>.idxs.<iid>]` | sub-tables | one per index |
 | `[tables.<id>.compression]` | sub-table | only if Tier 2 |
@@ -206,14 +206,14 @@ Identifier is `col-N` where `N` is the column's natural attribute order
 | `hidden`, `masked`, `encrypted`, `sparse` | bool | Schema v6 optional catalog observations. Omitted means unknown; explicit `false` means the catalog proved the property absent. |
 | `has_check` | bool | Schema v6 optional single-column CHECK observation. Every explicit `true` is covered by the table's `check_count`. |
 | `null_fraction` | float | Optional observed null fraction from `0.0` through `1.0`. Rounded aggregate only; no null bitmap is retained. |
-| `native_type` | string | Optional sanitized engine base type, such as `varchar` or `longtext`; no identifiers, enum members, defaults, or expressions. Currently emitted by corrected MySQL capture. |
+| `native_type` | string | Optional sanitized engine base type, such as `varchar` or `longtext`; no identifiers, enum members, defaults, or expressions. Emitted by the native MySQL and SQL Server collectors. |
 | `declared_max_chars` | int | Optional declared character capacity. Exact for PostgreSQL `character`/`character varying` catalog values and in default balanced/exact MySQL modes; coarsely rounded only with MySQL `--length-fidelity strict`. |
 | `declared_max_bytes` | int | Optional declared byte capacity. Exact in default balanced/exact MySQL modes; coarsely rounded only with `--length-fidelity strict`. |
 | `numeric_precision`, `numeric_scale`, `datetime_precision` | int | Optional engine-declared scalar precision. |
-| `charset`, `collation` | string | Optional sanitized MySQL character metadata. These are catalog names, never customer identifiers or values. |
+| `charset`, `collation` | string | Optional sanitized character metadata. MySQL emits its catalog charset and collation names. SQL Server emits `utf-16le` for `nchar`/`nvarchar`/`ntext`, `utf-8` for code page 65001, `windows-N` for Windows code pages 1250-1258, or `code-page-N` for another positive catalog code page, plus the catalog collation name. These are encoding facts and catalog names, never customer identifiers or values. |
 | `len_avg` | int | Sampled average bytes for variable-length values. Default relative buckets have about 3.2% maximum error and preserve values through 32 bytes exactly; exact with `--length-fidelity exact --yes`; coarse nearest-10 only in strict mode. 0 = fixed-length or unmeasured. |
 | `len_p95` | int | Sampled 95th percentile with the same default relative buckets; exact with `--length-fidelity exact --yes`; coarse nearest-100 only in strict mode. 0 = unmeasured. |
-| `style` | string | Tier 2 only. One of `"json"`, `"xml"`, `"natural-text"`, `"base64"`, `"hex"`, `"numeric-text"`, `"mixed"`; empty if not classified. |
+| `style` | string | Tier 2 only. One of `"json"`, `"xml"`, `"natural-text"`, `"base64"`, `"hex"`, `"numeric-text"`, `"mixed"`, or `"precompressed"`; empty if not classified. `"precompressed"` is emitted only for a material byte-dominant sample of binary values carrying recognized standard container signatures. It deliberately does not disclose the detected container family. |
 | `magnitude_min`, `magnitude_max` | int | Schema v6 optional signed decimal exponents bounding sampled non-null numeric magnitudes. They are emitted together with `has_negative`; exact values are never serialized. |
 | `has_negative` | bool | Schema v6 optional sampled sign observation, emitted only with both magnitude bounds. |
 | `time_span` | string | Schema v6 optional sampled date/time range: `intraday`, `days`, `weeks`, `months`, `years`, or `decades`. |
@@ -229,7 +229,11 @@ statistics, and discards the fingerprints. Neither values nor fingerprints are
 serialized. The block contains `measured`, `sample_rows`, `non_null_rows`,
 `observed_distinct_count`, `estimated_distinct_count`, `top_value_fraction`,
 `frequency_p50`, `frequency_p95`, `frequency_p99`, `frequency_max`,
-`sample_method`, `sampled_with_bias`, and `bias_reason`.
+`sample_method`, `sample_layout`, `sampled_with_bias`, and `bias_reason`.
+`sample_layout` is an optional machine-readable enum. The current emitted
+value is `primary-key-range-windows`; absence means that no ordering contract
+is available. Consumers must not infer generation semantics by parsing the
+human-readable `sample_method` field.
 
 Counts and fractions are privacy-rounded where appropriate. The statistics are
 intended to reproduce duplicate density, hot-value skew, and finite domains in
@@ -268,10 +272,24 @@ sample_method = "column TABLESAMPLE SYSTEM(0.1) LIMIT N (text format)"
 sampled_with_bias = false
 ratio_zstd_3 = 8.4
 ratio_stddev = 0.25
-sample_encoding = "dbwarp-blueprint-rowframe-v1"
+sample_encoding = "blueprint-compression-probe-v2"
 ```
 
 No sampled column values are written to the Blueprint file.
+
+For binary columns, the same bounded Tier-2 sample may emit the coarse
+`style = "precompressed"` profile. Recognition happens only at sampled value
+boundaries and requires a material, byte-dominant observation. Blueprint does
+not parse or decompress the value, retain its signature, or distinguish image,
+archive, compressed-media, encrypted, and random payloads beyond this one
+high-confidence label. Textual and base64 encodings remain classified by their
+text style and are not treated as precompressed binary containers.
+
+The deterministic generator maps this coarse profile to a neutral valid ZIP
+container with a stored high-entropy member. This preserves the operational
+compression behavior without claiming that the source held ZIP files or
+revealing whether the recognized source value was an image, archive, or media
+container. Ordinary binary generation is unchanged.
 
 ## `[tables.<id>.idxs.<iid>]`
 
@@ -295,8 +313,8 @@ within the table, sorted by a domain-separated HMAC-SHA256 of the index name.
 ## `[tables.<id>.compression]` and `[tables.<id>.cols.<cid>.compression]` (Tier 2 only)
 
 Present only when the file was generated with `--measure-compression --yes`.
-The table-level block measures the complete sampled row stream and
-remains the authoritative ratio for whole-table transfer estimates.
+The table-level block measures a neutral columnar projection of the complete
+sample and remains the authoritative ratio for whole-table transfer estimates.
 Column-level blocks are projected from the same sampled rows, one
 column at a time, and exist to help downstream synthetic fixture
 generators tune per-column entropy without seeing customer values.
@@ -310,16 +328,16 @@ They do not trigger extra database reads.
 | `sample_method` | string | engine-specific bounded sampling description, for example `"TABLESAMPLE SYSTEM(0.1) LIMIT N"`, `"LIMIT N (fallback after empty TABLESAMPLE)"`, or `"SELECT TOP N"` |
 | `sampled_with_bias` | bool | true if the sample is non-uniform, for example a LIMIT-only fallback |
 | `bias_reason` | string | empty if `sampled_with_bias = false`, else a tag such as `"unordered_limit_after_empty_TABLESAMPLE"` |
-| `ratio_zstd_3` | float | rounded to nearest **0.05**, zstd level 3 (production default). Measured on bytes encoded via `sample_encoding`. |
+| `ratio_zstd_3` | float | rounded to nearest **0.05**, using the contract's zstd level 3 measurement policy. Measured on bytes encoded via `sample_encoding`. |
 | `ratio_zstd_19` | float | legacy zstd level 19 ceiling accepted from older captures; the tool no longer measures or emits it |
-| `ratio_stddev` | float | rounded to nearest **0.05**, stddev of level-3 ratios across row-aligned 64 KiB chunks of the sample. Column-level projection blocks currently emit `0.0` because they are advisory entropy hints, not a variance model. |
-| `sample_encoding` | string | identifier for the byte-level encoding the sample was zstd-compressed in. Current value: `"dbwarp-blueprint-rowframe-v1"`. The dbwarp estimator MUST validate this string before consuming the ratio — different encodings produce different ratios for the same logical data and are NOT interchangeable. Older Blueprint files may not include this field; estimators should only consume measured ratios when the encoding tag is present and recognized. |
+| `ratio_stddev` | float | rounded to nearest **0.05**, stddev of level-3 ratios across bounded table probe frames. Column-level projection blocks currently emit `0.0` because they are advisory entropy hints, not a variance model. |
+| `sample_encoding` | string | identifier for the byte-level encoding and compression-session policy used for the measurement. PostgreSQL live table blocks currently use `"blueprint-columnar-transfer-probe-v2"`. MySQL and SQL Server use `"blueprint-columnar-transfer-probe-v3"`, which additionally flushes at 256 KiB probe chunk boundaries. SQL Server `nvarchar`/`nchar`/`ntext` payloads retain native UTF-16LE byte distributions; `varchar`/`char`/`text` retain their sampled byte width and the `charset` field identifies the catalog code page needed by a consumer. V1 remains an input-only compatibility contract. Per-column blocks use `"blueprint-compression-probe-v2"`. The dbwarp estimator MUST validate this string before consuming the ratio — different encodings or session policies are NOT interchangeable. Older Blueprint files may not include this field; estimators should only consume measured ratios when the encoding tag is present and recognized. |
 
 The dbwarp estimator should prefer recognized per-column compression blocks when
 building synthetic fixtures, then fall back to table-level compression, then to
 type/style defaults.
 
-### `dbwarp-blueprint-rowframe-v1` byte-level encoding
+### `blueprint-compression-probe-v2` byte-level encoding
 
 The Tier 2 sampler concatenates rows or sampled column values into an in-memory
 buffer using this format, then runs zstd level 3 on it. The buffer is
@@ -336,8 +354,8 @@ Column:
     length bytes payload
 ```
 
-Type tags are part of the encoding contract and will not be renumbered without
-a `-v2` suffix bump.
+Type tags are part of the probe contract and will not be renumbered without a
+new versioned probe identifier.
 
 | Tag | Name | Used for |
 |---|---|---|
@@ -354,6 +372,29 @@ a `-v2` suffix bump.
 | 0x0F | JsonText | JSON UTF-8 |
 | 0x10 | BinaryRaw | `bytea`, `varbinary`, `image`, or blob bytes |
 | 0xFE | UnknownText | Fallback DB-provided textual representation |
+
+### `blueprint-columnar-transfer-probe-v1`, `v2`, and `v3` byte-level encoding
+
+Live-database table ratios transform the same bounded per-column v2 samples
+into neutral 1,000-row frames. Each frame has a versioned probe header and, for
+every column, an ordinal, one type tag, a four-byte length per row, and then the
+column-contiguous payload bytes. A length of `0xffffffff` represents NULL. The
+byte representation is shared by all three versions. V1 compressed the joined
+frame sequence as one pledged-input zstd level-3 operation. V2 feeds
+the frames through one persistent zstd level-3 context and flushes after every
+frame. V3 preserves that context and neutral row-group representation, but
+also flushes at each 256 KiB probe compression chunk within a row group. MySQL
+and SQL Server capture use v3; v2 remains the current PostgreSQL measurement.
+SQL Server Unicode text is measured as UTF-16LE.
+SQL Server narrow text retains the source byte width and records a closed,
+sanitized charset derived from the collation code page. Outer row-group outputs
+provide `ratio_stddev` observations. The versioned tags prevent one
+framing or flushing policy from being silently reinterpreted as another.
+
+This representation models generic compression-relevant properties of
+columnar bulk transfer. It is not a database protocol capture, a migration wire
+format, or an encoded data export. Sample bytes remain memory-only and are
+discarded after aggregate measurements are derived.
 
 ### Accuracy bounds
 
@@ -486,7 +527,7 @@ sharing with DBWarp is always TOML.
 When `engine` or `source_kind` is `"parquet"` or `"avro"`, schema version 3 or newer may
 also emit the following bounded fields. Older readers must ignore fields they do
 not understand; newer readers must preserve the distinction between source-file
-storage and DBWarp transport measurements.
+storage and bounded decoded-sample measurements.
 
 Structured-file Blueprints use the same anonymized identifiers as database
 Blueprints: `table-NNN` in secret-keyed order and `col-N` in schema ordinal order.
@@ -496,7 +537,7 @@ Source file stems, Parquet paths, Avro field names, and a manifest's
 At table scope, `table_bytes` is the logical transfer-sizing estimate, whereas
 `storage_bytes` is the actual source-object size on disk. Metadata-only Parquet
 uses uncompressed column-chunk bytes for `table_bytes`; optional decoded sampling
-replaces that estimate with projected `dbwarp-blueprint-rowframe-v1` bytes. Avro
+replaces that estimate with projected `blueprint-compression-probe-v2` bytes. Avro
 derives it from its decoded full scan. The optional `source_partitions`,
 `row_group_count`, and `source_codec` fields describe file layout and scheduling
 provenance. Multi-file datasets aggregate these values. `row_group_count` is
@@ -513,8 +554,8 @@ carried by the existing sanitized scalar fields and `native_type`.
 At compression scope, table-level `ratio_storage` compares `table_bytes` with
 actual source-object bytes. A Parquet column-level value compares the footer's
 uncompressed and compressed column-chunk bytes. Both are file-storage planning
-signals, not DBWarp transfer estimates. `ratio_zstd_3` and
+signals, not decoded-sample estimates. `ratio_zstd_3` and
 `ratio_zstd_19` are valid transfer-calibration inputs only when
-`sample_encoding` is the recognized `"dbwarp-blueprint-rowframe-v1"` value. A
+`sample_encoding` is the recognized `"blueprint-compression-probe-v2"` value. A
 Parquet footer ratio or Avro container ratio must never be copied into those
 zstd fields.

@@ -1,6 +1,6 @@
 use crate::{
-    BlueprintCardinality, BlueprintColumn, BlueprintCompression, SamplingDeadline,
-    SAMPLE_ENCODING_TAG,
+    BlueprintCardinality, BlueprintColumn, BlueprintCompression, PayloadProfileAccumulator,
+    SamplingDeadline, SAMPLE_ENCODING_TAG,
 };
 use anyhow::{Context, Result};
 use std::mem::size_of;
@@ -10,10 +10,12 @@ pub const DEFAULT_MAX_SAMPLE_BYTES: usize = 256 * 1024 * 1024;
 const RESERVOIR_CAPACITY: usize = 8_192;
 
 /// Ratio-variance measurement granularity. Chunking the sample at this size
-/// and ending each chunk on a row boundary makes the per-chunk ratios
-/// describe the transfer the estimator predicts, rather than one whole-buffer
-/// average that hides variance.
-pub const WIRE_CHUNK_BYTES: usize = 64 * 1024;
+/// and ending each chunk on a row boundary keeps the public probe bounded and
+/// exposes local variance rather than one whole-buffer average.
+///
+/// This is a Blueprint measurement policy, not a DBWarp framing or transport
+/// constant.
+pub const PROBE_WINDOW_BYTES: usize = 64 * 1024;
 
 /// Byte buffers grow in fixed steps rather than per row. Exact per-row
 /// reservations force a reallocation on nearly every push, which is a full
@@ -191,6 +193,7 @@ struct ColumnValueStats {
     total_bytes: u64,
     lengths: Vec<u64>,
     fingerprints: Vec<u64>,
+    payload_profile: PayloadProfileAccumulator,
 }
 
 impl ColumnValueStats {
@@ -204,6 +207,9 @@ impl ColumnValueStats {
         };
         self.non_null_values = self.non_null_values.saturating_add(1);
         self.total_bytes = self.total_bytes.saturating_add(bytes.len() as u64);
+        if cell.tag == TypeTag::BinaryRaw {
+            self.payload_profile.observe_raw_binary(bytes);
+        }
         reservoir_push(&mut self.lengths, self.non_null_values, bytes.len() as u64);
         reservoir_push(
             &mut self.fingerprints,
@@ -281,8 +287,22 @@ impl ColumnValueStats {
                 / self.rows as u128)
                 .min(u64::MAX as u128) as u64
         };
+        let collision_pairs = frequencies.iter().fold(0_u64, |total, frequency| {
+            total.saturating_add(frequency.saturating_mul(frequency.saturating_sub(1)) / 2)
+        });
+        let biased_near_unique_estimate = estimate_biased_near_unique_cardinality(
+            retained_non_null,
+            observed,
+            collision_pairs,
+            estimated_source_non_null,
+        );
         let (estimated, estimate_method) = if source_rows > 0 && source_rows <= self.rows {
             (observed, "complete bounded sample")
+        } else if sampled_with_bias && biased_near_unique_estimate.is_some() {
+            (
+                biased_near_unique_estimate.unwrap_or(observed),
+                "conservative birthday-collision estimate from biased near-unique sample",
+            )
         } else if sampled_with_bias {
             (observed, "cardinality observed lower bound (biased sample)")
         } else if retained_non_null < Self::MIN_UNBIASED_ESTIMATE_ROWS {
@@ -322,6 +342,7 @@ impl ColumnValueStats {
             frequency_p99: quantile(&frequencies, 0.99),
             frequency_max: top_frequency,
             sample_method: format!("{sample_method}; {estimate_method}"),
+            sample_layout: Default::default(),
             sampled_with_bias,
             bias_reason: if sampled_with_bias {
                 bias_reason.to_string()
@@ -330,6 +351,41 @@ impl ColumnValueStats {
             },
         })
     }
+}
+
+/// Estimate a large value domain from a biased sample only when the sample is
+/// demonstrably near-unique. This avoids the discontinuity where one repeated
+/// value used to collapse a many-million-row source domain to the sample size.
+///
+/// Natural-order samples are not random, so this deliberately errs toward the
+/// source non-NULL population. Zero or one collision pair is insufficient
+/// evidence to bound the domain. With stronger collision evidence, the
+/// birthday estimate uses one fewer collision pair as a conservative guard.
+/// Low-diversity samples return `None` and remain explicit observed lower
+/// bounds.
+pub fn estimate_biased_near_unique_cardinality(
+    retained_non_null: u64,
+    observed_distinct: u64,
+    collision_pairs: u64,
+    estimated_source_non_null: u64,
+) -> Option<u64> {
+    if retained_non_null < 128
+        || observed_distinct.saturating_mul(20) < retained_non_null.saturating_mul(19)
+        || estimated_source_non_null <= observed_distinct
+    {
+        return None;
+    }
+    if collision_pairs <= 1 {
+        return Some(estimated_source_non_null.max(observed_distinct));
+    }
+    let numerator =
+        (retained_non_null as u128).saturating_mul(retained_non_null.saturating_sub(1) as u128);
+    let denominator = 2_u128.saturating_mul(collision_pairs.saturating_sub(1) as u128);
+    let estimate = numerator.saturating_add(denominator.saturating_sub(1)) / denominator.max(1);
+    Some((estimate.min(u64::MAX as u128) as u64).clamp(
+        observed_distinct,
+        estimated_source_non_null.max(observed_distinct),
+    ))
 }
 
 impl CompressionSampleAccumulator {
@@ -423,7 +479,7 @@ impl CompressionSampleAccumulator {
             );
         }
         encode_owned_row(&mut self.table_buf, cells)?;
-        if self.table_buf.len().saturating_sub(self.table_chunk_start) >= WIRE_CHUNK_BYTES {
+        if self.table_buf.len().saturating_sub(self.table_chunk_start) >= PROBE_WINDOW_BYTES {
             self.table_chunks_seen = self.table_chunks_seen.saturating_add(1);
             push_chunk_ratio_bounded(
                 &mut self.table_per_chunk_ratios,
@@ -439,7 +495,7 @@ impl CompressionSampleAccumulator {
             if column_buf
                 .len()
                 .saturating_sub(self.column_chunk_starts[idx])
-                >= WIRE_CHUNK_BYTES
+                >= PROBE_WINDOW_BYTES
             {
                 self.column_chunks_seen[idx] = self.column_chunks_seen[idx].saturating_add(1);
                 push_chunk_ratio_bounded(
@@ -717,6 +773,13 @@ impl CompressionSampleAccumulator {
             .map(|stats| {
                 stats.cardinality(source_rows, sample_method, sampled_with_bias, bias_reason)
             })
+            .collect()
+    }
+
+    pub fn column_payload_profiles(&self) -> Vec<String> {
+        self.column_value_stats
+            .iter()
+            .map(|stats| stats.payload_profile.style().to_string())
             .collect()
     }
 
@@ -1002,7 +1065,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rowframe_encoder_matches_expected_bytes() {
+    fn probe_encoder_matches_expected_bytes() {
         let mut acc = CompressionSampleAccumulator::new(2);
         acc.push_row(&[
             OwnedCell::new(TypeTag::TextUtf8, b"hello".to_vec()),
@@ -1016,7 +1079,7 @@ mod tests {
     }
 
     #[test]
-    fn compression_summary_uses_rowframe_tag() {
+    fn compression_summary_uses_probe_tag() {
         let mut acc = CompressionSampleAccumulator::new(1);
         for _ in 0..20 {
             acc.push_row(&[OwnedCell::new(
@@ -1139,7 +1202,7 @@ mod tests {
     }
 
     #[test]
-    fn biased_unique_like_cardinality_is_an_observed_lower_bound() {
+    fn biased_unique_like_cardinality_is_conservatively_extrapolated() {
         let mut acc = CompressionSampleAccumulator::new(1);
         for row in 0..1_000_u64 {
             acc.push_row(&[OwnedCell::new(
@@ -1151,9 +1214,47 @@ mod tests {
         let cardinality = acc.column_cardinalities(100_000, "bounded-test", true, "first-n")[0]
             .clone()
             .unwrap();
-        assert_eq!(cardinality.estimated_distinct_count, 992);
+        assert!(cardinality.estimated_distinct_count >= 90_000);
         assert!(cardinality.sampled_with_bias);
         assert_eq!(cardinality.bias_reason, "first-n");
+        assert!(cardinality.sample_method.contains("birthday-collision"));
+    }
+
+    #[test]
+    fn biased_low_diversity_cardinality_remains_an_observed_lower_bound() {
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for row in 0..1_000_u64 {
+            acc.push_row(&[OwnedCell::new(
+                TypeTag::NumberText,
+                (row % 100).to_string().into_bytes(),
+            )])
+            .unwrap();
+        }
+        let cardinality = acc.column_cardinalities(100_000, "bounded-test", true, "first-n")[0]
+            .clone()
+            .unwrap();
+        assert_eq!(cardinality.estimated_distinct_count, 100);
+        assert!(cardinality.sample_method.contains("observed lower bound"));
+    }
+
+    #[test]
+    fn biased_medium_diversity_cardinality_is_not_treated_as_near_unique() {
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for row in 0..1_000_u64 {
+            acc.push_row(&[OwnedCell::new(
+                TypeTag::NumberText,
+                (row % 750).to_string().into_bytes(),
+            )])
+            .unwrap();
+        }
+        let cardinality = acc.column_cardinalities(100_000, "bounded-test", true, "first-n")[0]
+            .clone()
+            .unwrap();
+        assert_eq!(
+            cardinality.estimated_distinct_count,
+            cardinality.observed_distinct_count
+        );
+        assert!(cardinality.observed_distinct_count >= 700);
         assert!(cardinality.sample_method.contains("observed lower bound"));
     }
 
@@ -1172,5 +1273,23 @@ mod tests {
             .unwrap();
         assert_eq!(cardinality.estimated_distinct_count, 496);
         assert!(cardinality.sample_method.contains("Chao1"));
+    }
+
+    #[test]
+    fn decoded_binary_sampling_emits_only_the_coarse_precompressed_style() {
+        let mut acc = CompressionSampleAccumulator::new(2);
+        for row in 0..4_u8 {
+            let mut image = vec![row; 4 * 1024];
+            image[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+            acc.push_row(&[
+                OwnedCell::new(TypeTag::BinaryRaw, image),
+                OwnedCell::new(TypeTag::TextUtf8, b"PK\x03\x04 not binary".to_vec()),
+            ])
+            .unwrap();
+        }
+        assert_eq!(
+            acc.column_payload_profiles(),
+            vec![crate::PRECOMPRESSED_STYLE.to_string(), String::new()]
+        );
     }
 }

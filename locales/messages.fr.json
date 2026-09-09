@@ -19,8 +19,8 @@
     },
     "DBP1002E": {
       "summary": "Le schéma de base de données URI n'est pas pris en charge",
-      "cause": "La valeur --connect n'utilisait pas un schéma PostgreSQL, MySQL, MariaDB ou SQL Server URI pris en charge.",
-      "action": "Utilisez postgresql://, postgres://, mysql://, mariadb://, sqlserver://, mssql:// ou tds://."
+      "cause": "La valeur --connect n'utilisait pas un schéma d'URI PostgreSQL, MySQL ou SQL Server pris en charge.",
+      "action": "Utilisez postgresql://, postgres://, mysql://, sqlserver://, mssql:// ou tds://. mariadb:// n'est accepté que comme alias d'URI MySQL ; MariaDB n'est pas un moteur qualifié séparément."
     },
     "DBP1003E": {
       "summary": "Le remplacement du nom de serveur TLS n'est pas disponible",
@@ -40,12 +40,12 @@
     "DBP1006E": {
       "summary": "L'échantillonnage de fichiers structurés manque de consentement explicite",
       "cause": "Les modes de fichiers structurés ne peuvent pas demander de confirmation et exigent donc --yes avant tout échantillon borné.",
-      "action": "Consultez le contrat de pré-vol et réexécutez-le avec --measure-compression --yes."
+      "action": "Consultez le contrat de contrôle préalable et réexécutez-le avec --measure-compression --yes."
     },
     "DBP1007E": {
       "summary": "Le mode fidélité longueur n'est pas disponible pour ce moteur",
-      "cause": "Les contrôles explicites de fidélité de longueur s'appliquent actuellement uniquement à la capture en direct MySQL ou MariaDB.",
-      "action": "Supprimez le mode explicite ou utilisez une source MySQL ou MariaDB prise en charge."
+      "cause": "Les contrôles explicites de fidélité de longueur s'appliquent actuellement aux captures PostgreSQL et MySQL actives, mais pas à SQL Server.",
+      "action": "Supprimez le mode explicite pour la capture SQL Server. Les alias d'URI de compatibilité n'étendent pas la matrice de moteurs qualifiée."
     },
     "DBP1008E": {
       "summary": "Conflit d'options longueur-fidélité",
@@ -55,7 +55,7 @@
     "DBP1009E": {
       "summary": "La fidélité à la longueur exacte manque de consentement explicite",
       "cause": "Les longueurs exactes échantillonnées peuvent révéler des statistiques client plus précises et nécessitent --yes.",
-      "action": "Consultez le contrat de pré-vol et réexécutez-le avec --length-fidelity exact --yes."
+      "action": "Consultez le contrat de contrôle préalable et réexécutez-le avec --length-fidelity exact --yes."
     },
     "DBP1010E": {
       "summary": "Le catalogue de localisation intégré est incomplet",
@@ -124,7 +124,7 @@
     },
     "DBP1110E": {
       "summary": "La configuration de la connexion à la source de base de données est ambiguë",
-      "cause": "La source du lot n'a pas spécifié exactement l'une des connexions, connect_env ou connect_file.",
+      "cause": "La source du lot n’a pas spécifié exactement l’une des clés connect, connect_env ou connect_file.",
       "action": "Définissez exactement une source de connexion."
     },
     "DBP1111E": {
@@ -160,7 +160,7 @@
     "DBP1200E": {
       "summary": "Le sélecteur de bundle n'est pas valide",
       "cause": "Une expression blueprint:// ou --select était mal formée ou contradictoire.",
-      "action": "Utilisez source=ID, table=ID, engine=VALUE ou tag=NAME une fois par touche de sélection."
+      "action": "Utilisez source=ID, table=ID, engine=VALUE ou tag=NAME une fois par clé de sélecteur."
     },
     "DBP1201E": {
       "summary": "Le sélecteur de bundle ne correspond à aucune source",
@@ -209,7 +209,7 @@
     },
     "DBP1402E": {
       "summary": "Échec de la capture Blueprint MySQL",
-      "cause": "Une connexion MySQL ou MariaDB, une requête de catalogue, une sonde RTT, un échantillonnage ou une opération de décodage ont échoué.",
+      "cause": "Une connexion MySQL, une requête de catalogue, une sonde RTT, un échantillonnage ou une opération de décodage ont échoué.",
       "action": "Vérifiez les détails techniques, la connectivité, les privilèges, la stratégie TLS et l'état de la source, puis réessayez."
     },
     "DBP1403E": {
@@ -233,14 +233,14 @@
       "action": "Augmentez --max-wall-secs ou acceptez un échantillonnage partiel et examinez les avertissements de l’audit."
     },
     "DBP1407W": {
-      "summary": "L’échantillon de compression était indisponible",
+      "summary": "L’échantillon de compression était incomplet ou indisponible",
       "cause": "Une requête d’échantillonnage bornée, un flux, un encodage ou une opération de compression a échoué pour au moins une table tandis que la capture Blueprint se poursuivait.",
-      "action": "Examinez le détail technique et les autorisations des tables; relancez Tier 2 si des mesures de compression complètes sont nécessaires."
+      "action": "Examinez le détail technique et les autorisations des tables ; relancez Tier 2 si des mesures de compression complètes sont nécessaires."
     },
     "DBP1408W": {
       "summary": "L’échantillon de style de colonne était indisponible",
       "cause": "Une sonde bornée du style d’une colonne texte a échoué pour au moins une colonne tandis que la capture Blueprint se poursuivait.",
-      "action": "Examinez le détail technique et les autorisations de colonne; les libellés de style générés peuvent être incomplets."
+      "action": "Examinez le détail technique et les autorisations de colonne ; les libellés de style générés peuvent être incomplets."
     },
     "DBP1409W": {
       "summary": "La tâche de connexion à la base de données a signalé une erreur",
@@ -285,7 +285,7 @@
     "DBP1604E": {
       "summary": "La configuration de l’authentification de la base de données est invalide",
       "cause": "Le --auth-mode sélectionné est incompatible avec les exigences de la source d’identifiants ou de la sécurité du transport.",
-      "action": "Choisissez un mode d’authentification et une source d’identifiants compatibles; cloud-token exige exactement une source --password-file/-env et TLS verify-full."
+      "action": "Choisissez un mode d’authentification et une source d’identifiants compatibles ; cloud-token exige exactement une source --password-file/-env et TLS verify-full."
     },
     "DBP1605W": {
       "summary": "Le contrôle des autorisations des fichiers sensibles est indisponible",
@@ -304,7 +304,7 @@
     },
     "DBP1701E": {
       "summary": "Opération annulée avant consentement",
-      "cause": "L'invite interactive de pré-vol a été refusée ou n'a pas reçu le consentement canonique y/yes.",
+      "cause": "L'invite interactive préalable a été refusée ou n'a pas reçu le consentement canonique y/yes.",
       "action": "Examinez le plan et réexécutez-le, ou transmettez --yes après approbation explicite."
     },
     "DBP1702E": {
@@ -315,7 +315,7 @@
     "DBP1801E": {
       "summary": "L’environnement d’exécution asynchrone n’a pas pu être initialisé",
       "cause": "Le processus n’a pas pu initialiser l’environnement requis pour les connexions à la base de données et le travail simultané.",
-      "action": "Vérifiez les limites de ressources du processus et la version installée; recueillez le détail technique et contactez le support si l’échec persiste."
+      "action": "Vérifiez les limites de ressources du processus et la version installée ; recueillez le détail technique et contactez le support si l’échec persiste."
     },
     "DBP1014E": {
       "summary": "Le niveau de détail des artefacts n'a pas reçu de consentement explicite",
@@ -349,23 +349,23 @@
     },
     "DBP1414W": {
       "summary": "La relation de jeu de données du bundle est inconnue",
-      "cause": "Au moins une source n’a pas été déclarée comme indépendante, réplique ou shard; le calcul entre sources n’est donc pas sûr.",
+      "cause": "Au moins une source n’a pas été déclarée comme indépendante, réplique ou shard ; le calcul entre sources n’est donc pas sûr.",
       "action": "Définissez dataset_relationship et dataset_group pour chaque source du manifeste batch, puis relancez la capture."
     },
     "DBP1415W": {
       "summary": "Les répliques du bundle divergent",
-      "cause": "Deux sources déclarées comme répliques présentent des totaux de tables, lignes ou octets différents; un représentant déterministe a été conservé sans calcul de moyenne.",
+      "cause": "Deux sources déclarées comme répliques présentent des totaux de tables, lignes ou octets différents ; un représentant déterministe a été conservé sans calcul de moyenne.",
       "action": "Vérifiez la fraîcheur et la portée des sources, puis recapturez le groupe de répliques avant d’utiliser les totaux agrégés."
     },
     "DBP1416W": {
       "summary": "Le groupe de shards du bundle est incomplet",
-      "cause": "Un groupe de shards n’a pas été déclaré complet ou au moins un shard attendu a échoué; ce groupe n’a donc contribué à aucun total agrégé.",
+      "cause": "Un groupe de shards n’a pas été déclaré complet ou au moins un shard attendu a échoué ; ce groupe n’a donc contribué à aucun total agrégé.",
       "action": "Énumérez tous les shards attendus, ne définissez dataset_group_complete=true que si la liste est exhaustive, puis relancez les membres en échec."
     },
     "DBP1417W": {
       "summary": "Les totaux agrégés du bundle ont été supprimés",
-      "cause": "Une relation de jeu de données inconnue rendait l’agrégat logique dangereux; les totaux de tables, lignes et octets ont donc été émis à zéro avec aggregation=suppressed.",
-      "action": "Déclarez explicitement les relations entre sources et relancez la capture; les preuves Blueprint par source restent disponibles."
+      "cause": "Une relation de jeu de données inconnue rendait l’agrégat logique dangereux ; les totaux de tables, lignes et octets ont donc été émis à zéro avec aggregation=suppressed.",
+      "action": "Déclarez explicitement les relations entre sources et relancez la capture ; les preuves Blueprint par source restent disponibles."
     },
     "DBP1418W": {
       "summary": "La portée d’une source du bundle est incomplète",

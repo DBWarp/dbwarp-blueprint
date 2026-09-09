@@ -23,7 +23,7 @@
 --
 -- NOT granted: SELECT on any object, db_datareader, VIEW SERVER STATE,
 -- VIEW ANY DEFINITION, CONTROL, IMPERSONATE, ALTER, sysadmin, db_owner.
--- Common to every tier (verified live on SQL Server 2019 15.0.4480 Developer):
+-- Common to every tier:
 --   VIEW DEFINITION  makes the database's object metadata visible. Catalog
 --     views only show securables the user has SOME permission on: with CONNECT
 --     alone the collector sees 0 tables, and VIEW SECURITY DEFINITION + the DMV
@@ -35,8 +35,10 @@
 -- Run ONCE with sqlcmd (or SSMS in SQLCMD mode) as a sysadmin, or a principal
 -- with ALTER ANY LOGIN on the server and db_owner in the target database:
 --     sqlcmd -S HOST -E -i basic.sql           (Windows auth)
---     sqlcmd -S HOST -U admin -P '...' -i basic.sql
+--     sqlcmd -S HOST -U admin -i basic.sql  (prompts for password)
 -- Re-running is safe; it resets the login password to the value below.
+-- Protect any edited copy containing a password; do not commit or share it.
+-- Remove that copy after use according to your secure-disposal policy.
 -- Azure SQL Database: USE is not supported there. Run the [master] batch
 -- connected to master, the remaining batches connected to the target database,
 -- and skip any [msdb] batch (no Agent).  Or create a contained user instead:

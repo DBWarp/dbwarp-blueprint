@@ -96,7 +96,7 @@ Message text must not include secrets or unredacted connection URIs.
 | `DBP1404W` | Loopback PostgreSQL TLS `prefer` mode fell back to plaintext. |
 | `DBP1405W` | Optional database RTT probe was unavailable. |
 | `DBP1406W` | Tier 2 sampling time budget was exhausted. |
-| `DBP1407W` | A compression sample was unavailable. |
+| `DBP1407W` | A compression sample was incomplete or unavailable; usable partial rows may have been retained. |
 | `DBP1408W` | A text-column style sample was unavailable. |
 | `DBP1409W` | PostgreSQL's asynchronous connection task reported an error. |
 | `DBP1410W` | An optional artifact catalog was unavailable, so completeness is explicitly reduced. |

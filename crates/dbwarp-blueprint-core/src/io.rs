@@ -10,7 +10,9 @@ use crate::{
     BundleTotals, Totals, BUNDLE_KIND, BUNDLE_SCHEMA_VERSION, LEGACY_ARTIFACT_CONTRACT,
     LEGACY_BUNDLE_KIND, LEGACY_BUNDLE_SCHEMA_VERSION, LEGACY_IDENTIFIER_SCHEMA_VERSION,
     LEGACY_SAMPLE_ENCODING_TAG, MIN_SCHEMA_VERSION, PREVIOUS_BUNDLE_SCHEMA_VERSION,
-    SAMPLE_ENCODING_TAG, SCHEMA_VERSION,
+    PREVIOUS_SAMPLE_ENCODING_TAG, SAMPLE_ENCODING_TAG, SCHEMA_VERSION,
+    TRANSFER_SAMPLE_ENCODING_TAG, TRANSFER_SAMPLE_STREAMING_CHUNKED_ENCODING_TAG,
+    TRANSFER_SAMPLE_STREAMING_ENCODING_TAG,
 };
 use anyhow::{bail, Context, Result};
 use std::collections::BTreeSet;
@@ -1551,6 +1553,12 @@ fn validate_compression(
     };
     if !compression.sample_encoding.is_empty()
         && compression.sample_encoding != SAMPLE_ENCODING_TAG
+        && compression.sample_encoding != PREVIOUS_SAMPLE_ENCODING_TAG
+        && !(column_id.is_none() && compression.sample_encoding == TRANSFER_SAMPLE_ENCODING_TAG)
+        && !(column_id.is_none()
+            && compression.sample_encoding == TRANSFER_SAMPLE_STREAMING_ENCODING_TAG)
+        && !(column_id.is_none()
+            && compression.sample_encoding == TRANSFER_SAMPLE_STREAMING_CHUNKED_ENCODING_TAG)
         && !STRUCTURED_SAMPLE_ENCODINGS.contains(&compression.sample_encoding.as_str())
         && !(schema_version == 4 && compression.sample_encoding == LEGACY_SAMPLE_ENCODING_TAG)
     {
@@ -1582,25 +1590,31 @@ fn validate_compression(
 }
 
 fn normalize_blueprint_identifiers(blueprint: &mut BlueprintFile) {
-    if blueprint.schema_version != 4 {
-        return;
-    }
-    if let Some(inventory) = blueprint.artifact_inventory.as_mut() {
-        if inventory.contract == LEGACY_ARTIFACT_CONTRACT {
-            inventory.contract = crate::ARTIFACT_CONTRACT.to_string();
+    let accepts_former_contract = blueprint.schema_version == 4;
+    if accepts_former_contract {
+        if let Some(inventory) = blueprint.artifact_inventory.as_mut() {
+            if inventory.contract == LEGACY_ARTIFACT_CONTRACT {
+                inventory.contract = crate::ARTIFACT_CONTRACT.to_string();
+            }
         }
     }
     for table in blueprint.tables.values_mut() {
-        normalize_compression_identifier(table.compression.as_mut());
+        normalize_compression_identifier(table.compression.as_mut(), accepts_former_contract);
         for column in table.cols.values_mut() {
-            normalize_compression_identifier(column.compression.as_mut());
+            normalize_compression_identifier(column.compression.as_mut(), accepts_former_contract);
         }
     }
 }
 
-fn normalize_compression_identifier(compression: Option<&mut crate::BlueprintCompression>) {
+fn normalize_compression_identifier(
+    compression: Option<&mut crate::BlueprintCompression>,
+    accepts_former_contract: bool,
+) {
     if let Some(compression) = compression {
-        if compression.sample_encoding == LEGACY_SAMPLE_ENCODING_TAG {
+        if compression.sample_encoding == PREVIOUS_SAMPLE_ENCODING_TAG
+            || (accepts_former_contract
+                && compression.sample_encoding == LEGACY_SAMPLE_ENCODING_TAG)
+        {
             compression.sample_encoding = SAMPLE_ENCODING_TAG.to_string();
         }
     }
@@ -2417,6 +2431,61 @@ mod tests {
     }
 
     #[test]
+    fn columnar_transfer_probe_is_table_only_and_round_trips() {
+        let mut blueprint = one_table_blueprint();
+        blueprint.tables.get_mut("table-001").unwrap().compression = Some(BlueprintCompression {
+            measured: true,
+            sample_rows: 1_000,
+            sample_bytes: 64_000,
+            sample_method: "bounded neutral columnar transfer probe".into(),
+            ratio_zstd_3: 4.25,
+            ratio_stddev: 0.1,
+            sample_encoding: TRANSFER_SAMPLE_ENCODING_TAG.into(),
+            ..Default::default()
+        });
+        let encoded = blueprint_to_toml(&blueprint).unwrap();
+        let decoded = parse_blueprint_toml(&encoded).unwrap();
+        assert_eq!(
+            decoded.tables["table-001"]
+                .compression
+                .as_ref()
+                .unwrap()
+                .sample_encoding,
+            TRANSFER_SAMPLE_ENCODING_TAG
+        );
+        blueprint.tables.get_mut("table-001").unwrap().compression = Some(BlueprintCompression {
+            measured: true,
+            sample_rows: 1_000,
+            sample_bytes: 64_000,
+            sample_method: "bounded chunk-aware neutral columnar transfer probe".into(),
+            ratio_zstd_3: 4.25,
+            ratio_stddev: 0.1,
+            sample_encoding: TRANSFER_SAMPLE_STREAMING_CHUNKED_ENCODING_TAG.into(),
+            ..Default::default()
+        });
+        validate_blueprint_contract(&blueprint).unwrap();
+
+        blueprint
+            .tables
+            .get_mut("table-001")
+            .unwrap()
+            .cols
+            .insert("column-001".into(), crate::BlueprintColumn::default());
+        blueprint
+            .tables
+            .get_mut("table-001")
+            .unwrap()
+            .cols
+            .get_mut("column-001")
+            .unwrap()
+            .compression = Some(BlueprintCompression {
+            sample_encoding: TRANSFER_SAMPLE_STREAMING_CHUNKED_ENCODING_TAG.into(),
+            ..Default::default()
+        });
+        assert!(validate_blueprint_contract(&blueprint).is_err());
+    }
+
+    #[test]
     fn schema_v6_rejects_contradictory_or_noncanonical_topology() {
         let mut blueprint = one_table_blueprint();
         let topology = blueprint.database_topology.as_mut().unwrap();
@@ -3047,11 +3116,37 @@ index_bytes = 0
         assert!(!emitted.contains("dbwarp-shape-artifacts/v1"));
         assert!(!emitted.contains("dbwarp-shape-rowframe-v1"));
         assert!(emitted.contains("dbwarp-blueprint-artifacts/v1"));
-        assert!(emitted.contains("dbwarp-blueprint-rowframe-v1"));
+        assert!(emitted.contains(SAMPLE_ENCODING_TAG));
+        assert!(!emitted.contains(PREVIOUS_SAMPLE_ENCODING_TAG));
 
         let current_with_legacy_tags =
             legacy_toml.replacen("schema_version = 4", "schema_version = 5", 1);
         assert!(parse_blueprint_toml(&current_with_legacy_tags).is_err());
+    }
+
+    #[test]
+    fn previous_public_probe_tag_is_input_only_for_current_blueprints() {
+        let mut previous = one_table_blueprint();
+        previous.tables.get_mut("table-001").unwrap().compression =
+            Some(crate::BlueprintCompression {
+                sample_encoding: PREVIOUS_SAMPLE_ENCODING_TAG.into(),
+                ..Default::default()
+            });
+
+        let previous_toml = toml::to_string_pretty(&previous).unwrap();
+        let parsed = parse_blueprint_toml(&previous_toml).expect("previous public tag parses");
+        assert_eq!(
+            parsed.tables["table-001"]
+                .compression
+                .as_ref()
+                .unwrap()
+                .sample_encoding,
+            SAMPLE_ENCODING_TAG
+        );
+
+        let emitted = blueprint_to_toml(&parsed).expect("canonical probe tag emits");
+        assert!(emitted.contains(SAMPLE_ENCODING_TAG));
+        assert!(!emitted.contains(PREVIOUS_SAMPLE_ENCODING_TAG));
     }
 
     #[test]

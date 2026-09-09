@@ -16,6 +16,7 @@ canónicos los comandos, valores, identificadores y esquemas de salida:
 ./dbwarp-blueprint --lang ja \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full --tls-ca /etc/pki/internal-root.crt \
   --out pg-appdb.blueprint.toml --yes
 ```
@@ -138,6 +139,7 @@ chmod 600 "$TOKEN_FILE"
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal:5432/appdb \
   --password-file /etc/dbwarp/pg-blueprint.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out catalog-only.blueprint.toml \
@@ -352,22 +354,12 @@ el TOML empaquetado y transfiéralo únicamente por el canal aprobado.
 
 ## Procedimiento: paquete de entrega por lotes
 
-Cree un directorio como este:
+Siga la [política de entrega](QUICKSTART.md#review-and-share). Conserve localmente el manifiesto de trabajo, las auditorías, los registros de comandos y las notas de revisión. Cree este directorio independiente solo con el Blueprint empaquetado y revisado.
 
 ```text
 customer-blueprint-handoff/
   customer-blueprint-bundle.packed.toml
-  customer.batch.toml.redacted
-  reviewer-notes.md       # optional
 ```
-
-Cree este directorio independiente a partir de copias revisadas. Mantenga
-locales y con acceso controlado el `bundle.toml` de trabajo, `blueprints/`,
-`audits/` y cualquier `errors.txt`. `customer.batch.toml.redacted` solo debe
-mostrar identificadores de origen, tipos, etiquetas y modos de conjuntos de
-datos aprobados. No incluya secretos, nombres de host privados, archivos de
-contraseñas, archivos de tokens, claves privadas, registros de bases de datos
-ni muestras de filas decodificadas.
 
 ## Procedimiento: presentación sin conexión a partir de TOML revisado
 
@@ -381,36 +373,40 @@ Este modo solo lee el archivo TOML y escribe la presentación. Rechaza las opcio
 
 ## Procedimiento: reproducibilidad idéntica byte a byte
 
-Fije la marca de tiempo:
+Fije la marca de tiempo y reutilice la misma clave de anonimización protegida
+y custodiada por el cliente:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://pg-blueprint@pg-primary.internal/appdb \
   --password-file /etc/dbwarp/pg.pass \
+  --anonymization-key-file /etc/dbwarp/anonymization.key \
   --generated-at "2026-04-26T00:00:00Z" \
   --out blueprint.toml \
   --audit-log audit.txt \
   --yes
 ```
 
-Utilice este procedimiento para revisiones forenses, comparaciones de instantáneas o generación determinista de presentaciones.
+El archivo de clave debe contener exactamente 32 bytes sin procesar o 64
+caracteres hexadecimales, no debe permitir la lectura al grupo ni a otros
+usuarios en Unix y nunca debe incluirse en la entrega. Sin esta opción, una
+clave aleatoria nueva del sistema operativo cambia deliberadamente el orden de
+las etiquetas anónimas en cada ejecución. Fijar solo `--generated-at` no es
+suficiente. Use el procedimiento completo para instantáneas forenses aprobadas;
+una presentación generada dos veces a partir del mismo Blueprint revisado sigue
+siendo idéntica byte a byte si no cambian la marca de tiempo ni el idioma.
 
 ## Procedimiento: paquete de entrega para DBWarp
 
-Cree un directorio como este:
+Siga la [política de entrega](QUICKSTART.md#review-and-share).
 
 ```text
 customer-blueprint-handoff/
   blueprint.toml
-  blueprint.pptx              # optional
-  command-used.redacted.txt
-  reviewer-notes.md           # optional
 ```
 
-`command-used.redacted.txt` puede registrar las opciones y los presupuestos de
-muestreo aprobados, pero debe omitir las credenciales, los tokens, los nombres
-de host privados y las rutas locales. Mantenga `audit.txt` localmente como
-evidencia operativa con acceso controlado. Inclúyalo solo para una necesidad de
-soporte identificada y a través de un canal seguro aprobado. No incluya
-archivos de contraseñas, archivos de tokens, claves privadas ni registros de
-bases de datos.
+Comparta por defecto solo el `blueprint.toml` revisado o el paquete empaquetado. La presentación `blueprint.pptx` solo puede acompañarlo tras revisar su contenido y nivel de confidencialidad y aprobarla por separado conforme a la política de su organización.
+
+Conserve las auditorías, registros de comandos, notas de revisión y presentaciones no aprobadas como evidencia local con acceso controlado. Pueden contener puntos de conexión, identidades autenticadas, rutas locales, tiempos e identificadores del manifiesto. Envíe evidencia operativa solo para una necesidad concreta de soporte mediante un canal seguro aprobado.
+
+La herramienta no crea `command-used.redacted.txt`; es un registro opcional del operador, no un elemento estándar de entrega. Nunca incluya archivos de contraseñas o tokens, claves de anonimización, claves privadas de CA, volcados del cliente ni registros de bases de datos.

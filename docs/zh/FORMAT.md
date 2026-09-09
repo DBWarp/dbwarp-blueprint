@@ -6,7 +6,7 @@
 
 人类可读。可比较差异。可进行取证审查。
 
-> **此格式通过有界模式、确定性标识符和已记录的数值精度，降低隐蔽信道和直接披露
+> **此格式通过有界模式、基于秘密密钥的标识符和已记录的数值精度，降低隐蔽信道和直接披露
 > 风险。匿名图结构和明确选择加入的精确字段仍可能形成工作负载指纹，因此请根据您
 > 自己的数据分类政策审阅该文件。**
 
@@ -22,17 +22,19 @@
 
 ```
 
-空行是契约的一部分。工具只输出该文件头，不输出其他注释。这可让意外注释内容易于
-检测；但并不表示其余结构化字段无法识别具有独特特征的模式或依赖关系图。
+空行是规范文件头的一部分。Rust 采集器只输出该文件头，不输出其他注释。SQL 回退
+规范化器会逐字保留该文件头，然后添加一条固定的
+`Producer: blueprint_format.py SQL fallback` 注释并注明密钥来源，使接收方能够区分
+生成器。但这并不表示其余结构化字段无法识别具有独特特征的模式或依赖关系图。
 
 ## 顶层字段
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `schema_version` | int | 格式版本。目前为 `6`；版本 1 到 5 仍可读取。 |
-| `generated_at` | ISO-8601 string | UTC 时间戳，秒级精度，无小数部分。可通过 CLI 标志 `--generated-at "2026-04-26T00:00:00Z"` **固定**，用于字节完全相同的可重现性运行。每当设置该标志时，审计日志都会记录 `generated_at_pin: ...`，使该固定操作在取证时可见。该标志是固定此值的唯一方式，绝不会读取环境变量，这与 README 的“默认不读取环境变量”信任契约一致。 |
-| `engine` | string | `"postgresql"`、`"mysql"` 或 `"sqlserver"`。 |
-| `engine_version` | string | 数据库引擎返回的版本字符串。 |
+| `generated_at` | ISO-8601 string | UTC 时间戳，秒级精度，无小数部分。可通过 CLI 标志 `--generated-at "2026-04-26T00:00:00Z"` **固定**。字节完全相同的实时采集还需要相同的受保护 `--anonymization-key-file`、源状态、选项和生成器。每当设置该标志时，审计日志都会记录 `generated_at_pin: ...`，使该固定操作在取证时可见。没有环境变量可以固定此值。 |
+| `engine` | string | `"postgresql"`、`"mysql"`、`"sqlserver"`、`"parquet"` 或 `"avro"`。 |
+| `engine_version` | string | 用于按版本感知实时数据库采集和生成的精简数字产品版本；结构化文件源为空。不包含生成器或发行版横幅。 |
 | `source_kind` | string | `"production"`、`"staging"`、`"scrubbed-replica"`、`"synthetic"` 之一。由客户声明。 |
 | `length_metadata` | string | 旧版兼容性标记：`"hybrid-v2"`、`"exact"`、`"rounded"` 或 `"not-captured"`。新消费者必须使用下面三个字段。 |
 | `declared_length_fidelity` | string | PostgreSQL 声明字符容量以及默认 balanced/exact MySQL 模式为 `"exact"`；strict MySQL privacy 为 `"coarse-rounded-v1"`；不可用时为 `"not-captured"`。 |
@@ -40,11 +42,11 @@
 | `observed_length_fidelity` | string | 已采样时默认为 `"relative-rounded-v2"`，exact 模式为 `"exact"`，strict 模式为 `"coarse-rounded-v1"`，未采样时为 `"not-sampled"`。采样覆盖率仍是单独的逐列要求。 |
 | `[totals]` | inline table | 聚合计数（见下文）。 |
 | `[network]` | table | 可选的客户端到数据库连接及查询 RTT 证据。 |
-| `[database_topology]` | table | schema v6 数据库源必需。隐私安全的部署、本地角色、可见性和目录证据。结构化文件不含此块。 |
+| `[database_topology]` | table | schema v6 数据库源必需。有界且无名称的部署、本地角色、可见性和目录证据。结构化文件不含此块。 |
 | `[dataset_scope]` | table | 每个 schema v6 Blueprint 都必需。声明总计覆盖的范围，以及表、行和字节覆盖是否完整。 |
 | `[tables.X]` | tables | 每个表一个，使用匿名化 ID。 |
 | `[fk_edges]` | inline table | 匿名化表之间的 FK 图。可选。 |
-| `[artifact_inventory]` | table | 隐私安全的非表对象计数、可选匿名依赖图、外部前提条件和可选有界语言统计。仅适用于数据库源。 |
+| `[artifact_inventory]` | table | 有界且无名称的非表对象计数、可选匿名依赖图、外部前提条件和可选有界语言统计。仅适用于数据库源。 |
 
 ## `[totals]`
 
@@ -150,7 +152,7 @@ Blueprint 在普通采集期间不会运行存储速度基准，也不会根据�
 | `counted_in_totals` | bool | Schema v6。省略表示计入全部汇总。`external` 必须显式为 `false`，从 `table_count`、`row_count`、`table_bytes` 和 `index_bytes` 中排除；其他显式值均非规范。 |
 | `check_count` | int | Schema v6 可选的精确结构 CHECK 约束数。省略表示未知；`0` 表示相关目录确认没有约束。 |
 | `has_clustered_index` | bool | PostgreSQL 始终为 `false` |
-| `stats_freshness` | string | `"fresh"` / `"stale"` / `"never_analyzed"` (PG)，使用 SQL 回退时为空 |
+| `stats_freshness` | string | PostgreSQL 使用 `"fresh"` / `"stale"` / `"never_analyzed"`，根据 `pg_stat_all_tables` 中的分析时间戳得出；对于无法在不扩大访问权限的情况下确定统计信息新鲜度的 MySQL、SQL Server、结构化文件和 SQL 回退路径，该字段为空。刻意不使用 MySQL `UPDATE_TIME`，因为它描述的是源数据修改，而不是 `ANALYZE TABLE` 的执行时间距今多久。 |
 | `[tables.<id>.cols.<cid>]` | sub-tables | 每列一个 |
 | `[tables.<id>.idxs.<iid>]` | sub-tables | 每个索引一个 |
 | `[tables.<id>.compression]` | sub-table | 仅 Tier 2 |
@@ -173,14 +175,14 @@ Blueprint 在普通采集期间不会运行存储速度基准，也不会根据�
 | `hidden`, `masked`, `encrypted`, `sparse` | bool | Schema v6 可选目录观测。省略表示未知；显式 `false` 表示目录确认没有该属性。 |
 | `has_check` | bool | Schema v6 可选单列 CHECK 观测。每个显式 `true` 都包含在表的 `check_count` 中。 |
 | `null_fraction` | float | 可选的观测空值比例，范围为 `0.0` 到 `1.0`。仅保留舍入后的聚合值，不保留空值位图。 |
-| `native_type` | string | 可选的净化后引擎基础类型，例如 `varchar` 或 `longtext`；不含标识符、enum 成员、默认值或表达式。目前由已修正的 MySQL 采集输出。 |
+| `native_type` | string | 可选的净化后引擎基础类型，例如 `varchar` 或 `longtext`；不含标识符、enum 成员、默认值或表达式。由原生 MySQL 和 SQL Server 采集器输出。 |
 | `declared_max_chars` | int | 可选的声明字符容量。PostgreSQL `character`/`character varying` 目录值以及默认 balanced/exact MySQL 模式下都精确；仅对 MySQL 使用 `--length-fidelity strict` 时粗略舍入。 |
 | `declared_max_bytes` | int | 可选的声明字节容量。在默认 balanced/exact MySQL 模式下精确；仅使用 `--length-fidelity strict` 时粗略舍入。 |
 | `numeric_precision`、`numeric_scale`、`datetime_precision` | int | 可选的引擎声明标量精度。 |
-| `charset`、`collation` | string | 可选的净化后 MySQL 字符元数据。这些是目录名称，绝不是客户标识符或值。 |
+| `charset`、`collation` | string | 可选的净化后字符元数据。MySQL 输出其目录字符集和排序规则名称。SQL Server 对 `nchar`/`nvarchar`/`ntext` 输出 `utf-16le`，对代码页 65001 输出 `utf-8`，对 Windows 代码页 1250–1258 输出 `windows-N`，对其他正数目录代码页输出 `code-page-N`，并输出目录排序规则名称。这些是编码事实和目录名称，绝不是客户标识符或值。 |
 | `len_avg` | int | 可变长度值的采样平均字节数。默认相对分桶的最大误差约为 3.2%，并精确保留不超过 32 字节的值；使用 `--length-fidelity exact --yes` 时精确；仅在 strict 模式下粗略舍入到最接近的 10。0 = 固定长度或未测量。 |
 | `len_p95` | int | 使用相同默认相对分桶的采样第 95 百分位数；使用 `--length-fidelity exact --yes` 时精确；仅在 strict 模式下粗略舍入到最接近的 100。0 = 未测量。 |
-| `style` | string | 仅 Tier 2。`"json"`、`"xml"`、`"natural-text"`、`"base64"`、`"hex"`、`"numeric-text"`、`"mixed"` 之一；未分类时为空。 |
+| `style` | string | 仅 Tier 2。`"json"`、`"xml"`、`"natural-text"`、`"base64"`、`"hex"`、`"numeric-text"`、`"mixed"` 或 `"precompressed"` 之一；未分类时为空。只有带有可识别标准容器签名、且在字节量上占显著主导地位的二进制值样本才会输出 `"precompressed"`。它刻意不披露检测到的容器系列。 |
 | `magnitude_min`, `magnitude_max` | int | Schema v6 可选有符号十进制指数，用于界定采样非 NULL 数值的数量级。与 `has_negative` 一同输出；绝不序列化精确值。 |
 | `has_negative` | bool | Schema v6 可选符号观测，仅与两个数量级边界一同输出。 |
 | `time_span` | string | Schema v6 可选采样日期/时间范围：`intraday`、`days`、`weeks`、`months`、`years` 或 `decades`。 |
@@ -190,9 +192,11 @@ Blueprint 在普通采集期间不会运行存储速度基准，也不会根据�
 
 ### `[tables.<id>.cols.<cid>.cardinality]`（schema v3）
 
-启用行采样时，采集器会在内存中为每列最多保留 8,192 个临时 64 位指纹，据此得出 NDV 和偏斜度聚合统计，然后丢弃这些指纹。值和指纹都不会被序列化。该块包含 `measured`、`sample_rows`、`non_null_rows`、`observed_distinct_count`、`estimated_distinct_count`、`top_value_fraction`、`frequency_p50`、`frequency_p95`、`frequency_p99`、`frequency_max`、`sample_method`、`sampled_with_bias` 和 `bias_reason`。
+启用行采样时，采集器会在内存中为每列最多保留 8,192 个临时 64 位指纹，据此得出 NDV 和偏斜度聚合统计，然后丢弃这些指纹。值和指纹都不会被序列化。该块包含 `measured`、`sample_rows`、`non_null_rows`、`observed_distinct_count`、`estimated_distinct_count`、`top_value_fraction`、`frequency_p50`、`frequency_p95`、`frequency_p99`、`frequency_max`、`sample_method`、`sample_layout`、`sampled_with_bias` 和 `bias_reason`。`sample_layout` 是可选的机器可读枚举。当前输出值是 `primary-key-range-windows`；缺少该字段表示没有可用的排序契约。消费者不得通过解析面向人工的 `sample_method` 字段来推断生成语义。
 
-计数和比例会在适当情况下按隐私要求舍入。这些统计信息用于在合成测试数据集中重现重复密度、热点值偏斜和有限域；无法据此还原源值或业务含义。
+计数和比例会在适当情况下按隐私要求舍入。这些统计信息用于在合成测试数据集中重现
+重复密度、热点值偏斜和有限域。它们不包含采样值，但独特的分布可能形成工作负载
+指纹；请勿将其视为不可逆，也不能据此证明无法通过外部知识推断业务含义。
 
 ### `[tables.<id>.cols.<cid>.compression]`（仅 Tier 2）
 
@@ -219,10 +223,20 @@ sample_method = "column TABLESAMPLE SYSTEM(0.1) LIMIT N (text format)"
 sampled_with_bias = false
 ratio_zstd_3 = 8.4
 ratio_stddev = 0.25
-sample_encoding = "dbwarp-blueprint-rowframe-v1"
+sample_encoding = "blueprint-compression-probe-v2"
 ```
 
 Blueprint 文件中不会写入任何采样列值。
+
+对于二进制列，同一有界 Tier 2 样本还可能输出粗粒度的
+`style = "precompressed"` 特征。识别只在采样值边界上进行，并且要求该观察在
+字节量上占显著主导地位。Blueprint 不会解析或解压该值，不会保留其签名，也不会在
+这一高置信度标签之外区分图像、归档、压缩媒体、加密或随机载荷。文本和 base64
+编码仍按文本样式分类，不会被当作预压缩二进制容器。
+
+确定性生成器会把该粗粒度特征映射为一个中立、有效的 ZIP 容器，其中包含以存储方式
+保存的高熵成员。这样可保留实际压缩行为，同时不会声称源数据包含 ZIP 文件，也不会
+透露所识别的源值是图像、归档还是媒体容器。普通二进制生成保持不变。
 
 ## `[tables.<id>.idxs.<iid>]`
 
@@ -244,7 +258,7 @@ Blueprint 文件中不会写入任何采样列值。
 
 ## `[tables.<id>.compression]` 和 `[tables.<id>.cols.<cid>.compression]`（仅 Tier 2）
 
-仅当文件使用 `--measure-compression --yes` 生成时才存在。表级块测量完整的采样行流，并且仍是全表传输估算的权威比率。列级块从相同采样行逐列投影而来，用于帮助下游合成测试数据集生成器在不查看客户值的情况下调整每列熵。它们不会触发额外的数据库读取。
+仅当文件使用 `--measure-compression --yes` 生成时才存在。表级块测量完整样本的中立列式投影，并且仍是全表传输估算的权威比率。列级块从相同采样行逐列投影而来，用于帮助下游合成测试数据集生成器在不查看客户值的情况下调整每列熵。它们不会触发额外的数据库读取。
 
 | 字段 | 类型 | 精度 |
 |---|---|---|
@@ -254,16 +268,18 @@ Blueprint 文件中不会写入任何采样列值。
 | `sample_method` | string | 引擎特定的有界采样说明，例如 `"TABLESAMPLE SYSTEM(0.1) LIMIT N"`、`"LIMIT N (fallback after empty TABLESAMPLE)"` 或 `"SELECT TOP N"` |
 | `sampled_with_bias` | bool | 如果样本不均匀（例如仅使用 LIMIT 的回退），则为 true |
 | `bias_reason` | string | 如果 `sampled_with_bias = false` 则为空，否则为类似 `"unordered_limit_after_empty_TABLESAMPLE"` 的标签 |
-| `ratio_zstd_3` | float | 舍入到最接近的 **0.05**，zstd 级别 3（生产默认值）。在通过 `sample_encoding` 编码的字节上测量。 |
+| `ratio_zstd_3` | float | 按契约的 zstd 级别 3 测量策略舍入到最接近的 **0.05**。在通过 `sample_encoding` 编码的字节上测量。 |
 | `ratio_zstd_19` | float | 从旧捕获中接受的遗留 zstd 级别 19 比率；工具不再测量或输出它 |
-| `ratio_stddev` | float | 舍入到最接近的 **0.05**，按行对齐的 64 KiB 块的级别 3 比率标准差。列级投影块目前输出 `0.0`，因为它们是建议性熵提示，而不是方差模型。 |
-| `sample_encoding` | string | 对样本进行 zstd 压缩时所采用字节级编码的标识符。当前值：`"dbwarp-blueprint-rowframe-v1"`。dbwarp 估算器在使用该比率前**必须**验证此字符串，因为不同编码会对相同逻辑数据产生不同的比率，且**不可**互换。旧版 Blueprint 文件可能不包含此字段；只有在存在且能够识别编码标签时，估算器才应使用实测比率。 |
+| `ratio_stddev` | float | 舍入到最接近的 **0.05**，有界表探针帧的级别 3 比率标准差。列级投影块目前输出 `0.0`，因为它们是建议性熵提示，而不是方差模型。 |
+| `sample_encoding` | string | 测量所使用的字节级编码和压缩会话策略标识符。PostgreSQL 实时表块当前使用 `"blueprint-columnar-transfer-probe-v2"`。MySQL 和 SQL Server 使用 `"blueprint-columnar-transfer-probe-v3"`，它还会在 256 KiB 探针分块边界刷新。SQL Server 的 `nvarchar`/`nchar`/`ntext` 载荷保留原生 UTF-16LE 字节分布；`varchar`/`char`/`text` 保留采样字节宽度，`charset` 字段标识消费者所需的目录代码页。V1 仅作为输入兼容性契约保留。逐列块使用 `"blueprint-compression-probe-v2"`。dbwarp 估算器在使用该比率前**必须**验证此字符串，因为不同编码或会话策略**不可**互换。旧版 Blueprint 文件可能不包含此字段；只有在存在且能够识别编码标签时，估算器才应使用实测比率。 |
 
 构建合成测试数据集时，dbwarp 估算器应优先选择可识别的逐列压缩块，然后回退到表级压缩，最后回退到类型/样式默认值。
 
-### `dbwarp-blueprint-rowframe-v1` 字节级编码
+### `blueprint-compression-probe-v2` 字节级编码
 
-Tier 2 采样器使用此格式将行或采样列值连接到内存缓冲区，然后对其运行 zstd 级别 3。缓冲区会被丢弃；Blueprint 文件中只输出生成的舍入后比率。
+Tier 2 采样器使用此格式将行或采样列值连接到内存缓冲区，然后对其运行 zstd 级别 3。
+缓冲区会被丢弃。Blueprint 只保留已记录的聚合压缩、空值密度、基数/频率、长度和
+样式字段。
 
 ```text
 Buffer = (Column)*       # flat stream; rows are NOT delimited
@@ -275,7 +291,7 @@ Column:
     length bytes payload
 ```
 
-类型标签是编码契约的一部分，不会在没有递增 `-v2` 后缀的情况下重新编号。
+类型标签是探针契约的一部分；若没有新的版本化探针标识符，就不会重新编号。
 
 | 标签 | 名称 | 用途 |
 |---|---|---|
@@ -293,6 +309,22 @@ Column:
 | 0x10 | BinaryRaw | `bytea`、`varbinary`、`image` 或 blob 字节 |
 | 0xFE | UnknownText | 数据库提供的后备文本表示形式 |
 
+### `blueprint-columnar-transfer-probe-v1`、`v2` 和 `v3` 字节级编码
+
+实时数据库表比率会把相同的有界逐列 v2 样本转换为中立的 1,000 行帧。每个帧都有
+版本化探针头；对于每一列，还包括序号、一个类型标签、每行四字节长度，以及随后列连续
+排列的载荷字节。长度 `0xffffffff` 表示 NULL。三个版本共享同一字节表示。V1 将拼接的
+帧序列作为一次已声明输入大小的 zstd 级别 3 操作进行压缩。V2 通过一个持久 zstd
+级别 3 上下文传入各帧，并在每个帧之后刷新。V3 保留该上下文和中立行组表示，但还会在
+行组内每个 256 KiB 探针压缩分块边界刷新。MySQL 和 SQL Server 采集使用 v3；
+v2 仍是当前 PostgreSQL 测量方式。SQL Server Unicode 文本按 UTF-16LE 测量。
+SQL Server 窄文本保留源字节宽度，
+并记录由排序规则代码页推导出的封闭、净化后字符集。外层行组输出提供
+`ratio_stddev` 观察值。版本化标签防止把一种成帧或刷新策略默默解释为另一种。
+
+该表示建模列式批量传输中与压缩相关的通用属性。它不是数据库协议采集、迁移线路格式或
+编码数据导出。样本字节仅保留在内存中，并在得出聚合测量值后丢弃。
+
 ### 准确度界限
 
 `ratio_zstd_3` 描述指定的 `sample_encoding`；它不是对数据库协议或迁移传输字节的测量。公开自动化测试套件会验证确定性编码、有界采样和序列化，但不会声称对所有引擎和提取路径都具有通用的百分比误差。
@@ -301,7 +333,7 @@ Column:
 
 ## `[fk_edges]`
 
-可选的内联表，其中每个键都是一个映射到边列表的 `table-NNN` ID。Schema v3 会保留父列序号、引用操作、匹配模式、可延迟性、验证/信任状态，以及可选的隐私安全关系摘要。边先按目标排序，再按列列表排序。
+可选的内联表，其中每个键都是一个映射到边列表的 `table-NNN` ID。Schema v3 会保留父列序号、引用操作、匹配模式、可延迟性、验证/信任状态，以及可选的有界、无名称关系摘要。边先按目标排序，再按列列表排序。
 
 ```toml
 [fk_edges]
@@ -358,7 +390,7 @@ DBWarp 能自动配置或转换它们。
 | 标识符顺序 | 使用秘密进程本地密钥的域分离 HMAC-SHA256 可防止离线检查候选名称。仅在需要稳定的跨运行标签时才重用客户保管的密钥。 |
 | 数值低位 | 默认将统计信息舍入到有文档记录的精度。精确长度模式必须显式启用、经同意门控并记录到审计日志中，而且必须作为更敏感的元数据处理。 |
 | 亚秒级时间戳 | 顶部只有一个 UTC 时间戳，且仅有秒级精度 |
-| TOML 格式 | 规范化：键按字母排序、固定缩进、不插入注释 |
+| TOML 格式 | 规范化：键按字母排序、固定缩进，只允许固定的文件头/生成器注释；不允许输入派生注释 |
 | 采样随机性 | 采样使用固定种子（PG 的确定性 `TABLESAMPLE SYSTEM`）。另外，除非客户提供密钥，标识符匿名化会有意从操作系统 CSPRNG 获取秘密密钥。 |
 | 未使用字段 | 每个字段均在上文记录；不存在承载无界数据的“metadata”/“comment”/“reserved”字段 |
 | 对象源文本和外部材料 | 定义是临时的，并在有界分析后清零；名称、SQL 文本、端点、提供商字符串、凭据、密钥、证书、包名称和二进制文件都没有可序列化字段 |
@@ -377,22 +409,26 @@ DBWarp 能自动配置或转换它们。
 
 - TOML 能更清晰地将结构部分与叶数据分开（`[tables.table-001.cols.col-2]` 对比嵌套 JSON）。
 - 更容易比较差异（每行一个键；基于标识符的子表保持连续）。
-- 如果客户希望在分享前修订某个特定字段，可以手动编辑。
+- 如果客户希望在分享前对某个特定字段脱敏，可以手动删除或遮蔽其中的敏感信息。
 
-JSON 在 SQL 回退路径中用作**中间格式**（`sql/blueprint.pg.sql` 生成 JSON；`blueprint_format.py` 将其规范化为 TOML）。与 dbwarp 分享的最终文件始终为 TOML。
+JSON 在 SQL 回退路径中用作**中间格式**。每个 `sql/blueprint.*.sql` 脚本都会生成 JSON，
+由 `blueprint_format.py` 将其规范化为 TOML。中间 JSON 包含真实源标识符；MySQL 还可能
+通过 `COLUMN_TYPE` 包含 enum/set 声明，因此必须将其保留在源环境内并加以保护。
+规范化器默认使用新的秘密密钥，并为获批的跨运行比较接受同一受保护的
+`--anonymization-key-file` 契约。经审阅后与 DBWarp 分享的最终文件始终为 TOML。
 
 ## 结构化文件来源扩展
 
-模式版本 3 及更高版本可以输出以下有界字段。
+当 `engine` 或 `source_kind` 为 `"parquet"` 或 `"avro"` 时，模式版本 3 及更高版本还可以输出以下有界字段。较旧的读取方必须忽略自己无法理解的字段；较新的读取方必须保留源文件存储与有界的解码样本测量值之间的区别。
 
-结构化文件 Blueprint 使用与数据库 Blueprint 相同的匿名标识符：按确定性输入顺序使用
+结构化文件 Blueprint 使用与数据库 Blueprint 相同的匿名标识符：按基于秘密密钥的顺序使用
 `table-NNN`，按模式序号使用 `col-N`。文件名主干、Parquet 路径、Avro 字段名以及
 清单中的 `logical_table` 不会作为表或列标识符输出。
 
-当 `engine` 或 `source_kind` 为 `"parquet"` 或 `"avro"` 时，`table_bytes`
-是传输大小的逻辑估计值，`storage_bytes` 是源对象的实际大小。仅使用元数据的
+表级 `table_bytes` 是传输大小的逻辑估计值，而 `storage_bytes` 是源对象在磁盘上的
+实际大小。仅使用元数据的
 Parquet 将未压缩列块字节作为 `table_bytes`；可选的解码采样会将其替换为推算的
-`dbwarp-blueprint-rowframe-v1` 字节。Avro 从完整解码扫描中得出该值。
+`blueprint-compression-probe-v2` 字节。Avro 从完整解码扫描中得出该值。
 `source_partitions`、`row_group_count` 和 `source_codec` 描述文件布局与调度来源；
 多文件数据集会聚合这些值。`row_group_count` 仅适用于 Parquet；单个输入对象的
 `source_partitions` 为 `1`。
@@ -400,11 +436,11 @@ Parquet 将未压缩列块字节作为 `table_bytes`；可选的解码采样会�
 列级 `null_fraction` 是从 `0.0` 到 `1.0` 的观测值。`length_sample_rows` 和
 `length_sample_method` 说明 `len_avg` 与 `len_p95` 的获得方式。
 `source_semantics` 保存 `"repeated-leaf"`、`"nested-json"` 或
-`"multi-type-union"` 等有界兼容信息。十进制精度、时间戳精度及 UTC/本地语义、
+`"multi-type-union"` 等有界兼容信息；其中绝不包含客户的字段名或字段值。十进制精度和小数位数、时间戳精度及 UTC/本地语义、
 UUID 和固定二进制大小由现有标量字段及 `native_type` 保存。
 
 表级 `ratio_storage` 比较 `table_bytes` 与源对象的实际字节数；Parquet 列级值
-比较页脚中的未压缩与压缩列块字节。这两者都是文件规划信号，不是 DBWarp 传输估算。
+比较页脚中的未压缩与压缩列块字节。这两者都是文件规划信号，不是解码样本估算。
 `ratio_zstd_3` 和 `ratio_zstd_19` 仅在 `sample_encoding` 为
-`"dbwarp-blueprint-rowframe-v1"` 时有效。不得把 Parquet footer 或 Avro 容器比率
+`"blueprint-compression-probe-v2"` 时有效。不得把 Parquet footer 或 Avro 容器比率
 复制到这些 zstd 字段中。

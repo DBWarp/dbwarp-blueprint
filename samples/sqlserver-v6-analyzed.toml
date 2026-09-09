@@ -1,0 +1,248 @@
+# DBWarp Blueprint schema-v6 illustrative sampled/analyzed example.
+# Hand-authored synthetic aggregates and object inventory, not a customer capture.
+# Exact declared lengths and source collation metadata remain visible.
+# No source object names, row values, SQL definitions, binary code or secrets.
+
+schema_version = 6
+generated_at = "2026-09-07T00:00:00Z"
+engine = "sqlserver"
+engine_version = "16.0.1000.6"
+source_kind = "synthetic"
+length_metadata = "hybrid-v2"
+declared_length_fidelity = "exact"
+index_length_fidelity = "exact"
+observed_length_fidelity = "relative-rounded-v2"
+
+[totals]
+table_count = 2
+row_count = 3000
+table_bytes = 393216
+index_bytes = 98304
+
+[network]
+sample_count = 5
+connect_total_ms = 20
+query_rtt_ms_p50 = 2
+query_rtt_ms_p95 = 3
+
+[database_topology]
+contract = "dbwarp-blueprint-topology/v1"
+deployment = "replicated"
+local_role = "primary"
+visibility = "partial"
+member_count = 2
+identifiers_redacted = true
+features = ["sqlserver-availability-group"]
+catalogs_read = ["sqlserver-database-replica-states", "sqlserver-is-hadr-enabled"]
+catalogs_unreadable = ["sqlserver-hadr-replica-states"]
+
+[database_topology.role_counts]
+primary = 1
+secondary = 1
+
+[dataset_scope]
+contract = "dbwarp-blueprint-dataset-scope/v1"
+layout = "full-copy"
+table_inventory_completeness = "complete"
+row_count_completeness = "complete"
+size_completeness = "complete"
+row_count_method = "sqlserver-partition-counter"
+size_method = "sqlserver-partition-pages"
+limitations = ["selection-limited", "topology-visibility-partial"]
+
+[tables.table-001]
+rows = 1000
+table_bytes = 131072
+index_bytes = 32768
+schema = "schema-A"
+has_clustered_index = true
+
+[tables.table-001.cols.col-1]
+ordinal = 1
+type = "integer"
+nullable = false
+native_type = "bigint"
+declared_max_bytes = 8
+numeric_precision = 19
+len_avg = 8
+len_p95 = 8
+
+[tables.table-001.idxs.idx-1]
+type = "clustered"
+primary = true
+unique = true
+cols = [1]
+
+[tables.table-001.compression]
+measured = true
+sample_rows = 100
+sample_bytes = 0
+sample_method = "TOP N bounded projection with DATALENGTH"
+sampled_with_bias = true
+bias_reason = "natural_storage_order_no_native_random_sample"
+ratio_zstd_3 = 1.5
+ratio_stddev = 0.0
+sample_encoding = "blueprint-columnar-transfer-probe-v3"
+
+[tables.table-002]
+rows = 2000
+table_bytes = 262144
+index_bytes = 65536
+schema = "schema-B"
+has_clustered_index = true
+
+[tables.table-002.cols.col-1]
+ordinal = 1
+type = "integer"
+nullable = false
+native_type = "bigint"
+declared_max_bytes = 8
+numeric_precision = 19
+len_avg = 8
+len_p95 = 8
+
+[tables.table-002.cols.col-2]
+ordinal = 2
+type = "integer"
+nullable = false
+native_type = "bigint"
+declared_max_bytes = 8
+numeric_precision = 19
+len_avg = 8
+len_p95 = 8
+
+[tables.table-002.cols.col-3]
+ordinal = 3
+type = "text"
+nullable = true
+null_fraction = 0.25
+native_type = "nvarchar"
+declared_max_chars = 128
+declared_max_bytes = 256
+charset = "utf-16le"
+collation = "SQL_Latin1_General_CP1_CI_AS"
+len_avg = 40
+len_p95 = 80
+length_sample_rows = 100
+length_p95_sample_rows = 100
+length_sample_method = "decoded bounded SQL sample"
+style = "natural-text"
+
+[tables.table-002.cols.col-3.compression]
+measured = true
+sample_rows = 100
+sample_bytes = 0
+sample_method = "TOP N bounded projection with DATALENGTH"
+sampled_with_bias = true
+bias_reason = "natural_storage_order_no_native_random_sample"
+ratio_zstd_3 = 4.0
+ratio_stddev = 0.0
+sample_encoding = "blueprint-compression-probe-v2"
+
+[tables.table-002.cols.col-3.cardinality]
+measured = true
+sample_rows = 100
+non_null_rows = 75
+observed_distinct_count = 15
+estimated_distinct_count = 15
+top_value_fraction = 0.065
+frequency_p50 = 5
+frequency_p95 = 5
+frequency_p99 = 5
+frequency_max = 5
+sample_method = "TOP N bounded projection with DATALENGTH"
+sampled_with_bias = true
+bias_reason = "natural_storage_order_no_native_random_sample"
+
+[tables.table-002.idxs.idx-1]
+type = "clustered"
+primary = true
+unique = true
+cols = [1]
+
+[tables.table-002.idxs.idx-2]
+type = "nonclustered"
+unique = false
+cols = [2]
+include_cols = [3]
+
+[tables.table-002.compression]
+measured = true
+sample_rows = 100
+sample_bytes = 0
+sample_method = "TOP N bounded projection with DATALENGTH"
+sampled_with_bias = true
+bias_reason = "natural_storage_order_no_native_random_sample"
+ratio_zstd_3 = 3.0
+ratio_stddev = 0.0
+sample_encoding = "blueprint-columnar-transfer-probe-v3"
+
+[fk_edges]
+table-002 = [{ to = "table-001", cols = [2], to_cols = [1], on_delete = "no-action", on_update = "no-action", validated = true }]
+
+[artifact_inventory]
+contract = "dbwarp-blueprint-artifacts/v1"
+detail = "analyzed"
+visibility = "privilege_filtered"
+inventory_complete = false
+dependencies_complete = false
+analysis_complete = false
+object_count = 2
+dependency_edge_count = 2
+external_prerequisite_count = 1
+catalogs_read = ["sys.assemblies", "sys.objects", "sys.sql_modules"]
+families_not_inventoried = ["scheduled_jobs"]
+
+[artifact_inventory.counts_by_kind]
+assembly = 1
+procedure = 1
+
+[artifact_inventory.counts_by_external_class]
+sqlserver_clr_assembly = 1
+
+[artifact_inventory.artifacts.assembly-001]
+kind = "assembly"
+subkind = "clr_assembly"
+tier = "external"
+unresolved_dependency_count = 0
+definition_visibility = "external_binary"
+
+[artifact_inventory.artifacts.assembly-001.external]
+class = "sqlserver_clr_assembly"
+deployment_scope = "database"
+binary_material = "required_not_captured"
+secret_material = "not_captured"
+endpoint_material = "not_captured"
+compatibility = "manual_review_required"
+
+[artifact_inventory.artifacts.procedure-001]
+kind = "procedure"
+subkind = "sql_procedure"
+tier = "programmatic"
+schema = "schema-B"
+dependencies = ["assembly-001", "table-002"]
+unresolved_dependency_count = 1
+definition_visibility = "available"
+security_mode = "caller"
+
+[artifact_inventory.artifacts.procedure-001.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "partial"
+dialect = "tsql"
+grammar_profile = "sqlserver-2022"
+analyzer_version = "lexical-v1"
+definition_size_band = "1k-4k"
+statement_count_band = "2-4"
+token_count_band = "33+"
+maximum_nesting_band = "2-4"
+cyclomatic_complexity_band = "2-4"
+opaque_region_count_band = "1"
+minimum_version_complete = false
+compatibility_level = "160"
+ansi_nulls = "on"
+quoted_identifier = "on"
+
+[artifact_inventory.artifacts.procedure-001.analysis.features]
+"data.select" = "2-4"
+"dynamic.sql" = "1"
+"query.join" = "1"

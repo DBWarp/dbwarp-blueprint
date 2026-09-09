@@ -4,7 +4,7 @@
 
 **Idiomas:** [English](../STRUCTURED_FILES.md) | [Deutsch](../de/STRUCTURED_FILES.md) | [Français](../fr/STRUCTURED_FILES.md) | **Español** | [Polski](../pl/STRUCTURED_FILES.md) | [日本語](../ja/STRUCTURED_FILES.md) | [中文](../zh/STRUCTURED_FILES.md)
 
-`dbwarp-blueprint` puede crear un TOML Blueprint saneado a partir de entradas
+`dbwarp-blueprint` puede crear un TOML Blueprint acotado y anonimizado a partir de entradas
 Parquet y Avro locales cuando el origen ya es un archivo y no una base de datos
 en vivo.
 
@@ -15,8 +15,10 @@ Este es un modo sin conexión:
 - sin telemetría;
 - sin valores de filas escritos en la salida;
 - los identificadores de tabla y columna solo se emiten como `table-NNN` y `col-N`;
-- la auditoría solo registra las rutas de los archivos locales de entrada y
-  salida, y el hash de la salida.
+- la auditoría registra las rutas locales de entrada y salida, el hash de la
+  salida y evidencias operativas normales como el modo, los tiempos, el trabajo
+  de muestreo y las advertencias; en este modo no registra ningún punto de
+  conexión de base de datos.
 
 ## Parquet
 
@@ -86,7 +88,7 @@ sin afirmar una ida y vuelta exacta del esquema anidado.
 Las raíces de nombres de archivo, las rutas Parquet, los nombres de campos Avro
 y las etiquetas `logical_table` de un lote no se escriben como identificadores
 Blueprint. Un conjunto de varios archivos emite identificadores `table-NNN`
-deterministas, agrega bytes de objetos, particiones, grupos de filas, códecs,
+protegidos por una clave secreta, agrega bytes de objetos, particiones, grupos de filas, códecs,
 anchuras, fracciones nulas y procedencia de compresión compatible, y rechaza los
 archivos cuyos contratos lógicos de columnas difieren.
 
@@ -109,16 +111,17 @@ Las mismas opciones funcionan con `--from-avro`.
 Cuando se habilita, `dbwarp-blueprint`:
 
 - decodifica hasta `--sample-rows` registros del archivo;
-- codifica los valores muestreados mediante la misma trama de fila
-  `dbwarp-blueprint-rowframe-v1` que utiliza la captura de Blueprints de bases de datos
-  en vivo;
+- codifica los valores muestreados mediante la misma representación transitoria
+  `blueprint-compression-probe-v2` que utiliza la captura de Blueprints de bases
+  de datos en vivo;
 - emite resúmenes de compresión zstd-3 por tabla y por columna;
-- registra `sample_encoding = "dbwarp-blueprint-rowframe-v1"` en el TOML generado;
+- registra `sample_encoding = "blueprint-compression-probe-v2"` en el TOML generado;
 - conserva los bytes muestreados solo en memoria y nunca escribe valores de
   filas en disco.
 
 `--measure-compression` requiere `--yes` porque lee valores decodificados del
-cliente, aunque solo conserva proporciones agregadas.
+cliente. Conserva mediciones agregadas de compresión, densidad de NULL,
+cardinalidad/frecuencia, longitud y estilo, nunca los valores muestreados.
 
 El muestreador actual utiliza una muestra determinista de los primeros N
 registros. Es reproducible y barato, pero puede estar sesgado si un archivo está
@@ -132,9 +135,9 @@ grupos de filas o bloques.
 El modo Blueprints a partir de archivos estructurados resulta útil para:
 
 - dimensionar una importación Parquet/Avro antes de una ejecución de DBWarp;
-- generar un conjunto de datos sintético neutro respecto al cliente a partir de
-  metadatos de archivos;
-- planificar flujos Parquet/Avro -> DBWarp columnar -> target database.
+- generar un conjunto de datos sintético representativo sin copiar nombres del
+  origen ni valores de filas;
+- planificar flujos Parquet/Avro -> DBWarp columnar -> base de datos de destino.
 
 No sustituye a la captura de Blueprints de bases de datos en vivo cuando el origen
 real es una base de datos compatible, es decir, PostgreSQL, MySQL o SQL Server. Un

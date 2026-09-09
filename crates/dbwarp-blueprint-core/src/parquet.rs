@@ -609,15 +609,17 @@ fn apply_parquet_decoded_compression(
         sampled_with_bias,
         bias_reason,
     );
-    for ((((name, _tag), compression), statistics), cardinality) in ordered
+    let column_payload_profiles = acc.column_payload_profiles();
+    for (((((name, _tag), compression), statistics), cardinality), payload_profile) in ordered
         .iter()
         .zip(column_compressions.into_iter())
         .zip(column_statistics.into_iter())
         .zip(column_cardinalities.into_iter())
+        .zip(column_payload_profiles.into_iter())
     {
         deadline.check("applying Parquet sample column statistics")?;
-        if let Some(mut compression) = compression {
-            if let Some(column) = table.cols.get_mut(name) {
+        if let Some(column) = table.cols.get_mut(name) {
+            if let Some(mut compression) = compression {
                 compression.ratio_storage = column
                     .compression
                     .as_ref()
@@ -631,6 +633,9 @@ fn apply_parquet_decoded_compression(
                 column.length_p95_sample_rows = statistics.len_p95_sample_rows;
                 column.length_sample_method = options.column_sample_method.clone();
                 column.cardinality = cardinality;
+            }
+            if column.style.is_empty() && !payload_profile.is_empty() {
+                column.style = payload_profile;
             }
         }
     }

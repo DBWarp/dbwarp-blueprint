@@ -4,6 +4,258 @@ struct PendingCompressionSample {
     column_lengths: Vec<Option<(u64, u64)>>,
     null_fractions: Vec<Option<f64>>,
     cardinalities: Vec<Option<format::BlueprintCardinality>>,
+    payload_profiles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MssqlSampleProjectionLimit {
+    byte_limit: usize,
+    char_limit: usize,
+}
+
+// Tiberius materializes the complete first result before the probe encoder can
+// discard it. Each source column is projected as value + sampled DATALENGTH +
+// original DATALENGTH, so bounding only the eventual 16 MiB encoded probe is
+// insufficient for wide schemas. Keep the discovery pass smaller; an exact
+// observed-width retry below spends the full probe budget on fewer rows.
+const MSSQL_INITIAL_SAMPLE_MAX_ROWS: u64 = 32_768;
+const MSSQL_INITIAL_SAMPLE_PAYLOAD_DIVISOR: usize = 2;
+
+fn mssql_is_projected_variable_column(column: &ColumnRow) -> bool {
+    matches!(
+        column.native_type.as_str(),
+        "binary"
+            | "varbinary"
+            | "image"
+            | "char"
+            | "varchar"
+            | "text"
+            | "nchar"
+            | "nvarchar"
+            | "ntext"
+            | "xml"
+            | "user-defined"
+    )
+}
+
+fn mssql_fixed_sample_payload_reserve(column: &ColumnRow) -> usize {
+    match column.col_type.as_str() {
+        "boolean" => 1,
+        "integer" => usize::try_from(column.numeric_precision)
+            .unwrap_or(64)
+            .saturating_add(2)
+            .max(8),
+        "numeric" => usize::try_from(column.numeric_precision)
+            .unwrap_or(64)
+            .saturating_add(4)
+            .max(16),
+        "float" => 32,
+        "date" => 16,
+        "time" | "timestamp" => 64,
+        "uuid" => 36,
+        _ => 64,
+    }
+}
+
+fn mssql_sample_projection_budget(
+    requested_rows: u64,
+    columns: &[ColumnRow],
+) -> Result<(u64, Vec<MssqlSampleProjectionLimit>)> {
+    let shapes = columns
+        .iter()
+        .map(|column| {
+            if mssql_is_projected_variable_column(column) {
+                dbwarp_blueprint_core::TransferProbeColumnShape::Variable {
+                    declared_max_bytes: column.declared_max_bytes,
+                }
+            } else {
+                dbwarp_blueprint_core::TransferProbeColumnShape::Fixed {
+                    payload_reserve: mssql_fixed_sample_payload_reserve(column) as u64,
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let plan = crate::engine_common::bounded_projection_plan(
+        requested_rows.min(MSSQL_INITIAL_SAMPLE_MAX_ROWS),
+        &shapes,
+        false,
+    )?;
+    let limits = columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            if mssql_is_projected_variable_column(column) {
+                let byte_limit = usize::try_from(plan.variable_byte_limits[index])
+                    .unwrap_or(usize::MAX)
+                    .div_ceil(MSSQL_INITIAL_SAMPLE_PAYLOAD_DIVISOR)
+                    .max(1);
+                // LEFT counts characters while the source and transfer probe
+                // are byte-budgeted. Four is the safe upper bound for one
+                // Unicode scalar in UTF-8 or one supplementary character in
+                // UTF-16LE. DATALENGTH evidence below drives a bounded retry;
+                // original lengths, not prefix lengths, describe the source.
+                MssqlSampleProjectionLimit {
+                    byte_limit,
+                    char_limit: byte_limit / 4,
+                }
+            } else {
+                MssqlSampleProjectionLimit {
+                    byte_limit: 0,
+                    char_limit: 0,
+                }
+            }
+        })
+        .collect();
+    Ok((plan.sample_rows, limits))
+}
+
+fn mssql_sample_value_expression(
+    column: &ColumnRow,
+    limit: MssqlSampleProjectionLimit,
+) -> (String, String) {
+    let name = format!("[{}]", column.col_name.replace(']', "]]"));
+    match column.native_type.as_str() {
+        "binary" | "varbinary" | "image" => (
+            format!(
+                "SUBSTRING(CONVERT(varbinary(max), {name}), 1, {})",
+                limit.byte_limit
+            ),
+            format!("CONVERT(varbinary(max), {name})"),
+        ),
+        "char" | "varchar" | "nchar" | "nvarchar" => {
+            (format!("LEFT({name}, {})", limit.char_limit), name)
+        }
+        "text" => (
+            format!("LEFT(CONVERT(varchar(max), {name}), {})", limit.char_limit),
+            format!("CONVERT(varchar(max), {name})"),
+        ),
+        "ntext" | "xml" | "user-defined" => (
+            format!(
+                "LEFT(TRY_CONVERT(nvarchar(max), {name}), {})",
+                limit.char_limit
+            ),
+            format!("TRY_CONVERT(nvarchar(max), {name})"),
+        ),
+        _ => (name.clone(), name),
+    }
+}
+
+fn mssql_sample_projection(columns: &[ColumnRow], limits: &[MssqlSampleProjectionLimit]) -> String {
+    columns
+        .iter()
+        .zip(limits)
+        .flat_map(|(column, limit)| {
+            let (sampled, original) = mssql_sample_value_expression(column, *limit);
+            [
+                sampled.clone(),
+                format!("CONVERT(bigint, DATALENGTH({sampled}))"),
+                format!("CONVERT(bigint, DATALENGTH({original}))"),
+            ]
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn mssql_observed_octet_length(value: &ColumnData<'_>) -> Option<u64> {
+    match value {
+        ColumnData::U8(Some(value)) => Some(u64::from(*value)),
+        ColumnData::I16(Some(value)) => u64::try_from(*value).ok(),
+        ColumnData::I32(Some(value)) => u64::try_from(*value).ok(),
+        ColumnData::I64(Some(value)) => u64::try_from(*value).ok(),
+        _ => None,
+    }
+}
+
+fn mssql_adaptive_projection_from_observed_lengths(
+    rows: &[tiberius::Row],
+    columns: &[ColumnRow],
+    requested_rows: u64,
+) -> Result<Option<(u64, Vec<MssqlSampleProjectionLimit>)>> {
+    let (observed_max, truncated) = mssql_sample_observed_lengths(rows, columns);
+    if !truncated {
+        return Ok(None);
+    }
+    mssql_adaptive_projection_budget(columns, &observed_max, requested_rows).map(Some)
+}
+
+fn mssql_sample_observed_lengths(
+    rows: &[tiberius::Row],
+    columns: &[ColumnRow],
+) -> (Vec<u64>, bool) {
+    let mut observed_max = vec![0_u64; columns.len()];
+    let mut truncated = false;
+    for row in rows {
+        let cells = row.cells().collect::<Vec<_>>();
+        for (column_index, column) in columns.iter().enumerate() {
+            if !mssql_is_projected_variable_column(column) {
+                continue;
+            }
+            let base = column_index.saturating_mul(3);
+            let sampled_bytes = cells
+                .get(base.saturating_add(1))
+                .and_then(|(_, value)| mssql_observed_octet_length(value))
+                .unwrap_or(0);
+            let original_bytes = cells
+                .get(base.saturating_add(2))
+                .and_then(|(_, value)| mssql_observed_octet_length(value))
+                .unwrap_or(sampled_bytes);
+            observed_max[column_index] = observed_max[column_index].max(original_bytes);
+            truncated |= sampled_bytes < original_bytes;
+        }
+    }
+    (observed_max, truncated)
+}
+
+fn mssql_adaptive_projection_budget(
+    columns: &[ColumnRow],
+    observed_max: &[u64],
+    requested_rows: u64,
+) -> Result<(u64, Vec<MssqlSampleProjectionLimit>)> {
+    let shapes = columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            if mssql_is_projected_variable_column(column) {
+                let bytes_per_character = if matches!(
+                    column.native_type.as_str(),
+                    "binary" | "varbinary" | "image"
+                ) {
+                    1
+                } else {
+                    4
+                };
+                dbwarp_blueprint_core::TransferProbeColumnShape::Variable {
+                    declared_max_bytes: observed_max[index]
+                        .max(1)
+                        .saturating_mul(bytes_per_character),
+                }
+            } else {
+                dbwarp_blueprint_core::TransferProbeColumnShape::Fixed {
+                    payload_reserve: mssql_fixed_sample_payload_reserve(column) as u64,
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    let plan = crate::engine_common::bounded_projection_plan(requested_rows, &shapes, true)?;
+    let limits = columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            if mssql_is_projected_variable_column(column) {
+                let byte_limit = plan.variable_byte_limits[index] as usize;
+                MssqlSampleProjectionLimit {
+                    byte_limit,
+                    char_limit: byte_limit / 4,
+                }
+            } else {
+                MssqlSampleProjectionLimit {
+                    byte_limit: 0,
+                    char_limit: 0,
+                }
+            }
+        })
+        .collect();
+    Ok((plan.sample_rows, limits))
 }
 
 async fn sample_compression(
@@ -27,38 +279,11 @@ async fn sample_compression(
     // problem PG has). Use OFFSET 0 ROWS FETCH NEXT N ROWS ONLY ordered
     // by some key. Without knowing the PK at this point, ORDER BY
     // (SELECT NULL) is the SQL Server idiom for "no order required".
-    let (bounded_rows, cell_char_limit) =
-        crate::engine_common::live_sample_budget(sample_rows, table_columns.len(), 4);
-    let (_, cell_byte_limit) =
-        crate::engine_common::live_sample_budget(sample_rows, table_columns.len(), 1);
-    let projection = table_columns
-        .iter()
-        .map(|column| {
-            let name = format!("[{}]", column.col_name.replace(']', "]]"));
-            match column.native_type.as_str() {
-                "binary" | "varbinary" | "image" => format!(
-                    "SUBSTRING(CONVERT(varbinary(max), {name}), 1, {cell_byte_limit})"
-                ),
-                "char" | "varchar" | "nchar" | "nvarchar" => {
-                    format!("LEFT({name}, {cell_char_limit})")
-                }
-                "text" => format!(
-                    "LEFT(CONVERT(varchar(max), {name}), {cell_char_limit})"
-                ),
-                "ntext" | "xml" => format!(
-                    "LEFT(CONVERT(nvarchar(max), {name}), {cell_char_limit})"
-                ),
-                "user-defined" => format!(
-                    "LEFT(TRY_CONVERT(nvarchar(max), {name}), {cell_char_limit})"
-                ),
-                _ => name,
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let sql = format!(
-        "SELECT TOP ({bounded_rows}) {projection} FROM {qname} ORDER BY (SELECT NULL)"
-    );
+    let (bounded_rows, projection_limits) =
+        mssql_sample_projection_budget(sample_rows, table_columns)?;
+    let projection = mssql_sample_projection(table_columns, &projection_limits);
+    let sql =
+        format!("SELECT TOP ({bounded_rows}) {projection} FROM {qname} ORDER BY (SELECT NULL)");
     let started = Instant::now();
     let stream = match client.simple_query(sql.clone()).await {
         Ok(s) => s,
@@ -80,7 +305,7 @@ async fn sample_compression(
             return Ok(None);
         }
     };
-    let rows = match stream.into_first_result().await {
+    let mut rows = match stream.into_first_result().await {
         Ok(rs) => rs,
         Err(_) => {
             let redacted = crate::i18n::format(
@@ -109,22 +334,68 @@ async fn sample_compression(
         rows.len() as u64,
     );
 
-    // Encode rows using `dbwarp-blueprint-rowframe-v1`. Per cell, we use
+    let mut sample_method =
+        "TOP N bounded projection with DATALENGTH; native UTF-16LE for nvarchar".to_string();
+    let mut bias_reason = "natural_storage_order_no_native_random_sample".to_string();
+    if let Some((retry_rows, retry_limits)) = mssql_adaptive_projection_from_observed_lengths(
+        rows.as_slice(),
+        table_columns,
+        bounded_rows,
+    )? {
+        let retry_projection = mssql_sample_projection(table_columns, &retry_limits);
+        let retry_sql = format!(
+            "SELECT TOP ({retry_rows}) {retry_projection} FROM {qname} ORDER BY (SELECT NULL)"
+        );
+        let retry_started = Instant::now();
+        drop(rows);
+        rows = client
+            .simple_query(retry_sql)
+            .await
+            .with_context(|| format!("retrying bounded compression sample for {qname}"))?
+            .into_first_result()
+            .await
+            .with_context(|| format!("reading retried bounded compression sample for {qname}"))?;
+        audit.record_query(
+            "SELECT TOP N adaptive byte-bounded projection FROM <table> (observed DATALENGTH)",
+            elapsed_ms(retry_started),
+            rows.len() as u64,
+        );
+        sample_method.push_str("; adaptive byte-bounded retry from observed DATALENGTH");
+        bias_reason.push_str("+adaptive_observed_datalength_retry");
+    }
+    if mssql_sample_observed_lengths(&rows, table_columns).1 {
+        crate::engine_common::record_sample_prefix_bias(&mut sample_method, &mut bias_reason);
+    }
+    if rows.is_empty() {
+        return Ok(None);
+    }
+
+    // Encode rows using the transient compression-probe representation. Per cell, we use
     // `encode_mssql_cell` to choose the right TypeTag — the load-
     // bearing case is nvarchar / nchar / nText, which we re-encode as
-    // UTF-16LE so the compression measurement reflects the actual
-    // wire/storage byte distribution that drives MSSQL's higher zstd
-    // ratios on Unicode text columns.
+    // UTF-16LE so the measurement preserves the source type's byte width and
+    // repeated-byte distribution.
     let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
     let mut row_ranges: Vec<(usize, usize)> = Vec::with_capacity(rows.len());
     let mut column_bufs: Vec<Vec<u8>> = Vec::new();
     let mut column_payload_lengths: Vec<Vec<u64>> = Vec::new();
     let mut cardinality_accumulators: Vec<sample_encode::CardinalityAccumulator> = Vec::new();
+    let mut payload_profile_accumulators: Vec<dbwarp_blueprint_core::PayloadProfileAccumulator> =
+        Vec::new();
     for r in &rows {
         // Build owned payload bytes per cell so the Cell<'_> references
         // don't outlive the row's data borrow.
-        let cells_owned: Vec<(TypeTag, Vec<u8>)> = r
-            .cells()
+        let projected_cells = r.cells().collect::<Vec<_>>();
+        if projected_cells.len() != table_columns.len().saturating_mul(3) {
+            bail!(
+                "SQL Server compression sample returned {} fields for {} source columns",
+                projected_cells.len(),
+                table_columns.len()
+            );
+        }
+        let cells_owned: Vec<(TypeTag, Vec<u8>)> = projected_cells
+            .iter()
+            .step_by(3)
             .map(|(col, cd)| encode_mssql_cell(col.column_type(), cd))
             .collect();
         if column_bufs.is_empty() {
@@ -132,6 +403,10 @@ async fn sample_compression(
             column_payload_lengths = vec![Vec::new(); cells_owned.len()];
             cardinality_accumulators =
                 vec![sample_encode::CardinalityAccumulator::default(); cells_owned.len()];
+            payload_profile_accumulators = vec![
+                dbwarp_blueprint_core::PayloadProfileAccumulator::default();
+                cells_owned.len()
+            ];
         }
         let cells: Vec<Cell<'_>> = cells_owned
             .iter()
@@ -149,14 +424,27 @@ async fn sample_compression(
         {
             break;
         }
-        for (col_idx, (tag, payload)) in cells_owned.iter().enumerate() {
+        for (col_idx, (tag, _payload)) in cells_owned.iter().enumerate() {
             if *tag != TypeTag::Null {
-                column_payload_lengths[col_idx].push(payload.len() as u64);
+                let base = col_idx.saturating_mul(3);
+                if let Some(length) = projected_cells
+                    .get(base.saturating_add(2))
+                    .and_then(|(_, value)| mssql_observed_octet_length(value))
+                {
+                    column_payload_lengths[col_idx].push(length);
+                }
             }
         }
         for (col_idx, cell) in cells.iter().enumerate() {
             if let Some(accumulator) = cardinality_accumulators.get_mut(col_idx) {
                 accumulator.push(cell);
+            }
+            if cell.tag == TypeTag::BinaryRaw {
+                if let (Some(accumulator), Some(payload)) =
+                    (payload_profile_accumulators.get_mut(col_idx), cell.bytes)
+                {
+                    accumulator.observe_raw_binary(payload);
+                }
             }
             if let Some(col_buf) = column_bufs.get_mut(col_idx) {
                 sample_encode::encode_row(col_buf, std::slice::from_ref(cell))
@@ -181,9 +469,9 @@ async fn sample_compression(
         .map(|accumulator| {
             accumulator.finish(
                 t.row_count,
-                "TOP N bounded projection; UTF-16LE for nvarchar",
+                sample_method.as_str(),
                 true,
-                "natural_storage_order_no_native_random_sample+server_side_cell_cap",
+                bias_reason.as_str(),
             )
         })
         .collect();
@@ -191,19 +479,23 @@ async fn sample_compression(
         .iter()
         .map(sample_encode::CardinalityAccumulator::null_fraction)
         .collect();
+    let payload_profiles = payload_profile_accumulators
+        .iter()
+        .map(|accumulator| accumulator.style().to_string())
+        .collect();
 
     let encoded_sample_rows = row_ranges.len() as u64;
     let submitted_at = Instant::now();
     let ticket = compression_pool
         .submit(PreparedCompressionSample {
-            table_bytes: buf,
-            row_ranges,
             column_bytes: column_bufs,
             sample_rows: encoded_sample_rows,
-            sample_method: "TOP N bounded projection; UTF-16LE for nvarchar".to_string(),
+            sample_method,
             sampled_with_bias: true,
-            bias_reason:
-                "natural_storage_order_no_native_random_sample+server_side_cell_cap".to_string(),
+            bias_reason,
+            compression_chunk_bytes: Some(
+                dbwarp_blueprint_core::TRANSFER_PROBE_STREAMING_COMPRESSION_CHUNK_BYTES,
+            ),
         })
         .with_context(|| format!("submitting local compression work for {qname}"))?;
     audit.record_compression_job_submitted();
@@ -214,6 +506,7 @@ async fn sample_compression(
         column_lengths,
         null_fractions,
         cardinalities,
+        payload_profiles,
     }))
 }
 

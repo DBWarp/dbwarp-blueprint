@@ -12,8 +12,7 @@
 英語の原文が正本です。英語以外の表示カタログは機械支援で作成されており、
 キーとトークンの網羅性が検証されていても誤りを含む可能性があります。
 セキュリティ、契約、規制、最小権限に関する判断は英語の本文と照合してください。
-翻訳文書の公開に関する別個のゲートは [`TRANSLATIONS.md`](../TRANSLATIONS.md) を
-参照してください。
+翻訳資料の範囲と制限については、[`TRANSLATIONS.md`](../TRANSLATIONS.md) を参照してください。
 
 | 値 | 言語 | 生成されるデッキで使用する locale tag |
 |---|---|---|
@@ -71,9 +70,10 @@ Windows では通常 `LC_ALL`、`LC_MESSAGES`、`LANG` が設定されないた�
 - `table-001`、`col-1`、`schema-A` などの匿名化された識別子
 - 監査キー、TOML キー、バンドルキー、データベース型名、インデックスメソッド
 
-したがって、スクリプトで言語固有のオプションや値を扱う必要はありません。
-ほかの決定論的な入力がすべて同じなら、`--lang ja` で生成したBlueprintは
-`--lang en` で生成したBlueprintとバイト単位で同一です。
+したがって、スクリプトで言語固有のオプションや値を扱う必要はなく、言語の選択は
+Blueprint のフィールドを変更しません。言語をまたいでバイト単位で同一に比較するには、
+同じソース状態、オプション、固定した `--generated-at`、同じ producer、同じ保護された
+`--anonymization-key-file` も必要です。別々の既定実行は意図的に異なるキーを使います。
 
 ## 厳格なカタログ動作
 
@@ -88,28 +88,3 @@ Windows では通常 `LC_ALL`、`LC_MESSAGES`、`LANG` が設定されないた�
 entry の不足または過剰、placeholder の変更、operational token の変更、
 無効な JSON、不可視/双方向 format control がある場合、`DBP1010E` で fail closed します。
 翻訳が欠けている場合に英語を暗黙に代用することはありません。
-
-## メンテナーのワークフロー
-
-正規のソースは、英語の Rust help と `src/i18n.rs` にある message/UI definition です。
-顧客向けの文言を変更する場合:
-
-1. 同じコミットで `locales/` 以下のすべての locale catalog を更新する。
-2. すべての placeholder と正規の operational token を正確に保持する。
-3. focused exact-coverage test を実行する。
-4. failure または warning を変更した場合は、`tests/cli_errors.rs` に関連する operator-boundary case を追加または更新する。
-5. 完全な test suite を実行し、代表的な help/deck output を確認する。
-6. 新しい文言を顧客契約、規制当局への提出、または公開マーケティング向けの最終版として扱う前に、ネイティブによる技術レビューを受ける。
-
-重点的な検証:
-
-```bash
-mkdir -p tmp/test-runtime
-TMPDIR="$PWD/tmp/test-runtime" \
-  cargo test --locked every_embedded_locale_exactly_covers_the_live_cli
-TMPDIR="$PWD/tmp/test-runtime" cargo test --locked --test i18n
-```
-
-integration test では、option token が言語間で同一であること、ローカライズされた
-DBP code が安定していること、出力 TOML が言語に依存しないこと、生成された deck prose に
-選択した locale が設定されることも証明します。

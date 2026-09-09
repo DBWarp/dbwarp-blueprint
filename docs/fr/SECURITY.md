@@ -13,7 +13,7 @@ Cette page explique les limites de sécurité afin que votre équipe puisse déc
 Signalez les vulnérabilités présumées de manière privée au moyen de la
 [fonction de signalement privé des vulnérabilités de GitHub](https://github.com/DBWarp/dbwarp-blueprint/security/advisories/new).
 Ne publiez pas de détails sensibles dans un ticket public. Indiquez la version
-exacte, le système d’exploitation, les étapes de reproduction et le plus petit
+exacte de la release, le système d’exploitation, les étapes de reproduction et le plus petit
 élément de preuve sûr permettant d’évaluer le signalement.
 
 ## Réseau
@@ -24,7 +24,7 @@ exacte, le système d’exploitation, les étapes de reproduction et le plus pet
 | `--batch-manifest` | Une session du pilote pour chaque source de base de données du manifeste, traitée séquentiellement. Les sources Parquet et Avro locales n'utilisent pas le réseau. Les qualifications DNS et d'authentification intégrée ci-dessus restent applicables. |
 | `--from-toml`, `--from-parquet`, `--from-avro`, `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Aucune connexion réseau initiée par l'application. Les entrées situées sur des systèmes de fichiers réseau restent du ressort du système d'exploitation et du stockage. |
 
-L'outil n'appelle aucun service DBWarp ni aucune API cloud. Les pilotes de base de données et le système d'exploitation hôte peuvent produire le trafic de prise en charge des protocoles décrit ci-dessus.
+L'outil n'appelle aucun service DBWarp ni aucune API cloud. Les pilotes de base de données et le système d'exploitation hôte peuvent produire le trafic de prise en charge des protocoles décrit ci-dessus et consulter les magasins de confiance, la configuration DNS, les bibliothèques dynamiques, ainsi que la configuration ou les caches d'identité intégrée du système.
 
 `--max-wall-secs` établit deux protections indépendantes. PostgreSQL utilise un
 `statement_timeout` local à la session, et MySQL un `max_execution_time` local à
@@ -38,13 +38,13 @@ serveur. Vérifiez que le travail du serveur est arrêté avant de réessayer.
 
 ## Fichiers lus
 
-À l'exécution, l'outil lit uniquement les entrées sélectionnées sur la ligne de commande ou référencées par une entrée batch ou bundle :
+À l'exécution, l'application lit directement uniquement les entrées sélectionnées sur la ligne de commande ou référencées par une entrée batch ou bundle :
 
 | Fichier | Quand |
 |---|---|
 | `--user-file` | source du nom d'utilisateur |
 | `--password-file` | source du mot de passe |
-| `--anonymization-key-file` | clé HMAC facultative conservée par le client afin de préserver les libellés d’objet anonymes entre les exécutions approuvées ; sous Unix, le mode ne doit pas autoriser la lecture par le groupe ou les autres utilisateurs |
+| `--anonymization-key-file` | clé HMAC facultative conservée par le client et utilisée par le binaire ou le normaliseur de repli SQL afin de préserver les libellés d'objet anonymes entre les exécutions approuvées ; sous Unix, le mode ne doit pas autoriser la lecture par le groupe ou les autres utilisateurs |
 | `--azure-token-file` | source du jeton SQL Server Entra ID |
 | `--tls-ca` | bundle d'autorités de certification approuvées |
 | `--tls-cert` | certificat TLS client |
@@ -54,9 +54,9 @@ serveur. Vérifiez que le travail du serveur est arrêté avant de réessayer.
 | `--from-avro` | métadonnées et enregistrements du conteneur d'objets Avro ; le conteneur doit être parcouru pour compter les enregistrements |
 | `--batch-manifest` | manifeste batch et chaque fichier structuré local, fichier d'informations d'identification, fichier de jeton et fichier TLS qu'il référence |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | fichier TOML du bundle et fichiers Blueprint relatifs nécessaires à l'opération sélectionnée |
-| `/dev/tty` | invite interactive de mot de passe sur les systèmes de type Unix |
+| terminal ou console de contrôle | invite interactive de mot de passe (`/dev/tty` sur les systèmes de type Unix) |
 
-Il ne lit pas `~/.pgpass`, `~/.my.cnf`, les fichiers d'informations d'identification cloud, les clés SSH, l'historique du shell ou les variables d'environnement de mot de passe par défaut.
+L'application ne possède aucun chemin de repli explicite qui lise `~/.pgpass`, `~/.my.cnf`, les fichiers d'informations d'identification cloud, les clés SSH, l'historique du shell ou les variables d'environnement de mot de passe de base de données par défaut. Les bibliothèques de base de données, TLS, DNS et d'identité de la plateforme peuvent toujours consulter leur propre configuration système et leurs caches d'informations d'identification ; utilisez une trace du système d'exploitation lorsque la politique exige un inventaire complet du processus et de ses bibliothèques.
 
 Pour PostgreSQL et MySQL, un bundle PEM fourni avec `--tls-ca` remplace les
 certificats racines Mozilla intégrés. SQL Server utilise le magasin de confiance
@@ -97,6 +97,10 @@ Les informations d'identification sont encapsulées dans un type `Secret` qui, v
 
 Les informations d'identification ne sont transmises au pilote de base de données que pour établir la connexion. Elles ne sont écrites ni dans le fichier de sortie ni dans le journal d'audit. Le journal d'audit enregistre la source des informations d'identification, par exemple `file:/etc/dbwarp/db.pass`, mais pas leur valeur.
 
+## Copies d'informations d'identification détenues par les pilotes
+
+La mise à zéro couvre le tampon `Secret` détenu par DBWarp Blueprint ; elle ne peut garantir l'effacement des copies créées par un pilote de base de données, une bibliothèque TLS, un fournisseur d'authentification du système d'exploitation ou l'allocateur. L'API actuelle du pilote MySQL exige un `String` détenu ; `src/engine_mysql.rs` copie donc explicitement le mot de passe de `Secret` vers `OptsBuilder`. Cette copie n'est pas mise à zéro et reste active jusqu'à la destruction du builder/des options. PostgreSQL, SQL Server et les bibliothèques d'authentification de la plateforme peuvent aussi créer des copies internes hors du wrapper. Limitez l'inspection des processus et le swap selon la sensibilité des informations d'identification utilisées sur l'hôte.
+
 ## Modèles d'informations d'identification refusés
 
 Les mots de passe intégrés à l'URI de connexion sont refusés. Par exemple, ceci n'est pas accepté :
@@ -112,20 +116,30 @@ Utilisez plutôt `--password-file`, `--password-env` ou l'invite interactive. Ce
 Le fichier Blueprint est conçu pour être lisible et vérifiable par un humain :
 
 - les identifiants réels sont remplacés par des noms anonymes associés à une clé tels que `table-001` et `col-1` ;
-- les valeurs numériques sont arrondies selon des intervalles documentés ;
+- les valeurs numériques utilisent la précision exacte ou arrondie documentée pour chaque champ ; les modes de longueur exacte exigent un consentement explicite ;
 - les commentaires sont fixes et ne servent pas de canal de données ;
 - les valeurs de ligne ne sont jamais émises ;
 - lorsqu'ils sont activés, les échantillons de compression sont compressés localement puis supprimés.
 
-Le Tier 2 actif applique un plafond strict de 16 MiB de charge utile projetée
-par table avant que le pilote ne reçoive les données de lignes. Il réduit le
-nombre de lignes demandé pour les tables extrêmement larges et projette les
-cellules de largeur variable au moyen d’une troncature native au moteur côté
-serveur. Les sondes de style ont un plafond distinct dans leur projection SQL.
-L’encodeur local de trames de lignes impose indépendamment le même plafond par
-table. Une petite valeur de `--sample-rows` ne peut donc pas transférer une
-charge utile LOB non bornée ; les valeurs très volumineuses ne contribuent aux
-estimations de compression et de longueur que par leurs préfixes bornés.
+Le Tier 2 actif prévoit au maximum 16 MiB de charge utile projetée de valeurs
+échantillonnées par table. Il réduit le nombre de lignes demandé pour les
+tables extrêmement larges et projette les cellules de largeur variable au
+moyen d’une troncature native au moteur côté serveur, y compris lors des
+nouvelles tentatives adaptatives pour MySQL et SQL Server. Les sondes de style
+ont un plafond distinct dans leur projection SQL. L’encodeur local de sonde
+impose indépendamment son plafond par table.
+
+Il ne s’agit pas d’un plafond de 16 MiB sur le trafic réseau ou la mémoire du
+processus : les trames de protocole, les métadonnées de longueur d’origine
+renvoyées séparément, la représentation hexadécimale des données binaires de
+PostgreSQL, les nouvelles tentatives et les tampons des pilotes ajoutent un
+surcoût. Les valeurs très volumineuses peuvent ne contribuer aux mesures de
+compression et de synthèse des valeurs que par des préfixes bornés. Le
+collecteur obtient séparément sur le serveur les longueurs d’origine des
+valeurs échantillonnées et applique la politique de fidélité des longueurs
+sélectionnée à ces longueurs, pas seulement à celles des préfixes renvoyés.
+La provenance de l’échantillonnage consigne les limites applicables ; une
+sortie bornée ne prouve pas que les valeurs complètes ont été mesurées.
 
 L’ordre des tables, schémas, index et objets hors tables utilise HMAC-SHA256
 avec séparation de domaines. Par défaut, l’outil obtient une nouvelle clé
@@ -136,6 +150,10 @@ N’utilisez `--anonymization-key-file` que si les mêmes libellés anonymes doi
 contenir exactement 32 octets bruts ou 64 caractères hexadécimaux et être
 protégé comme une information d’identification. L’audit indique seulement si
 une clé éphémère ou conservée par le client a été utilisée, jamais sa valeur.
+
+Le normaliseur `blueprint_format.py` du chemin de repli SQL, qui utilise uniquement la bibliothèque standard, applique le même contrat d'ordre fondé sur une clé. Il obtient par défaut une nouvelle clé aléatoire du système d'exploitation, sauf si `--anonymization-key-file` est fourni, et ajoute après l'en-tête canonique un commentaire fixe indiquant le producteur et la source de la clé afin que sa sortie ne puisse pas être confondue avec celle du collecteur Rust.
+
+Avant normalisation, le JSON intermédiaire du chemin de repli SQL contient les vrais noms de schémas, tables, colonnes et index. Avec MySQL, `COLUMN_TYPE` peut aussi contenir les membres enum/set déclarés. Les scripts SQL n'ont aucun sélecteur de sous-ensemble de schémas et ne produisent aucun audit applicatif. Conservez le JSON intermédiaire dans l'environnement source comme matériel de schéma sensible, normalisez-le localement et transférez uniquement le TOML vérifié. Utilisez le collecteur Rust lorsque seuls certains schémas sont approuvés ou lorsque des preuves complètes d'audit, topologie, artefacts ou échantillonnage sont nécessaires.
 
 Cela réduit le risque de divulgation, mais ne rend pas chaque sortie sûre pour chaque destinataire. La forme anonyme du schéma, les graphes de dépendances, les versions des moteurs, les champs exacts facultatifs et les distributions de taille inhabituelles peuvent caractériser une charge de travail. Vérifiez les sorties Blueprint et bundle selon la politique de classification des données de votre organisation avant de les partager. N'envoyez pas les audits ou `errors.txt` comme s'il s'agissait de Blueprints anonymisés.
 

@@ -89,12 +89,12 @@ Der Code ist stabil und sprachneutral. Seine Zusammenfassung, Ursache und Korrek
 | `DBP1301E` | Bei `--from-toml` fehlt `--deck`. |
 | `DBP1302E` | Nicht unterstützte Schemaversion des Blueprint-TOML. |
 | `DBP1401E` | PostgreSQL-Erfassungsgrenze ist fehlgeschlagen. |
-| `DBP1402E` | MySQL- oder MariaDB-Erfassungsgrenze ist fehlgeschlagen. |
+| `DBP1402E` | MySQL-Erfassungsgrenze ist fehlgeschlagen. |
 | `DBP1403E` | SQL-Server-Erfassungsgrenze ist fehlgeschlagen. |
 | `DBP1404W` | PostgreSQL-TLS-Modus `prefer` ist auf Loopback auf Klartext zurückgefallen. |
 | `DBP1405W` | Optionale Datenbank-RTT-Prüfung war nicht verfügbar. |
 | `DBP1406W` | Zeitbudget der Tier-2-Stichprobe war erschöpft. |
-| `DBP1407W` | Eine Komprimierungsstichprobe war nicht verfügbar. |
+| `DBP1407W` | Eine Kompressionsstichprobe war unvollständig oder nicht verfügbar; verwendbare Zeilen aus einer Teilstichprobe wurden möglicherweise beibehalten. |
 | `DBP1408W` | Eine Textspalten-Stilstichprobe war nicht verfügbar. |
 | `DBP1409W` | Die asynchrone PostgreSQL-Verbindungsaufgabe meldete einen Fehler. |
 | `DBP1410W` | Ein optionaler Artefaktkatalog war nicht verfügbar; die Vollständigkeit wird daher ausdrücklich reduziert. |

@@ -282,6 +282,16 @@ mod tests {
     }
 
     #[test]
+    fn dense_float32_vector_metadata_is_neutral_and_exact() {
+        assert_eq!(normalized_pg_type("vector(768)"), "vector");
+        assert_eq!(type_tag_for_pg_str("vector(768)"), TypeTag::VectorBinary);
+        assert_eq!(declared_pg_max_bytes("vector(768)"), 3_076);
+        assert_eq!(declared_pg_max_bytes("vector"), 0);
+        assert_eq!(declared_pg_max_bytes("vector(16001)"), 0);
+        assert_eq!(declared_pg_max_bytes("customer_vector(768)"), 0);
+    }
+
+    #[test]
     fn parse_uri_rejects_non_postgres_scheme() {
         assert!(PgConnectParams::parse("mysql://x@db/d").is_err());
     }
@@ -338,6 +348,46 @@ mod tests {
     fn style_sample_prefix_never_splits_utf8() {
         assert_eq!(utf8_prefix_bytes("abécd", 3), b"ab");
         assert_eq!(utf8_prefix_bytes("abécd", 4), "abé".as_bytes());
+    }
+
+    #[test]
+    fn postgres_binary_sample_hex_is_decoded_to_source_bytes() {
+        assert_eq!(
+            decode_pg_hex_sample("00ff89504e470d0a1a0a").unwrap(),
+            b"\x00\xff\x89PNG\r\n\x1a\n"
+        );
+        assert!(decode_pg_hex_sample("abc").is_err());
+        assert!(decode_pg_hex_sample("zz").is_err());
+    }
+
+    #[test]
+    fn normalized_postgres_temporal_types_preserve_timezone_semantics() {
+        assert_eq!(normalized_pg_type("timestamp without time zone"), "timestamp");
+        assert_eq!(normalized_pg_type("timestamp with time zone"), "timestamptz");
+        assert_eq!(normalized_pg_type("timestamptz"), "timestamptz");
+        assert_eq!(normalized_pg_type("time without time zone"), "time");
+        // TIME WITH TIME ZONE remains an explicitly unsupported generator
+        // distinction; do not conflate that limitation with TIMESTAMPTZ.
+        assert_eq!(normalized_pg_type("time with time zone"), "time");
+        assert_eq!(normalized_pg_type("timetz"), "time");
+        assert_eq!(
+            normalized_pg_type("timestamp with time zone[]"),
+            "array<timestamptz>"
+        );
+    }
+
+    #[test]
+    fn adaptive_compression_sample_rate_avoids_moderate_table_underfill() {
+        let percent = pg_table_sample_percent(375_000.0, 1_000);
+        assert!((percent - 1.066_666_666).abs() < 0.000_001);
+    }
+
+    #[test]
+    fn adaptive_compression_sample_rate_is_bounded() {
+        assert_eq!(pg_table_sample_percent(30_000_000.0, 1_000), 0.1);
+        assert_eq!(pg_table_sample_percent(500.0, 1_000), 100.0);
+        assert_eq!(pg_table_sample_percent(f64::NAN, 1_000), 100.0);
+        assert_eq!(pg_table_sample_percent(10_000.0, 0), 100.0);
     }
 
     #[test]

@@ -55,6 +55,12 @@ They are provided for convenience. Pin an exact release tag and verify its
 SHA-256 before use; do not use a mutable download URL for a reproducible run. If
 your policy requires source review, build locally from the same tag.
 
+Platform binary archives are operator bundles, not source trees, and cannot be
+rebuilt in place. Their copy of this guide and `verify.sh` describes the
+matching-source verification path. Use a checkout of the exact release tag or
+the release's vendored source archive when you need `build.sh`, Cargo sources,
+or a local comparison build.
+
 Release files:
 
 | Platform | File |

@@ -4,7 +4,9 @@
 
 **Langues :** [English](../STRUCTURED_FILES.md) | [Deutsch](../de/STRUCTURED_FILES.md) | **Français** | [Español](../es/STRUCTURED_FILES.md) | [Polski](../pl/STRUCTURED_FILES.md) | [日本語](../ja/STRUCTURED_FILES.md) | [简体中文](../zh/STRUCTURED_FILES.md)
 
-`dbwarp-blueprint` peut créer un Blueprint TOML assaini à partir d'entrées Parquet et Avro locales lorsque la source est déjà un fichier plutôt qu'une base de données active.
+`dbwarp-blueprint` peut créer un Blueprint TOML borné et anonymisé à partir
+d'entrées Parquet et Avro locales lorsque la source est déjà un fichier plutôt
+qu'une base de données active.
 
 Il s'agit d'un mode hors ligne :
 
@@ -13,7 +15,10 @@ Il s'agit d'un mode hors ligne :
 - aucune télémétrie ;
 - aucune valeur de ligne écrite dans la sortie ;
 - les identifiants de table et de colonne sont uniquement `table-NNN` et `col-N` ;
-- l'audit enregistre uniquement les chemins des fichiers locaux d'entrée et de sortie ainsi que le hachage de la sortie.
+- l'audit enregistre les chemins locaux d'entrée et de sortie, le hachage de la
+  sortie et les preuves opérationnelles normales comme le mode, le temps, le
+  travail d'échantillonnage et les avertissements ; aucun point de terminaison
+  de base de données n'est enregistré dans ce mode.
 
 ## Parquet
 
@@ -81,7 +86,7 @@ schéma imbriqué.
 
 Les noms de fichiers source, chemins Parquet, noms de champs Avro et libellés
 `logical_table` d'un lot ne sont pas écrits comme identifiants Blueprint. Un jeu
-multifichier émet des identifiants `table-NNN` déterministes, agrège les octets
+multifichier émet des identifiants `table-NNN` protégés par une clé secrète, agrège les octets
 d'objet, partitions, groupes de lignes, codecs, largeurs, taux de valeurs nulles
 et provenances de compression compatibles, puis rejette les fichiers dont les
 contrats logiques de colonnes diffèrent.
@@ -104,12 +109,17 @@ Les mêmes options fonctionnent avec `--from-avro`.
 Lorsque cette fonction est activée, `dbwarp-blueprint` :
 
 - décode jusqu'à `--sample-rows` enregistrements du fichier ;
-- encode les valeurs échantillonnées au moyen de la même trame de lignes `dbwarp-blueprint-rowframe-v1` que la capture Blueprint depuis une base de données active ;
+- encode les valeurs échantillonnées avec la même représentation transitoire
+  `blueprint-compression-probe-v2` que la capture Blueprint depuis une base de
+  données active ;
 - émet des synthèses de compression zstd-3 au niveau de la table et de chaque colonne ;
-- enregistre `sample_encoding = "dbwarp-blueprint-rowframe-v1"` dans le TOML généré ;
+- enregistre `sample_encoding = "blueprint-compression-probe-v2"` dans le TOML généré ;
 - conserve les octets échantillonnés uniquement en mémoire et n'écrit jamais les valeurs de lignes sur disque.
 
-`--measure-compression` exige `--yes`, car cette fonction lit les valeurs client décodées, même si elle ne conserve que des ratios agrégés.
+`--measure-compression` exige `--yes`, car cette fonction lit les valeurs client
+décodées. Elle conserve des mesures agrégées de compression, de densité NULL,
+de cardinalité/fréquence, de longueur et de style, jamais les valeurs
+échantillonnées.
 
 L'échantillonneur actuel utilise un échantillon déterministe constitué des N premiers éléments. Cette méthode est reproductible et peu coûteuse, mais peut être biaisée si un fichier est trié ou regroupé. Pour les estimations à enjeux élevés, privilégiez un fichier représentatif ou générez plusieurs fichiers Blueprint à partir de fragments différents. Une version future pourra ajouter un échantillonnage stratifié par groupe de lignes ou par bloc.
 
@@ -118,7 +128,8 @@ L'échantillonneur actuel utilise un échantillon déterministe constitué des N
 Le mode Blueprint à partir de fichiers structurés est utile pour :
 
 - dimensionner une importation Parquet/Avro avant une exécution DBWarp ;
-- générer une fixture synthétique indépendante du client à partir des métadonnées du fichier ;
+- générer une fixture synthétique représentative sans copier les noms de la
+  source ni les valeurs de lignes ;
 - planifier des flux Parquet/Avro -> DBWarp columnar -> base de données cible.
 
 Il ne remplace pas la capture Blueprint depuis une base de données active lorsque la véritable source est une base de données prise en charge, c’est-à-dire PostgreSQL, MySQL ou SQL Server. Le catalogue d'une base de données contient des informations sur les index, les clés, les clés étrangères, la fraîcheur des statistiques et l'organisation propre au moteur qui ne figurent pas dans les métadonnées génériques d'un fichier.

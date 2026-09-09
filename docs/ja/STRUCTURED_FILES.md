@@ -4,7 +4,8 @@
 
 **言語:** [English](../STRUCTURED_FILES.md) | [Deutsch](../de/STRUCTURED_FILES.md) | [Français](../fr/STRUCTURED_FILES.md) | [Español](../es/STRUCTURED_FILES.md) | [Polski](../pl/STRUCTURED_FILES.md) | **日本語** | [简体中文](../zh/STRUCTURED_FILES.md)
 
-`dbwarp-blueprint` は、ソースがライブデータベースではなく既存のファイルである場合、ローカルの Parquet および Avro 入力からサニタイズ済みのBlueprint TOML を構築できます。
+`dbwarp-blueprint` は、ソースがライブデータベースではなく既存のファイルである場合、
+ローカルの Parquet および Avro 入力から上限付きの匿名化されたBlueprint TOML を構築できます。
 
 これはオフラインモードです:
 
@@ -13,7 +14,8 @@
 - テレメトリなし。
 - 出力に行の値を書き込まない。
 - table と column の identifier は `table-NNN` と `col-N` だけを出力する。
-- 監査にはローカルの入力/出力ファイルパスと出力ハッシュだけを記録する。
+- 監査にはローカルの入力/出力パス、出力ハッシュ、モード、時間、サンプリング作業、
+  警告などの通常の運用証跡を記録する。このモードではデータベースエンドポイントを記録しない。
 
 ## Parquet
 
@@ -58,7 +60,7 @@ Avro object container は、Parquet 形式の footer row count を公開しま�
 
 ネストされた Parquet leaf、および Avro の array、map、record、multi-type union は、1 つの正確な SQL scalar として表現できません。Blueprint は正規化された `json` 型と、`"repeated-leaf"`、`"nested-json"`、`"multi-type-union"` などの `source_semantics` を記録します。下流の generator は、これらを代表的な JSON pressure として識別し、ネストされた schema の正確な round trip を主張してはなりません。
 
-ソースファイルの stem、Parquet path、Avro field name、batch の `logical_table` label は Blueprint identifier として書き込まれません。複数ファイルの dataset は決定論的な `table-NNN` identifier を出力し、object bytes、partition、row group、codec、幅、NULL 比率、互換な compression provenance を集約し、構造化された論理 column contract が異なるファイルを拒否します。
+ソースファイルの stem、Parquet path、Avro field name、batch の `logical_table` label は Blueprint identifier として書き込まれません。複数ファイルの dataset は秘密キーで保護された `table-NNN` identifier を出力し、object bytes、partition、row group、codec、幅、NULL 比率、互換な compression provenance を集約し、構造化された論理 column contract が異なるファイルを拒否します。
 
 ## デコード済み圧縮サンプリング
 
@@ -78,12 +80,16 @@ dbwarp-blueprint \
 有効にすると、`dbwarp-blueprint` は次を行います:
 
 - ファイルから最大 `--sample-rows` record をデコードする。
-- ライブデータベースのBlueprint取得と同じ `dbwarp-blueprint-rowframe-v1` rowframe を使用して、サンプリングした値をエンコードする。
+- ライブデータベースの Blueprint 取得と同じ一時的な
+  `blueprint-compression-probe-v2` 表現を使用して、サンプリングした値を
+  エンコードする。
 - テーブル単位および列単位の zstd-3 圧縮サマリーを出力する。
-- 生成した TOML に `sample_encoding = "dbwarp-blueprint-rowframe-v1"` を記録する。
+- 生成した TOML に `sample_encoding = "blueprint-compression-probe-v2"` を記録する。
 - サンプリングしたバイトはメモリ内だけに保持し、行の値をディスクへ決して書き込まない。
 
-`--measure-compression` は、集約比率だけを永続化する場合でも、デコードされた顧客値を読み取るため、`--yes` が必要です。
+`--measure-compression` はデコードされた顧客値を読み取るため、`--yes` が必要です。
+永続化するのは集約された圧縮、NULL 密度、カーディナリティ／頻度、長さ、スタイルの
+測定値であり、サンプリング値ではありません。
 
 現在の sampler は、決定論的な first-N sample を使用します。これは再現可能で低コストですが、ファイルがソートまたはクラスタ化されている場合、バイアスが生じる可能性があります。重要度の高い見積もりでは、代表的なファイルを使用するか、異なる shard から複数のBlueprintファイルを生成してください。将来のバージョンでは、row-group/block-stratified sampling が追加される可能性があります。
 
@@ -92,7 +98,7 @@ dbwarp-blueprint \
 構造化ファイルのBlueprintモードは、次の用途に有用です:
 
 - DBWarp 実行前に Parquet/Avro import のサイズを見積もる。
-- ファイルメタデータから顧客に依存しない合成フィクスチャを生成する。
+- ソース名や行値をコピーせずに、代表的な合成フィクスチャを生成する。
 - Parquet/Avro -> DBWarp columnar -> target database フローを計画する。
 
 実際のソースがサポート対象データベース（PostgreSQL、MySQL、または SQL Server）である場合、これはライブデータベースの Blueprint 取得を置き換えるものではありません。データベースカタログには、汎用ファイルメタデータには存在しないインデックス、キー、FK、statistics-freshness、engine-layout の詳細があります。

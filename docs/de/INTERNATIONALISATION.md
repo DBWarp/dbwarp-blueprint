@@ -8,7 +8,12 @@
 
 ## Unterstützte Sprachen
 
-Der englische Quelltext ist maßgeblich. Die nicht englischen Darstellungskataloge sind maschinell unterstützt und können trotz validierter Schlüssel- und Tokenabdeckung Fehler enthalten. Gleichen Sie sicherheitsbezogene, vertragliche, regulatorische und Least-Privilege-Entscheidungen mit dem englischen Text ab. Siehe [`TRANSLATIONS.md`](../TRANSLATIONS.md) für die separate Freigabe übersetzter Dokumente.
+Der englische Quelltext ist maßgeblich. Die nicht englischen Darstellungskataloge sind
+maschinell unterstützt und können Fehler enthalten, auch wenn ihre Abdeckung von
+Schlüsseln und Token validiert ist. Gleichen Sie Entscheidungen zu Sicherheit,
+Verträgen, regulatorischen Anforderungen und minimalen Berechtigungen mit dem
+englischen Text ab. Umfang und Einschränkungen übersetzter Inhalte sind in
+[`TRANSLATIONS.md`](../TRANSLATIONS.md) beschrieben.
 
 | Wert | Sprache | In erzeugten Präsentationen verwendetes Gebietsschema-Tag |
 |---|---|---|
@@ -63,7 +68,12 @@ Folgendes bleibt in jeder Anzeigesprache ein kanonisches englisches Token:
 - anonymisierte Bezeichner wie `table-001`, `col-1` und `schema-A`;
 - Audit-Schlüssel, TOML-Schlüssel, Bundle-Schlüssel, Datenbanktypnamen und Indexmethoden.
 
-Folglich benötigen Skripte keine sprachspezifische Behandlung von Optionen oder Werten, und ein unter `--lang ja` erzeugter Blueprint ist byteidentisch mit einem unter `--lang en` erzeugten, wenn alle anderen deterministischen Eingaben gleich sind.
+Folglich benötigen Skripte keine sprachspezifische Behandlung von Optionen oder
+Werten, und die Sprachwahl ändert keine Blueprint-Felder. Ein byteidentischer
+sprachübergreifender Vergleich erfordert zusätzlich denselben Quellzustand,
+dieselben Optionen, ein festgeschriebenes `--generated-at`, denselben Producer
+und dieselbe geschützte `--anonymization-key-file`; getrennte Standardläufe
+verwenden absichtlich unterschiedliche Schlüssel.
 
 ## Strenges Katalogverhalten
 
@@ -75,25 +85,3 @@ Alle Kataloge sind in die Binärdatei einkompiliert. Beim Start prüft das Progr
 - jeden erforderlichen Platzhalter und jedes geschützte betriebliche Token.
 
 Bei fehlenden oder zusätzlichen Einträgen, geänderten Platzhaltern, veränderten betrieblichen Token, ungültigem JSON oder unsichtbaren/bidirektionalen Formatsteuerzeichen bricht das Programm mit `DBP1010E` sicher ab. Es ersetzt eine fehlende Übersetzung nicht stillschweigend durch Englisch.
-
-## Arbeitsablauf für Maintainer
-
-Die kanonische Quelle besteht aus der englischen Rust-Hilfe und den Meldungs-/UI-Definitionen in [`src/i18n.rs`](https://github.com/DBWarp/dbwarp-blueprint/blob/main/src/i18n.rs). Wenn sich eine kundensichtbare Formulierung ändert:
-
-1. aktualisieren Sie im selben Commit jeden Gebietsschemakatalog unter `locales/`;
-2. bewahren Sie alle Platzhalter und kanonischen betrieblichen Token exakt auf;
-3. führen Sie den fokussierten Test auf exakte Abdeckung aus;
-4. fügen Sie den zugehörigen Fall an der Bedienergrenze in `tests/cli_errors.rs` hinzu oder aktualisieren Sie ihn, wenn sich ein Fehler oder eine Warnung ändert;
-5. führen Sie die vollständige Testsuite aus und prüfen Sie repräsentative Hilfe-/Präsentationsausgaben;
-6. holen Sie eine muttersprachliche technische Prüfung ein, bevor Sie neue Formulierungen als endgültig für einen Kundenvertrag, eine regulatorische Einreichung oder öffentliches Marketing behandeln.
-
-Fokussierte Validierung:
-
-```bash
-mkdir -p tmp/test-runtime
-TMPDIR="$PWD/tmp/test-runtime" \
-  cargo test --locked every_embedded_locale_exactly_covers_the_live_cli
-TMPDIR="$PWD/tmp/test-runtime" cargo test --locked --test i18n
-```
-
-Die Integrationstests weisen außerdem nach, dass Optionstoken in allen Sprachen identisch sind, lokalisierte DBP-Codes stabil bleiben, ausgegebenes TOML sprachunabhängig ist und die erzeugte Präsentationsprosa das ausgewählte Gebietsschema trägt.

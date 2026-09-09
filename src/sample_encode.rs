@@ -1,33 +1,27 @@
-//! Row-frame encoder for Tier-2 compression sampling.
+//! Transient type-aware encoder for Tier-2 compression measurement.
 //!
 //! ## Design goals
 //!
-//! 1. **Faithful byte distribution.** The byte stream we hand to zstd must
-//!    have the same character distribution and redundancy patterns as the
-//!    bytes a customer's production traffic actually moves. That means:
-//!    text in its native charset (UTF-8 for PG, UTF-16LE for MSSQL nvarchar,
-//!    column-charset bytes for MySQL); numbers and timestamps as their
-//!    DB textual decimal form; binary as raw bytes.
+//! 1. **Representative byte distribution.** The byte stream handed to zstd
+//!    retains the sampled values' character distribution and redundancy:
+//!    text in its sampled charset representation, numbers and timestamps as
+//!    database text, and binary as raw bytes.
 //! 2. **Type-tagged but compact.** A small per-column tag (1 byte) plus a
-//!    u32 length prefix carries enough metadata for the dbwarp estimator
-//!    to do per-type variance analysis later, without bloating the buffer
-//!    so much that the framing overhead distorts the measured ratio.
+//!    variable-length prefix keeps unlike value families distinguishable without
+//!    materially distorting the measured ratio.
 //! 3. **Engine-agnostic encoder, engine-specific value mapping.** This
-//!    module owns the framing and the type-tag enum. Each engine module
+//!    module owns the transient representation and type-tag enum. Each engine
 //!    decides how to map its driver-native values onto a `Cell`.
 //! 4. **Deterministic.** Two runs on the same row data produce byte-
 //!    identical output; the only non-deterministic parts of a Tier-2
 //!    sample are the rows TABLESAMPLE picked. Encoding order within a
 //!    row is preserved as the column ordinal order from the engine.
 //!
-//! ## Encoding (`dbwarp-blueprint-rowframe-v1`)
+//! ## Probe representation
 //!
-//! Minimal framing — every byte that is not row content adds noise to
-//! the compression ratio without contributing to the estimate. The
-//! design favors a byte distribution close to `COPY ... TO STDOUT`'s
-//! tab-separated form (the closest readily-comparable PG production
-//! wire format) so that ratio numbers we report track real compression
-//! of customer traffic within ~20%.
+//! Minimal bookkeeping keeps the measurement close to the sampled value
+//! distribution. It is deliberately a public measurement representation, not
+//! a database-protocol capture, a DBWarp frame, or a reusable data stream.
 //!
 //! ```text
 //! Buffer = (Column)*       — flat stream; rows are not delimited
@@ -44,14 +38,12 @@
 //! Per-column overhead for typical short values (decimal integers,
 //! cat-NN tags, ISO timestamps): 2 bytes (1 type tag + 1-byte varint).
 //! Per-column overhead for medium text bodies (up to ~16 KB): 3 bytes
-//! (1 tag + 2-byte varint). This is comparable to COPY TEXT's 1 tab
-//! per column, plus or minus a byte; the resulting compressed ratios
-//! track COPY TEXT within ~20% on representative tables.
+//! (1 tag + 2-byte varint).
 //!
 //! No row marker, no column-count byte, no row terminator: the buffer
 //! is opaque to the dbwarp estimator (which only consumes the ratio
-//! number, not the bytes), so framing meant for hex-dump debugging
-//! adds noise without buying anything in production.
+//! number, not the bytes), so additional framing
+//! adds noise without improving the measurement.
 //!
 //! ### Type tags
 //!
@@ -59,7 +51,7 @@
 //! |------|------|----------|
 //! | 0x00 | Null            | SQL NULL (no payload follows) |
 //! | 0x01 | TextUtf8        | UTF-8 text (PG text/varchar, MySQL utf8mb*, MSSQL varchar where collation maps to UTF-8) |
-//! | 0x02 | TextUtf16Le     | UTF-16LE bytes (MSSQL nvarchar/nchar/ntext — preserves the byte-doubling that drives the higher zstd ratio for nvarchar in production) |
+//! | 0x02 | TextUtf16Le     | UTF-16LE bytes (MSSQL nvarchar/nchar/ntext, preserving their byte width) |
 //! | 0x03 | TextOther       | Bytes in some other charset (MySQL latin1, MSSQL non-Unicode collations) — opaque to the encoder |
 //! | 0x04 | NumberText      | Decimal-textual representation (int, bigint, numeric, real, double) |
 //! | 0x05 | BoolText        | Boolean as text ("t" / "f" / "true" / "false") |
@@ -69,21 +61,21 @@
 //! | 0x09 | UuidText        | Canonical 36-char UUID text |
 //! | 0x0F | JsonText        | JSON UTF-8 text (separate from TextUtf8 so estimator can analyze JSON columns differently — they tend to compress better than free-form text) |
 //! | 0x10 | BinaryRaw       | bytea / varbinary / image / blob — raw bytes |
+//! | 0x11 | VectorBinary    | Dense float32 vector in PostgreSQL pgvector send layout |
 //! | 0xFE | UnknownText     | Fallback: DB-provided textual representation; used for any type the engine module didn't classify |
 //!
 //! 0x0A (the row terminator) is intentionally NOT used as a type tag so
 //! a hex dump of the buffer is easy to read.
 //!
-//! ## Estimator contract
+//! ## Consumer contract
 //!
-//! The Blueprint file's `[compression]` block carries
-//! `sample_encoding = "dbwarp-blueprint-rowframe-v1"`. The dbwarp estimator
-//! must validate this string before consuming the ratio — a mismatch
-//! means the producer used a different encoding and the ratio is not
-//! comparable. Future versions of this module bump the suffix
-//! (`-v2`, etc.) on any incompatible change.
+//! Blueprint per-column `[compression]` blocks carry
+//! `sample_encoding = "blueprint-compression-probe-v2"`. Live-database table
+//! blocks use the separate neutral columnar transfer-probe contract. Consumers
+//! must validate each string before using its ratio; measurements from unlike
+//! representations are not interchangeable.
 
-pub const SAMPLE_ENCODING_TAG: &str = "dbwarp-blueprint-rowframe-v1";
+pub const SAMPLE_ENCODING_TAG: &str = dbwarp_blueprint_core::SAMPLE_ENCODING_TAG;
 
 /// Append an unsigned LEB128 varint to `out`. 1 byte for values < 128,
 /// 2 bytes for values < 16384, 3 bytes for values < 2^21, and so on.
@@ -96,10 +88,8 @@ fn write_varint(out: &mut Vec<u8>, mut value: u32) {
 }
 
 /// Per-column type classification. The numeric value of each variant is
-/// what gets emitted as the type-tag byte in the encoded stream — these
-/// values are part of the wire format and must NOT be renumbered. Add
-/// new variants only at the end (or in unused gaps) and bump the
-/// `SAMPLE_ENCODING_TAG` suffix on any incompatible change.
+/// what gets emitted as the type-tag byte in the transient probe stream. These
+/// values must not be renumbered without changing `SAMPLE_ENCODING_TAG`.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeTag {
@@ -115,6 +105,7 @@ pub enum TypeTag {
     UuidText = 0x09,
     JsonText = 0x0F,
     BinaryRaw = 0x10,
+    VectorBinary = 0x11,
     UnknownText = 0xFE,
 }
 
@@ -211,8 +202,23 @@ impl CardinalityAccumulator {
         // an explicit lower bound. For larger unbiased samples use Chao1,
         // which estimates unseen species from singleton/doubleton evidence
         // instead of scaling singletons linearly to the source row count.
+        let collision_pairs = frequencies.iter().fold(0_u64, |total, frequency| {
+            total.saturating_add(frequency.saturating_mul(frequency.saturating_sub(1)) / 2)
+        });
+        let biased_near_unique_estimate =
+            dbwarp_blueprint_core::estimate_biased_near_unique_cardinality(
+                retained_non_null,
+                observed,
+                collision_pairs,
+                source_non_null,
+            );
         let (estimated, estimate_method) = if source_rows > 0 && source_rows <= self.rows {
             (observed, "complete bounded sample")
+        } else if sampled_with_bias && biased_near_unique_estimate.is_some() {
+            (
+                biased_near_unique_estimate.unwrap_or(observed),
+                "conservative birthday-collision estimate from biased near-unique sample",
+            )
         } else if sampled_with_bias {
             (observed, "cardinality observed lower bound (biased sample)")
         } else if retained_non_null < Self::MIN_UNBIASED_ESTIMATE_ROWS {
@@ -253,6 +259,7 @@ impl CardinalityAccumulator {
             frequency_p99: quantile(&frequencies, 0.99),
             frequency_max: quantize_count(top),
             sample_method: format!("{sample_method}; {estimate_method}"),
+            sample_layout: Default::default(),
             sampled_with_bias,
             bias_reason: if sampled_with_bias {
                 bias_reason.to_string()
@@ -505,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn small_and_biased_samples_do_not_extrapolate_singletons_to_table_rows() {
+    fn small_unbiased_and_low_diversity_biased_samples_remain_lower_bounds() {
         let mut small = CardinalityAccumulator::default();
         for value in 0..32_u64 {
             let bytes = value.to_string();
@@ -527,14 +534,55 @@ mod tests {
 
         let mut biased = CardinalityAccumulator::default();
         for value in 0..1_000_u64 {
-            let bytes = value.to_string();
+            let bytes = (value % 100).to_string();
             biased.push(&Cell::new(TypeTag::NumberText, bytes.as_bytes()));
         }
         let cardinality = biased
             .finish(1_000_000, "first-n", true, "natural order")
             .expect("biased sample cardinality");
-        assert_eq!(cardinality.estimated_distinct_count, 992);
+        assert_eq!(cardinality.estimated_distinct_count, 100);
         assert!(cardinality.sample_method.contains("biased sample"));
+
+        let mut medium_diversity = CardinalityAccumulator::default();
+        for value in 0..1_000_u64 {
+            let bytes = (value % 750).to_string();
+            medium_diversity.push(&Cell::new(TypeTag::NumberText, bytes.as_bytes()));
+        }
+        let cardinality = medium_diversity
+            .finish(1_000_000, "first-n", true, "natural order")
+            .expect("medium-diversity biased cardinality");
+        assert_eq!(
+            cardinality.estimated_distinct_count,
+            cardinality.observed_distinct_count
+        );
+        assert!(cardinality.observed_distinct_count >= 700);
+        assert!(cardinality.sample_method.contains("biased sample"));
+    }
+
+    #[test]
+    fn biased_near_unique_samples_use_continuous_collision_estimation() {
+        let capture = |duplicate_last: bool| {
+            let mut accumulator = CardinalityAccumulator::default();
+            for value in 0..1_000_u64 {
+                let sampled = if duplicate_last && value == 999 {
+                    0
+                } else {
+                    value
+                };
+                let bytes = sampled.to_string();
+                accumulator.push(&Cell::new(TypeTag::NumberText, bytes.as_bytes()));
+            }
+            accumulator
+                .finish(1_000_000, "first-n", true, "natural order")
+                .expect("biased cardinality")
+        };
+
+        let unique = capture(false);
+        let one_collision = capture(true);
+        assert!(unique.estimated_distinct_count >= 900_000);
+        assert!(one_collision.estimated_distinct_count >= 900_000);
+        assert!(unique.sample_method.contains("birthday-collision"));
+        assert!(one_collision.sample_method.contains("birthday-collision"));
     }
 
     #[test]
@@ -563,16 +611,16 @@ mod tests {
         assert!(cardinality.estimated_distinct_count <= crate::format::round_rows(151));
     }
 
-    /// Diagnostic: show row-frame vs COPY-style tab-separated ratios
+    /// Diagnostic: compare the probe with a delimiter-separated control.
     /// on text-heavy Blueprint data (1 small id, 1 long repetitive body,
     /// 1 short category). The bodies are highly compressible (shared
     /// "lorem ipsum dolor sit amet " prefix + repeating "blah ").
     /// COPY-style tab format compresses dramatically because long
-    /// text bodies share content across rows; row-frame should also
+    /// text bodies share content across rows; the probe should also
     /// compress well — the framing overhead is minor and zstd should
     /// see through it.
     #[test]
-    fn rowframe_vs_copy_text_on_repetitive_text() {
+    fn probe_vs_delimited_text_on_repetitive_text() {
         let prefix = "lorem ipsum dolor sit amet ";
         // Build the same 1000 rows in both encodings.
         let mut copy_text: Vec<u8> = Vec::new();
@@ -621,12 +669,12 @@ mod tests {
         // Both should compress similarly well (within 2× of each other)
         // because they contain the same logical data with similar
         // overhead-to-content ratio. If they diverge by more, there's
-        // something in the row-frame layout interfering with zstd's
+        // something in the probe layout interfering with zstd's
         // ability to find redundancy.
         let ratio_of_ratios = (copy_ratio / frame_ratio).max(frame_ratio / copy_ratio);
         assert!(
             ratio_of_ratios < 2.0,
-            "row-frame and copy-text ratios diverge by {}× (copy={:.2}, frame={:.2}); \
+            "probe and delimited-text ratios diverge by {}× (control={:.2}, probe={:.2}); \
              framing is interfering with zstd's compression",
             ratio_of_ratios,
             copy_ratio,
@@ -683,7 +731,7 @@ mod tests {
             old_buf.push(b'\n');
         }
 
-        // NEW encoding: row-frame, each numeric column carries its value.
+        // Probe encoding: each numeric column carries its value.
         let mut new_rows: Vec<Vec<Cell<'_>>> = Vec::with_capacity(1000);
         for i in 0..1000 {
             let mut row: Vec<Cell<'_>> = Vec::with_capacity(10);

@@ -38,7 +38,10 @@ La distancia es el factor más importante. Cuanto más lejos deban viajar sus da
 
 ---
 
-`dbwarp-blueprint` es el recopilador Blueprint de DBWarp que se ejecuta en el entorno del cliente. Ejecútelo dentro del propio entorno del cliente para producir un archivo `blueprint.toml` saneado y revisable que DBWarp pueda utilizar para dimensionar migraciones, generar conjuntos de datos sintéticos y realizar la planificación previa sin recibir acceso a la base de datos, volcados, nombres de esquemas ni datos de filas.
+El inglés es la referencia autoritativa; las traducciones asistidas por máquina son complementarias y pueden contener errores.
+[`MACHINE_TRANSLATIONS.md`](https://github.com/DBWarp/dbwarp-blueprint/blob/main/MACHINE_TRANSLATIONS.md).
+
+`dbwarp-blueprint` es el recopilador Blueprint de DBWarp que se ejecuta en el entorno del cliente. Ejecútelo dentro del propio entorno del cliente para producir un archivo `blueprint.toml` acotado, anonimizado y revisable que DBWarp pueda utilizar para dimensionar migraciones, generar conjuntos de datos sintéticos y realizar la planificación previa sin recibir acceso a la base de datos, volcados, nombres de esquemas ni datos de filas.
 
 Se conecta a PostgreSQL, MySQL o SQL Server, lee metadatos del catálogo, mide opcionalmente la compresión local a partir de una muestra acotada de filas y escribe TOML en texto sin formato. También puede derivar un Blueprint a partir de archivos Parquet o Avro locales en modo sin conexión cuando la entrada ya es un archivo de datos estructurados en lugar de una base de datos en vivo. Puede abrir la salida, revisar cada línea y decidir si desea compartirla.
 
@@ -54,11 +57,11 @@ DBWarp necesita información estructural suficiente para estimar y planificar un
 - familias de tipos de columnas, capacidades estructurales y prefijos de índice exactos, y
   anchuras observadas redondeadas por motivos de privacidad de forma predeterminada;
 - estructura de los índices y las claves foráneas;
-- recuentos de artefactos no tabulares seguros para la privacidad y requisitos previos de despliegue externo;
+- recuentos acotados y sin nombres de artefactos no tabulares y requisitos previos de despliegue externo;
 - resúmenes opcionales de compresión por tabla y columna a partir de una pequeña muestra local;
 - evidencia opcional de RTT de la base de datos desde el entorno del cliente.
 
-Estos datos bastan para estimar el tamaño de la transferencia, elegir un plan inicial de carga masiva de DBWarp y generar un conjunto de datos sintético representativo para pruebas de rendimiento. No bastan para reconstruir el esquema ni los datos del cliente.
+Estos datos bastan para estimar el tamaño de la transferencia, elegir un plan inicial de carga masiva de DBWarp y generar un conjunto de datos sintético representativo para pruebas de rendimiento. Se omiten los nombres de origen y los valores de filas, pero una estructura o unas estadísticas distintivas todavía pueden identificar una carga de trabajo; la anonimización reduce el riesgo, no promete irreversibilidad.
 
 ## Qué no hace
 
@@ -69,7 +72,7 @@ Estos datos bastan para estimar el tamaño de la transferencia, elegir un plan i
 - carga el archivo Blueprint;
 - lee `~/.pgpass`, `~/.my.cnf`, credenciales de nube ni claves SSH;
 - lee variables de entorno de contraseñas predeterminadas como `PGPASSWORD` o `MYSQL_PWD`;
-- escribe nada salvo las salidas seleccionadas para el modo activo; el modo por lotes escribe un directorio de paquete con Blueprints secundarios, auditorías secundarias y evidencia opcional de errores;
+- usa directorios implícitos del sistema para temporales, caché o configuración; escribe los archivos de salida seleccionados explícitamente, mientras que el modo por lotes también usa un directorio contiguo de preparación o recuperación junto a `--out-dir` para la publicación atómica;
 - incluye en la salida nombres reales de tablas, columnas, índices o esquemas, nombres de objetos no tabulares, definiciones SQL, puntos de conexión externos, credenciales, claves, certificados, binarios ni valores de filas.
 
 Las ejecuciones Blueprint en vivo abren una sesión de base de datos con el punto de conexión especificado. El DNS puede utilizar el solucionador configurado y la autenticación Kerberos/SSPI integrada puede contactar con la infraestructura de identidad. El modo por lotes repite ese límite para cada origen de base de datos. Las operaciones locales con TOML, Parquet, Avro y paquetes no abren ninguna conexión de red iniciada por la aplicación.
@@ -81,10 +84,26 @@ Las ejecuciones Blueprint en vivo abren una sesión de base de datos con el punt
 | Descargar un binario | prueba rápida, llamada de ingeniería de ventas, host de pruebas aislado | [`binaries/README.md`](BINARIES.md) |
 | Compilar desde un clon pequeño del código fuente | revisión de seguridad, política de producción, comprobación de reproducibilidad | [`BUILD.md`](BUILD.md) |
 | Compilar desde un paquete de código fuente con dependencias incluidas | auditoría estricta de dependencias sin conexión | GitHub Releases |
+| Revisar y ejecutar la alternativa SQL | la política del DBA rechaza un binario de terceros | [`sql/blueprint.pg.sql`](../../sql/blueprint.pg.sql), [`sql/blueprint.mysql.sql`](../../sql/blueprint.mysql.sql), [`sql/blueprint.sqlserver.sql`](../../sql/blueprint.sqlserver.sql) y [`blueprint_format.py`](../../blueprint_format.py) |
+
+### Límite de la alternativa SQL
+
+La alternativa SQL es un mínimo de catálogo revisable, no un sustituto con las mismas funciones que el recopilador Rust. Cada script SQL escribe un documento JSON intermedio con los nombres reales de esquemas, tablas, columnas e índices; en MySQL, `COLUMN_TYPE` también puede incluir miembros enum/set declarados. Trate ese JSON como material de esquema sensible, manténgalo dentro del entorno de origen, normalícelo localmente con `blueprint_format.py` y comparta únicamente la salida TOML revisada.
+
+La alternativa no tiene selector `--schema`: PostgreSQL abarca todos los esquemas no pertenecientes al sistema en la base conectada, mientras que MySQL y SQL Server abarcan todas las tablas de usuario de la base seleccionada. No la use si solo se aprueba un subconjunto. Su TOML contiene estructura de tablas, columnas, índices y claves foráneas, y tamaños locales aproximados, pero no muestreo de filas, evidencia de RTT, inventario de artefactos no tabulares ni sondas de topología en vivo; la topología y la completitud del conjunto de datos se indican expresamente como `unknown`.
 
 La opción que prioriza la confianza es compilar desde el código fuente. El repositorio normal se mantiene pequeño y utiliza `Cargo.lock` para fijar las versiones de las dependencias. Para auditorías sin conexión más estrictas, cada versión también publica un paquete de código fuente con todas las dependencias, que contiene cada archivo de código fuente de las dependencias. Los binarios de las versiones se proporcionan por comodidad junto con sumas de comprobación SHA256.
 
 ## Inicio rápido
+
+Antes de cualquier ejecución real, pida a un DBA que aprovisione una cuenta de
+recopilación dedicada con privilegios mínimos mediante el script de motor,
+versión y nivel correspondiente de [`sql/grants/`](../../sql/grants/), y que
+apruebe el alcance exacto de los esquemas. No empiece nunca con una cuenta
+propietaria de la aplicación ni administradora. Pase cada esquema aprobado con
+`--schema` y, tras la captura, elimine la cuenta dedicada con el script
+correspondiente de [`sql/revoke/`](../../sql/revoke/). El procedimiento inicial
+completo se encuentra en [`docs/QUICKSTART.md`](QUICKSTART.md).
 
 Elija un idioma de presentación cuando resulte útil. El inglés es el idioma
 predeterminado; se incluyen catálogos completos para alemán, francés, español,
@@ -92,7 +111,7 @@ polaco, japonés y chino simplificado:
 
 ```bash
 ./dbwarp-blueprint --lang ja --help
-./dbwarp-blueprint --lang de --connect postgresql://db.internal/payments --dry-run
+./dbwarp-blueprint --lang de --connect postgresql://db.internal/payments --schema app --dry-run
 ```
 
 Solo se traducen la ayuda orientada a personas, las solicitudes, los
@@ -104,11 +123,30 @@ canónicos en inglés. De este modo, la automatización y los procedimientos de
 soporte son idénticos en todos los idiomas. Consulte
 [`docs/INTERNATIONALISATION.md`](INTERNATIONALISATION.md).
 
+Antes de conectarse a una base de datos, revise los ejemplos incluidos en
+[`samples/`](../../samples/). Son archivos TOML Blueprint ordinarios y no
+requieren preparación. Tras obtener un binario, una primera ejecución sin
+conexión puede representar uno como presentación, sin base de datos ni red:
+
+Empiece por los ejemplos pequeños del esquema v6 descritos en
+[`samples/README.md`](../../samples/README.md): PostgreSQL solo con catálogos,
+MySQL con muestreo y SQL Server con muestreo y artefactos analizados. Son
+ilustraciones sintéticas redactadas a mano, no capturas de clientes ni resultados
+de cualificación. Los ejemplos grandes del esquema v1 siguen siendo fixtures de
+compatibilidad. Use [`FORMAT.md`](FORMAT.md) para revisar toda la superficie de
+salida antes de aprobar una captura de cliente; ningún ejemplo cubre todos los
+campos opcionales.
+
+```bash
+./dbwarp-blueprint --from-toml samples/sqlserver-v6-analyzed.toml --deck sample.pptx
+```
+
 Ejecute primero una simulación. Muestra el plan sin conectarse:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --dry-run
 ```
 
@@ -117,6 +155,7 @@ Ejecución recomendada, similar a producción, con TLS, registro de auditoría y
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -131,11 +170,18 @@ Con `--measure-compression --yes`, la salida incluye proporciones zstd por
 tabla y proyecciones de compresión por columna. Los bloques por columna se
 calculan a partir de la misma muestra acotada que la proporción por tabla;
 están destinados a estimar conjuntos de datos de DBWarp y no escriben en disco
-los valores muestreados. El esquema v3 y versiones posteriores también emiten agregados seguros de
-cardinalidad y distribución por columna, además de resúmenes inferidos de
-prefijos de índice y relaciones. Las huellas temporales están acotadas en
-memoria y se descartan; ni los valores ni las huellas aparecen en el TOML de
-Blueprint.
+los valores muestreados. Una muestra binaria materialmente dominante con firmas
+reconocidas de contenedores comprimidos estándar recibe únicamente la etiqueta
+general `style = "precompressed"`; no se serializa el tipo de archivo, la firma
+ni ningún valor muestreado. Los gemelos generados convierten esa etiqueta en
+conjuntos de datos neutrales y deterministas con contenedores comprimidos, sin
+afirmar cuál era el tipo de contenido original del cliente. El esquema v3 y
+versiones posteriores también emiten
+agregados acotados y sin nombres de cardinalidad y distribución por columna,
+además de resúmenes inferidos de prefijos de índice y relaciones. Los hashes
+temporales por valor están acotados en memoria y se descartan; los valores
+muestreados y los hashes por valor nunca aparecen en el TOML Blueprint, aunque
+sí aparecen los agregados documentados.
 
 Desde el esquema v4, los Blueprints también inventarían objetos no tabulares. De forma predeterminada,
 `--artifact-detail summary` guarda recuentos acotados por clase de objeto y de
@@ -147,6 +193,7 @@ identificar una aplicación:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --artifact-detail analyzed \
   --out blueprint.toml \
@@ -172,6 +219,7 @@ al mismo tiempo, se conservan los límites válidos de DDL e índices del origen
 ```bash
 ./dbwarp-blueprint \
   --connect mysql://mysql-primary.internal:3306/appdb \
+  --schema appdb \
   --password-file /etc/dbwarp/mysql-blueprint.pass \
   --measure-compression --yes \
   --out mysql-appdb.blueprint.toml
@@ -182,6 +230,7 @@ Utilice estadísticas muestreadas exactas únicamente cuando la política permit
 ```bash
 ./dbwarp-blueprint \
   --connect mysql://mysql-primary.internal:3306/appdb \
+  --schema appdb \
   --password-file /etc/dbwarp/mysql-blueprint.pass \
   --measure-compression \
   --length-fidelity exact --yes \
@@ -189,15 +238,15 @@ Utilice estadísticas muestreadas exactas únicamente cuando la política permit
   --audit-log mysql-appdb-exact.audit.txt
 ```
 
-Utilice `--length-fidelity strict` para conservar el redondeo más amplio y
-apto para compartir del comportamiento anterior en las longitudes declaradas,
+Utilice `--length-fidelity strict` para conservar el redondeo amplio anterior
+orientado a la privacidad en las longitudes declaradas,
 observadas y de prefijo. El modo estricto sacrifica deliberadamente la
 fidelidad del conjunto de datos y de los índices y no es apto para pruebas de
 rendimiento representativas del cliente. La sintaxis anterior
 `--preserve-exact-lengths --yes` se mantiene como alias de compatibilidad de
 `--length-fidelity exact --yes`.
 
-Las nuevos Blueprints registran campos separados `declared_length_fidelity`,
+Los nuevos Blueprints registran campos separados `declared_length_fidelity`,
 `index_length_fidelity` y `observed_length_fidelity`. El campo heredado
 `length_metadata` se mantiene por compatibilidad conservadora con consumidores
 anteriores. Las capacidades de caracteres de PostgreSQL son valores exactos del
@@ -206,7 +255,7 @@ de prefijo de índice siguen sin estar disponibles.
 
 Para una prueba de rendimiento generada que sea representativa del cliente,
 `--measure-compression` no es opcional: proporciona las longitudes media y p95
-observadas para que una columna indexada de varios kilobytes cuyos valores reales
+observadas para que una clave declarada de varios kilobytes cuyos valores reales
 solo tienen unos pocos caracteres no se genere a su capacidad máxima. El
 presupuesto de tiempo predeterminado para el muestreo es de 300 segundos. Aumente
 `--max-wall-secs` para esquemas muy grandes. Las herramientas de planificación
@@ -222,7 +271,9 @@ less blueprint.toml
 less audit.txt
 ```
 
-Si su política lo permite, comparta `blueprint.toml` con DBWarp. También puede compartir una presentación después de revisarla. Conserve el registro de auditoría como evidencia operativa con acceso controlado, salvo que un caso concreto de soporte lo requiera a través de un canal seguro aprobado; contiene detalles de puntos de conexión, identidades, rutas y tiempos.
+Siga la [política de entrega](QUICKSTART.md#review-and-share).
+Comparta por defecto solo el `blueprint.toml` revisado o el paquete empaquetado. Una presentación solo puede acompañarlo tras revisar su contenido y nivel de confidencialidad y aprobarla por separado conforme a la política de su organización.
+Conserve la evidencia operativa localmente de forma predeterminada.
 
 ## Modo de archivos estructurados
 
@@ -245,8 +296,7 @@ Si el origen ya es un archivo estructurado local, genere el TOML Blueprint sin c
 El modo Parquet lee el pie y los metadatos de los grupos de filas. Los contenedores de objetos Avro no tienen un recuento equivalente de filas en el pie, por lo que el modo Avro recorre el contenedor para contar registros y utiliza el esquema del escritor para determinar la estructura de las columnas. Ninguno de los dos modos se conecta a una base de datos ni lee opciones de credenciales.
 
 Si su política permite el muestreo decodificado, el modo de archivos también
-puede estimar la compresión propia del transporte de DBWarp a partir de muestras
-locales acotadas:
+puede medir la compresibilidad local acotada para la planificación posterior:
 
 ```bash
 ./dbwarp-blueprint \
@@ -258,8 +308,9 @@ locales acotadas:
 ```
 
 Las mismas opciones funcionan con `--from-avro`. Los valores muestreados se
-codifican en memoria como `dbwarp-blueprint-rowframe-v1`; solo se escriben en el
-TOML Blueprint las proporciones agregadas de compresión zstd.
+codifican en memoria como `blueprint-compression-probe-v2`; el Blueprint conserva
+mediciones agregadas de compresión, densidad de valores nulos,
+cardinalidad/frecuencia, longitud y estilo, nunca los valores muestreados.
 
 ## Modo por lotes y paquetes
 
@@ -299,6 +350,7 @@ PostgreSQL:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -311,6 +363,7 @@ MySQL:
 ```bash
 ./dbwarp-blueprint \
   --connect mysql://app@db.internal/payments \
+  --schema payments \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -323,6 +376,7 @@ SQL Server:
 ```bash
 ./dbwarp-blueprint \
   --connect sqlserver://dbwarp_user@db.internal,1433/payments \
+  --schema dbo \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -334,19 +388,21 @@ Para consultar ejemplos de Kerberos, SSPI y Entra ID, consulte [`AUTH.md`](AUTH.
 
 ## Modo de solo catálogo
 
-Si una política prohíbe muestrear filas, omita `--measure-compression`:
+Si la política solo permite catálogos de tablas, columnas, índices y claves foráneas, omita `--measure-compression` y desactive explícitamente el resumen predeterminado de objetos no tabulares:
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out blueprint.toml \
   --yes
 ```
 
-El modo de solo catálogo lee únicamente metadatos. DBWarp aún puede realizar estimaciones a partir del tamaño de las tablas, los recuentos de filas, las familias de tipos y la estructura de los índices y las claves foráneas, pero la compresión y el realismo del conjunto de datos sintético son menores porque se debe inferir la entropía del texto y los datos binarios.
+Este modo de solo catálogo lee metadatos y estadísticas de tablas, pero no valores de filas ni catálogos de objetos no tabulares. DBWarp aún puede realizar estimaciones a partir del tamaño de las tablas, los recuentos de filas, las familias de tipos y la estructura de los índices y las claves foráneas, pero la compresión y el realismo del conjunto de datos sintético son menores porque se debe inferir la entropía del texto y los datos binarios. Sin `--artifact-detail none`, el resumen predeterminado también lee catálogos de objetos no tabulares, pero no definiciones.
 
 ## Vista previa de la salida
 
@@ -374,8 +430,8 @@ index_bytes = 1100000000
 
 [tables.table-001]
 rows = 12500000
-table_bytes = 4200000000
-index_bytes = 1100000000
+table_bytes = 4194304000
+index_bytes = 1048576000
 schema = "schema-A"
 has_clustered_index = false
 
@@ -400,6 +456,7 @@ Genere una presentación durante la ejecución en vivo:
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \

@@ -4,7 +4,7 @@
 
 [English](../STRUCTURED_FILES.md) | [Deutsch](../de/STRUCTURED_FILES.md) | [Français](../fr/STRUCTURED_FILES.md) | [Español](../es/STRUCTURED_FILES.md) | [Polski](STRUCTURED_FILES.md) | [日本語](../ja/STRUCTURED_FILES.md) | [简体中文](../zh/STRUCTURED_FILES.md)
 
-`dbwarp-blueprint` może utworzyć oczyszczony plik TOML Blueprint z lokalnych danych
+`dbwarp-blueprint` może utworzyć ograniczony, zanonimizowany plik TOML Blueprint z lokalnych danych
 wejściowych Parquet i Avro, gdy źródłem jest już plik, a nie działająca baza
 danych.
 
@@ -15,8 +15,9 @@ Jest to tryb offline:
 - bez telemetrii;
 - bez zapisywania wartości wierszy w danych wyjściowych;
 - identyfikatory tabel i kolumn są emitowane wyłącznie jako `table-NNN` i `col-N`;
-- audyt rejestruje tylko lokalne ścieżki plików wejściowych i wyjściowych oraz
-  skrót danych wyjściowych.
+- audyt rejestruje lokalne ścieżki wejścia i wyjścia, skrót wyniku oraz zwykłe
+  dowody operacyjne, takie jak tryb, czas, praca próbkowania i ostrzeżenia; w
+  tym trybie nie zapisuje punktu końcowego bazy danych.
 
 ## Parquet
 
@@ -62,7 +63,7 @@ Przechwytywanie plików strukturalnych zachowuje ograniczone metadane logiczne p
 
 Zagnieżdżonych liści Parquet oraz tablic, map, rekordów i unii wielu typów Avro nie można przedstawić jako jednego dokładnego skalara SQL. Blueprint zapisuje znormalizowany typ `json` oraz `source_semantics`, takie jak `"repeated-leaf"`, `"nested-json"` lub `"multi-type-union"`. Generatory dalszego etapu muszą oznaczać te wartości jako reprezentatywne obciążenie JSON, a nie twierdzić, że dokładnie odtwarzają zagnieżdżony schemat.
 
-Rdzenie nazw plików źródłowych, ścieżki Parquet, nazwy pól Avro i etykiety batch `logical_table` nie są zapisywane jako identyfikatory Blueprint. Wieloplikowy zbiór danych emituje deterministyczne identyfikatory `table-NNN`, agreguje bajty obiektów, partycje, grupy wierszy, kodeki, szerokości, udziały NULL oraz zgodne pochodzenie kompresji i odrzuca pliki, których logiczne kontrakty kolumn są różne.
+Rdzenie nazw plików źródłowych, ścieżki Parquet, nazwy pól Avro i etykiety batch `logical_table` nie są zapisywane jako identyfikatory Blueprint. Wieloplikowy zbiór danych emituje chronione tajnym kluczem identyfikatory `table-NNN`, agreguje bajty obiektów, partycje, grupy wierszy, kodeki, szerokości, udziały NULL oraz zgodne pochodzenie kompresji i odrzuca pliki, których logiczne kontrakty kolumn są różne.
 
 ## Próbkowanie kompresji zdekodowanych danych
 
@@ -83,17 +84,18 @@ Te same opcje działają z `--from-avro`.
 Po włączeniu `dbwarp-blueprint`:
 
 - dekoduje do `--sample-rows` rekordów z pliku;
-- koduje próbkowane wartości za pomocą tej samej ramki wiersza
-  `dbwarp-blueprint-rowframe-v1`, której używa przechwytywanie Blueprint działającej
-  bazy danych;
+- koduje próbkowane wartości za pomocą tej samej przejściowej reprezentacji
+  `blueprint-compression-probe-v2`, której używa przechwytywanie Blueprint
+  działającej bazy danych;
 - emituje podsumowania kompresji zstd-3 na poziomie tabeli i kolumn;
-- zapisuje `sample_encoding = "dbwarp-blueprint-rowframe-v1"` w wygenerowanym pliku
+- zapisuje `sample_encoding = "blueprint-compression-probe-v2"` w wygenerowanym pliku
   TOML;
 - przechowuje próbkowane bajty wyłącznie w pamięci i nigdy nie zapisuje wartości
   wierszy na dysku.
 
 `--measure-compression` wymaga `--yes`, ponieważ odczytuje zdekodowane wartości
-klienta, mimo że utrwala tylko zagregowane współczynniki.
+klienta. Utrwala zagregowane pomiary kompresji, udziału NULL,
+kardynalności/częstotliwości, długości i stylu, nigdy próbkowane wartości.
 
 Obecny próbnik używa deterministycznej próbki pierwszych N elementów. Jest to
 powtarzalne i niedrogie, ale może być obciążone, jeśli plik jest posortowany lub
@@ -106,8 +108,8 @@ dodać próbkowanie warstwowe według grup wierszy lub bloków.
 Tryb Blueprint plików strukturalnych jest przydatny do:
 
 - wymiarowania importu Parquet/Avro przed uruchomieniem DBWarp;
-- generowania neutralnego wobec klienta syntetycznego zestawu testowego z
-  metadanych pliku;
+- generowania reprezentatywnego syntetycznego zestawu testowego bez kopiowania
+  nazw źródłowych ani wartości wierszy;
 - planowania przepływów Parquet/Avro -> DBWarp columnar -> docelowa baza danych.
 
 Nie zastępuje przechwytywania Blueprint działającej bazy danych, gdy rzeczywistym

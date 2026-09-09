@@ -34,8 +34,8 @@
 -- Database/server-wide artifact families remain in scope. Start with
 -- sample-rows 1000 / max-wall-secs 300; raise both for higher requested detail.
 --
--- Optional, NOT part of the minimum (observed unnecessary on 2019/2022 but
--- vendor-documented for the key catalogs / for linked servers without a
+-- Optional, NOT part of the minimum (vendor-documented for the key
+-- catalogs / for linked servers without a
 -- public login mapping):
 --   GRANT VIEW ANY COLUMN MASTER KEY DEFINITION TO [dbwarp_blueprint_enhanced];
 --   GRANT VIEW ANY COLUMN ENCRYPTION KEY DEFINITION TO [dbwarp_blueprint_enhanced];
@@ -43,7 +43,7 @@
 --
 -- NOT granted: VIEW SERVER STATE, VIEW ANY DEFINITION, SQLAgent roles, UNMASK,
 -- key/certificate CONTROL, IMPERSONATE, ALTER, DML, DDL, sysadmin, db_owner.
--- Common to every tier (verified live on SQL Server 2019 15.0.4480 Developer):
+-- Common to every tier:
 --   VIEW DEFINITION  makes the database's object metadata visible. Catalog
 --     views only show securables the user has SOME permission on: with CONNECT
 --     alone the collector sees 0 tables, and VIEW SECURITY DEFINITION + the DMV
@@ -55,8 +55,10 @@
 -- Run ONCE with sqlcmd (or SSMS in SQLCMD mode) as a sysadmin, or a principal
 -- with ALTER ANY LOGIN on the server and db_owner in the target database:
 --     sqlcmd -S HOST -E -i enhanced.sql           (Windows auth)
---     sqlcmd -S HOST -U admin -P '...' -i enhanced.sql
+--     sqlcmd -S HOST -U admin -i enhanced.sql  (prompts for password)
 -- Re-running is safe; it resets the login password to the value below.
+-- Protect any edited copy containing a password; do not commit or share it.
+-- Remove that copy after use according to your secure-disposal policy.
 -- Azure SQL Database: USE is not supported there. Run the [master] batch
 -- connected to master, the remaining batches connected to the target database,
 -- and skip any [msdb] batch (no Agent).  Or create a contained user instead:

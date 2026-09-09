@@ -7,7 +7,7 @@
 [Polski](../pl/ARTIFACT_INVENTORY.md) | [日本語](../ja/ARTIFACT_INVENTORY.md) |
 [简体中文](../zh/ARTIFACT_INVENTORY.md)
 
-Depuis le schéma v4, les Blueprints décrivent les objets de base de données hors
+Depuis le schéma v4, les Blueprints peuvent décrire les objets de base de données hors
 table et les prérequis de déploiement sans publier leurs noms source,
 définitions, chaînes de point de terminaison, secrets, certificats, clés ou
 binaires. Cet inventaire aide DBWarp
@@ -30,7 +30,7 @@ planification :
 | `none` | Aucun catalogue ni définition d'artefact | Aucun compteur ni graphe | Aucun consentement supplémentaire |
 | `summary` | Catalogues d'artefacts, sans définitions | Compteurs par type et classe de prérequis externe | Valeur par défaut ; aucun consentement supplémentaire |
 | `graph` | Catalogues et métadonnées de dépendance, sans définitions | Compteurs, objets anonymes stables et arêtes | Nécessite `--yes` |
-| `analyzed` | Catalogues, dépendances et définitions disponibles | Graphe et classes bornées de fonctions linguistiques et de complexité | Nécessite `--yes` |
+| `analyzed` | Catalogues, dépendances et définitions disponibles | Graphe et classes bornées de caractéristiques du langage de programmation et de complexité | Nécessite `--yes` |
 
 La valeur par défaut est `summary`. Utilisez `none` si la politique autorise la
 structure des tables mais interdit les catalogues hors table. Utilisez `graph` pour
@@ -54,7 +54,10 @@ uniquement après approbation de leur lecture transitoire.
 La sortie d'artefacts contient uniquement des métadonnées bornées issues d'un
 vocabulaire fermé :
 
-- des identifiants anonymes stables comme `view-001`, `function-002` et `schema-A` ;
+- des identifiants anonymes cohérents au sein d'une exécution, tels que
+  `view-001`, `function-002` et `schema-A` ; leur stabilité entre les
+  exécutions exige de réutiliser le même fichier protégé
+  `--anonymization-key-file` ;
 - des jetons fermés pour le type, sous-type, niveau, visibilité et mode de sécurité ;
 - des dépendances exprimées uniquement par des identifiants anonymes d'artefact ou de table ;
 - des compteurs et classes bornées plutôt que des descriptions libres ;
@@ -136,7 +139,7 @@ Le Blueprint indique si un binaire, un secret ou un point de terminaison est req
 mais non capturé. Les objets externes doivent devenir des tâches explicites de
 migration, jamais des omissions au mieux.
 
-## Recensement des fonctions linguistiques
+## Recensement des caractéristiques du langage de programmation
 
 Le détail `analyzed` ajoute des blocs `dbwarp-language-feature-census/v1` aux
 définitions SQL et procédurales disponibles. Le premier analyseur est
@@ -161,7 +164,9 @@ d'artefact externe.
 
 ## Processus de revue recommandé
 
-1. Exécuter `summary` avec la revue de catalogue normale.
+1. Exécuter le niveau `summary` par défaut avec une revue des catalogues
+   d'artefacts. Si la politique n'autorise que les catalogues de tables,
+   utiliser plutôt `--artifact-detail none` et omettre cet inventaire.
 2. Examiner les compteurs, classes externes, visibilité, catalogues illisibles et familles non modélisées.
 3. Approuver `graph` uniquement si la topologie anonyme est acceptable.
 4. Approuver `analyzed` uniquement si la lecture transitoire des définitions est acceptable.

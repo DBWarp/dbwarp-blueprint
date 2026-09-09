@@ -60,7 +60,7 @@ komunikatu nie może zawierać sekretów ani URI połączeń, z których nie usu
 | `DBP1003E` | Nieobsługiwane nadpisanie nazwy serwera TLS. |
 | `DBP1004E` | Flaga tokenu Azure użyta z silnikiem innym niż SQL Server. |
 | `DBP1005E` | Tryb uwierzytelniania jest niedostępny dla wybranego silnika. |
-| `DBP1006E` | Zażądano próbkowania plików strukturalnych bez jawnego `--yes`. |
+| `DBP1006E` | Zażądano próbkowania kompresji plików strukturalnych bez jawnego `--yes`. |
 | `DBP1007E` | Zażądano jawnego trybu wierności długości dla silnika, który nie udostępnia jeszcze tego kontraktu. |
 | `DBP1008E` | Starszy alias dokładnej długości jest sprzeczny z rygorystyczną wiernością długości. |
 | `DBP1009E` | Zażądano dokładnej wierności długości próbek bez jawnego `--yes`. |
@@ -96,12 +96,12 @@ komunikatu nie może zawierać sekretów ani URI połączeń, z których nie usu
 | `DBP1301E` | Dla `--from-toml` brakuje `--deck`. |
 | `DBP1302E` | Nieobsługiwana wersja schematu TOML Blueprint. |
 | `DBP1401E` | Awaria na granicy przechwytywania PostgreSQL. |
-| `DBP1402E` | Awaria na granicy przechwytywania MySQL lub MariaDB. |
+| `DBP1402E` | Awaria na granicy przechwytywania MySQL. |
 | `DBP1403E` | Awaria na granicy przechwytywania SQL Server. |
 | `DBP1404W` | Tryb PostgreSQL TLS `prefer` przeszedł na tekst jawny dla pętli zwrotnej. |
 | `DBP1405W` | Opcjonalny pomiar RTT bazy danych był niedostępny. |
 | `DBP1406W` | Wyczerpano budżet czasu próbkowania poziomu 2. |
-| `DBP1407W` | Próbka kompresji była niedostępna. |
+| `DBP1407W` | Próbka kompresji była niekompletna lub niedostępna; mogły zostać zachowane użyteczne wiersze z częściowej próbki. |
 | `DBP1408W` | Próbka stylu kolumny tekstowej była niedostępna. |
 | `DBP1409W` | Asynchroniczne zadanie połączenia PostgreSQL zgłosiło błąd. |
 | `DBP1410W` | Opcjonalny katalog artefaktów był niedostępny, dlatego kompletność została jawnie obniżona. |
@@ -153,7 +153,7 @@ Gdy klient zgłasza awarię, poproś o:
 
 - kompletne dane wyjściowe terminala, w tym kod `DBP`;
 - dziennik audytu, jeśli użyto `--audit-log`;
-- zredagowany wiersz polecenia;
+- wiersz polecenia z usuniętymi lub zamaskowanymi danymi wrażliwymi;
 - w przypadku błędów pakietu dane wyjściowe `dbwarp-blueprint --bundle-list ...`.
 
 Nie proś o pliki haseł, pliki tokenów, klucze prywatne ani surowe próbki wierszy bazy danych.

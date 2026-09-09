@@ -15,25 +15,60 @@ La medición de compresión es opcional y requiere consentimiento explícito. Un
 --measure-compression --yes
 ```
 
-Sin esas opciones, la herramienta solo lee metadatos del catálogo.
+Cuando la medición de compresión está deshabilitada, la captura de bases de
+datos en vivo no muestrea valores de filas de tablas de usuario. El
+comportamiento con archivos estructurados es distinto: los registros Avro
+deben recorrerse igualmente para recopilar recuentos de filas, longitudes y
+metadatos de nulos; consulte [Archivos estructurados](STRUCTURED_FILES.md).
 
 ## Qué se muestrea
 
-Para cada tabla de usuario, la herramienta lee en memoria un número acotado de
-filas, las codifica en un búfer determinista de tramas de fila, comprime ese
-búfer localmente con zstd de nivel 3, registra proporciones
-redondeadas y descarta el búfer.
+Para cada tabla de usuario apta cuya ausencia de filas no se haya demostrado
+con seguridad, la herramienta lee en memoria un número acotado de filas, las
+codifica en búferes de sonda transitorios estables, comprime esos búferes
+localmente con zstd de nivel 3 y deriva mediciones agregadas de compresión, densidad de
+NULL, cardinalidad/frecuencia, longitud y estilo antes de descartar los valores
+muestreados y las huellas temporales.
 
 Para determinadas columnas de texto o binarias, el nivel 2 también puede
 muestrear únicamente esa columna. Esto permite que las herramientas de
 planificación posteriores reproduzcan la entropía de cada columna en lugar de
 basarse solo en promedios por tabla.
 
-Cada medición es una trama zstd independiente de una sola pasada con el tamaño de entrada declarado. La varianza de las proporciones (`ratio_stddev`) se mide sobre fragmentos de 64 KiB alineados a filas del mismo búfer, de modo que describe la transferencia que predice el estimador en lugar de un único promedio del búfer completo. Como el tamaño de entrada se declara, zstd selecciona parámetros adaptados al tamaño coherentes con la forma en que el estimador modela la transferencia. En muestras pequeñas (por debajo de aproximadamente 1 MiB) esto puede desplazar notablemente las proporciones frente a capturas de versiones anteriores que medían con un contexto de streaming sin tamaño declarado; las proporciones de tablas pequeñas no son directamente comparables a través de ese límite. La medición con tamaño declarado es la que coincide con la transferencia.
+Las proporciones de tablas de bases de datos en vivo utilizan una secuencia
+neutra de grupos acotados de 1000 filas, con un descriptor por columna,
+longitudes de valor de anchura fija y cargas contiguas por columna. Esto mide la
+estructura relevante para la compresión que comparten los transportes masivos,
+sin capturar un protocolo de base de datos ni un formato de red de DBWarp. Las
+proporciones por columna conservan `blueprint-compression-probe-v2`, cuyos
+valores etiquetados y prefijados por longitud siguen siendo la entrada de
+entropía más específica.
 
-Los bytes muestreados no se escriben en disco, no se incluyen en `blueprint.toml`,
-no se incluyen en el registro de auditoría y no se envían a ningún lugar salvo
-desde el servidor de base de datos al proceso local que usted ejecutó.
+Los bloques de tabla de PostgreSQL usan actualmente
+`blueprint-columnar-transfer-probe-v2`, que pasa los grupos de filas por un
+contexto persistente de zstd de nivel 3 y lo vacía tras cada grupo. MySQL y SQL
+Server usan `blueprint-columnar-transfer-probe-v3`: los mismos bytes neutros y
+el mismo contexto persistente, con vaciados adicionales en los límites de
+bloques de sonda de 256 KiB. Las muestras `nvarchar`, `nchar` y `ntext` de SQL
+Server se miden como distribuciones de bytes UTF-16LE. `varchar`, `char` y
+`text` conservan la anchura estrecha muestreada;
+el Blueprint registra la página de códigos de la intercalación de origen como
+`utf-8`, `windows-N` o `code-page-N`, para que un consumidor aprobado pueda
+elegir un codificador nativo compatible en vez de ensanchar los valores. El
+controlador sigue entregando cadenas decodificadas al muestreador, por lo que
+no se afirma identidad de bytes para páginas de códigos heredadas. El
+`ratio_stddev` de la tabla se mide entre las salidas de los grupos de filas
+externos. Los bloques de proyección por columna siguen siendo mediciones de
+entropía independientes de una sola pasada y emiten `0.0`. Las mediciones de
+tabla anteriores etiquetadas `blueprint-columnar-transfer-probe-v1` usaban una
+operación con tamaño declarado sobre las tramas unidas; la versión explícita
+impide que esas proporciones se reinterpreten de forma silenciosa con la
+política de streaming actual.
+
+Los bytes muestreados solo viajan por la sesión de base de datos seleccionada
+hasta el proceso local. No se escriben en disco, no se incluyen en
+`blueprint.toml` ni en el registro de auditoría, no se cargan ni se envían a la
+infraestructura de DBWarp.
 
 ## Concurrencia de workers locales
 
@@ -51,8 +86,11 @@ explícitamente para utilizar más CPU local:
 Los valores superiores pueden reducir el tiempo transcurrido cuando zstd es el
 cuello de botella, pero aumentan el uso local de CPU y la memoria máxima. No
 crean conexiones simultáneas de muestreo. Cada worker posee sus contextos zstd
-y la cola de entrada está limitada al número de workers. El orden de salida y
-los valores del Blueprint v6 siguen siendo deterministas.
+y la cola de entrada está limitada al número de workers. El número de workers
+no cambia las mediciones. El orden de las etiquetas anónimas varía
+intencionadamente con la clave nueva predeterminada; reutilice un archivo
+protegido `--anonymization-key-file` solo para comparaciones aprobadas entre
+ejecuciones.
 
 El recopilador evita consultas de filas y estilo solo cuando un valor de
 catálogo mantenido por el motor demuestra con seguridad que una tabla estaba
@@ -64,7 +102,7 @@ conservadora protege la fidelidad.
 
 ## Qué aparece en el archivo Blueprint
 
-Solo se emiten cifras de resumen. Para columnas similares a texto, la pasada de
+Solo se emiten resúmenes agregados. Para columnas similares a texto, la pasada de
 nivel 2 puede emitir una etiqueta de estilo acotada como `json`, `xml`,
 `natural-text`, `base64`, `hex`, `numeric-text` o `mixed`.
 
@@ -85,9 +123,10 @@ sample_rows = 1000
 sample_bytes = 65536
 sample_method = "column LIMIT N (engine-specific bounded sample)"
 sampled_with_bias = true
+bias_reason = "unordered_limit_after_empty_TABLESAMPLE"
 ratio_zstd_3 = 12.35
 ratio_stddev = 0.2
-sample_encoding = "dbwarp-blueprint-rowframe-v1"
+sample_encoding = "blueprint-compression-probe-v2"
 
 [tables.table-001.compression]
 measured = true
@@ -97,7 +136,7 @@ sample_method = "LIMIT N (engine-specific bounded sample)"
 sampled_with_bias = false
 ratio_zstd_3 = 4.35
 ratio_stddev = 0.15
-sample_encoding = "dbwarp-blueprint-rowframe-v1"
+sample_encoding = "blueprint-columnar-transfer-probe-v3"
 ```
 
 Estos valores ayudan a las herramientas posteriores aprobadas a estimar el
@@ -113,23 +152,34 @@ forma muy distinta durante una migración:
   natural suelen comprimirse bien.
 - Los valores cifrados, blobs ya comprimidos, tokens aleatorios y datos binarios
   de alta entropía no se comprimen bien.
-- Los datos `nvarchar` de SQL Server presentan una distribución de bytes
-  diferente a la del texto UTF-8 y se codifican de forma acorde para el
-  muestreo.
+- El texto Unicode y el texto estrecho de SQL Server tienen distribuciones de
+  bytes distintas. El muestreador modela `nvarchar` como UTF-16LE y registra la
+  página de códigos de intercalación necesaria para interpretar `varchar`, sin
+  tratar todas las columnas de texto como UTF-8.
 
 Una pequeña medición local suele resultar más útil que inferir a partir de los
 tipos de columna.
 
 ## Sesgo y transparencia
 
-Algunos motores no ofrecen un muestreo de tablas perfectamente uniforme. Cuando
-la herramienta recurre a un método menos idóneo, el archivo Blueprint lo indica
-mediante `sampled_with_bias` y `bias_reason`.
+Algunos motores no ofrecen un muestreo de tablas perfectamente uniforme. MySQL
+distribuye una muestra acotada entre cuatro rangos de clave primaria numérica
+cuando esa ruta de acceso está disponible; en caso contrario recurre a `LIMIT N`.
+Ambos se marcan explícitamente como sesgados porque ninguno constituye una
+muestra estadística aleatoria. Otros métodos alternativos menos idóneos también
+se registran mediante `sampled_with_bias` y `bias_reason`.
+
+Cuando una muestra acotada tiene una disposición que afecta a la generación
+sintética, Blueprint la registra por separado de esos campos de texto. El
+muestreo de rangos de clave primaria numérica de MySQL emite
+`sample_layout = "primary-key-range-windows"` y ordena cada ventana por la clave
+primaria completa. Esto permite conservar la localidad agrupada de claves
+compuestas sin analizar `sample_method` ni `bias_reason`.
 
 Las muestras sesgadas siguen siendo útiles, pero las herramientas posteriores
 deberían tratarlas con menor confianza. El registro de auditoría deja constancia de
-que se habilitó el muestreo y de los bytes row-frame codificados localmente. Los
-bytes de red se indican como `unknown` cuando el controlador no los expone.
+que se habilitó el muestreo y de los bytes de sonda codificados localmente. Los
+bytes de la sesión de base de datos se indican como `unknown` cuando el controlador no los expone.
 
 ## Configuración práctica del muestreo
 
@@ -156,12 +206,22 @@ señal de compresión estable, no un perfilado exacto de cada fila.
 conexión, los catálogos, RTT y el muestreo; no se reinicia en cada fase.
 
 El muestreo de bases de datos en vivo también tiene un límite no configurable de
-16 MiB de carga proyectada por tabla. La proyección SQL trunca en el servidor
-las celdas de anchura variable y reduce el límite de filas para tablas
-excepcionalmente anchas antes de que el controlador reciba los datos. Por tanto,
-los valores LOB muy grandes aportan prefijos acotados en lugar de todo su
-contenido. La auditoría registra el límite activo de carga por tabla y el total
-exacto de bytes de tramas de filas codificados localmente.
+16 MiB de carga proyectada por tabla. La proyección SQL inicial se presupuesta
+por tipo y observa por separado las longitudes originales en octetos. Cuando
+se ha reducido un valor proyectado, MySQL y SQL Server pueden reintentar con
+menos filas y límites por columna revisados que sigan respetando el presupuesto.
+Los valores demasiado anchos para ese presupuesto siguen siendo prefijos
+acotados; la información de procedencia de compresión y de resúmenes de valores
+registra esta limitación, mientras que las estadísticas de longitud conservan
+las longitudes originales de los valores muestreados comunicadas por el servidor,
+bajo la política de fidelidad de longitud seleccionada.
+
+El límite no se aplica a los bytes de red ni a la memoria del proceso. La
+codificación del protocolo, los metadatos de longitud original, los reintentos y
+los búferes del controlador añaden sobrecarga. La auditoría registra el límite
+de carga configurado, las consultas realizadas y el total exacto de bytes de
+sonda codificados localmente; no informa de tráfico medido en la conexión de
+base de datos.
 
 ## Cómo la utilizan los consumidores posteriores
 
@@ -175,4 +235,6 @@ Un consumidor posterior debe utilizar la evidencia de compresión en este orden:
 El campo `sample_encoding` forma parte del contrato. Los consumidores solo
 deberían utilizar proporciones con una etiqueta de codificación reconocida, porque
 codificaciones de muestra distintas pueden producir proporciones de compresión
-diferentes para los mismos datos lógicos.
+diferentes para los mismos datos lógicos. En particular, la proporción de la
+sonda de transferencia columnar de tabla y las proporciones v2 por columna son
+mediciones complementarias y no deben sustituirse entre sí.

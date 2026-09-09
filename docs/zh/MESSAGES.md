@@ -89,12 +89,12 @@ DBPnnnnS message text. Next: corrective action.
 | `DBP1301E` | `--from-toml` 缺少 `--deck`。 |
 | `DBP1302E` | 不受支持的 Blueprint TOML 模式版本。 |
 | `DBP1401E` | PostgreSQL 采集边界失败。 |
-| `DBP1402E` | MySQL 或 MariaDB 采集边界失败。 |
+| `DBP1402E` | MySQL 采集边界失败。 |
 | `DBP1403E` | SQL Server 采集边界失败。 |
 | `DBP1404W` | PostgreSQL TLS `prefer` 模式在环回连接上回退到明文。 |
 | `DBP1405W` | 可选数据库 RTT 探测不可用。 |
 | `DBP1406W` | Tier 2 采样时间预算已耗尽。 |
-| `DBP1407W` | 压缩样本不可用。 |
+| `DBP1407W` | 压缩样本不完整或不可用；可能保留了部分样本中可用的行。 |
 | `DBP1408W` | 文本列样式样本不可用。 |
 | `DBP1409W` | PostgreSQL 异步连接任务报告了错误。 |
 | `DBP1410W` | 某个可选对象目录不可用，因此明确降低完整性。 |

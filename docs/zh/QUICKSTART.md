@@ -20,18 +20,41 @@
 
 ```bash
 ./dbwarp-blueprint --lang fr --help
-./dbwarp-blueprint --lang pl --connect postgresql://db.internal/payments --dry-run
+./dbwarp-blueprint --lang pl --connect postgresql://db.internal/payments --schema app --dry-run
 ```
 
 支持的值为 `en`、`de`、`fr`、`es`、`pl`、`ja` 和 `zh`。显示语言会改变帮助、提示、诊断、进度文本和演示文稿文字，但绝不会改变选项名称、可接受值、URI 方案、选择器、DBP 代码、审计键或 Blueprint TOML。请参阅 [`INTERNATIONALISATION.md`](INTERNATIONALISATION.md)。
 
-## 2. 安全准备凭据
+## 2. 配置专用最小权限账户
+
+请在任何实时连接前完成此步骤，包括稍后会用于采集的 `--dry-run` 示例。
+不要从应用所有者、管理员、超级用户、`root`、`sa` 或 `db_owner` 账户开始。
+
+1. 明确确切的引擎和版本、数据库以及获批的一个或多个架构。
+2. 选择采集层级：`basic` 仅采集表目录；`standard` 使用有界行样本，适合
+   生成合成副本；`enhanced` 还会分析非表对象。
+3. 由 DBA 复制 `sql/grants/<engine>/` 下对应的脚本，编辑所有标记的数据库、
+   架构、主体、密码和角色开关值，并通过正常变更控制流程执行脚本。
+4. 使用该脚本创建的专用账户，并在每条实时命令中为每个获批架构传入一个
+   `--schema NAME` 选项，以保持相同的获批范围。
+5. 完成采集和证据审阅后，由 DBA 审阅并执行 `sql/revoke/` 下对应引擎的脚本，
+   删除该账户及其权限。
+
+这些脚本会明确区分精确限定范围的授权和更方便的内置角色，并说明角色范围过宽
+的情况。可执行脚本请参阅
+[`../../sql/grants/README.md`](../../sql/grants/README.md)，按版本说明的 DBA／
+安全依据请参阅
+[`../../sql/grants/DATABASE_PERMISSIONS.md`](../../sql/grants/DATABASE_PERMISSIONS.md)。
+采集器本身不会创建、扩大权限或删除数据库主体。
+
+## 3. 安全准备凭据
 
 不要在连接 URI 中放置密码。工具会拒绝 URI 内嵌密码，以避免密码泄露到进程列表和 shell 历史记录中。
 
 建议的密码文件方式（输入密钥时不会回显，也不会出现在 shell 历史记录中）：
 
 ```bash
+sudo install -d -m 700 -o "$USER" -g "$(id -gn)" /etc/dbwarp
 install -m 600 /dev/null /etc/dbwarp/db.pass
 read -rsp 'Database password: ' DBWARP_BP_PASSWORD; printf '\n'
 printf '%s' "$DBWARP_BP_PASSWORD" > /etc/dbwarp/db.pass
@@ -42,18 +65,19 @@ unset DBWARP_BP_PASSWORD
 
 ```bash
 install -m 600 /dev/null /etc/dbwarp/db.user
-printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
+printf '%s' 'DOMAIN\migration_user' > /etc/dbwarp/db.user
 ```
 
 然后使用 `--user-file /etc/dbwarp/db.user`。
 
-## 3. 先进行试运行
+## 4. 先进行试运行
 
 试运行会验证参数并打印计划操作，而不连接数据库：
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -72,15 +96,17 @@ printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
   --dry-run
 ```
 
-## 4. 运行仅目录模式
+## 5. 运行仅目录模式
 
 仅目录模式读取元数据和统计信息，但不读取行样本：
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out blueprint.catalog.toml \
@@ -90,7 +116,7 @@ printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
 
 当策略禁止行采样，或希望先进行第一轮安全审查时，请使用此模式。
 
-## 5. 选择非表对象详细级别
+## 6. 选择非表对象详细级别
 
 默认的 `--artifact-detail summary` 会读取非表对象目录，但不会读取对象定义。它输出有界计数和外部前提类别。如果策略禁止读取这些目录，请使用 `--artifact-detail none`。
 
@@ -99,6 +125,7 @@ printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --artifact-detail analyzed \
@@ -110,13 +137,15 @@ printf '%s' 'DOMAIN\\migration_user' > /etc/dbwarp/db.user
 
 输出绝不包含对象名称、定义文本、端点、秘密、密钥、证书或二进制文件。在批准 graph 或 analyzed 模式前，请阅读 [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md)。
 
-## 6. 运行 Tier 2 压缩测量
+## 7. 运行 Tier 2 压缩测量
 
-Tier 2 将有界行样本读入内存，在本地压缩，只写出摘要比率，然后丢弃样本字节：
+Tier 2 将有界行样本读入内存，计算压缩、NULL 密度、基数/频率、长度和样式的
+聚合测量值，然后丢弃采样值：
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -130,13 +159,14 @@ Tier 2 将有界行样本读入内存，在本地压缩，只写出摘要比率�
 
 条件允许时请使用 Tier 2。它能让 DBWarp 更准确地估算网络传输字节数、出口成本以及合成文本/二进制数据生成。
 
-## 7. 生成演示文稿
+## 8. 生成演示文稿
 
 在实时运行期间：
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://db.internal/payments \
+  --schema app \
   --user-file /etc/dbwarp/db.user \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
@@ -154,7 +184,7 @@ Tier 2 将有界行样本读入内存，在本地压缩，只写出摘要比率�
 ./dbwarp-blueprint --from-toml blueprint.toml --deck blueprint.pptx
 ```
 
-## 8. 分享前审阅
+## 9. 分享前审阅
 
 审阅以下内容：
 
@@ -174,9 +204,9 @@ unzip -l blueprint.pptx  # optional deck package inspection
 - 使用 `table-001`、`col-1` 和 `schema-A` 等匿名化 ID；
 - 有界对象计数，以及在批准后提供的匿名对象 ID；
 - 明确披露对象不完整或不可读的证据，而不是静默省略；
-- 可选输出仅包含压缩比，不包含采样字节。
+- 可选的压缩、NULL 密度、基数/频率、长度和样式聚合测量值，绝不包含采样值。
 
-## 9. 交接给 DBWarp
+## 10. 交接给 DBWarp
 
 最小交接内容：
 
@@ -198,14 +228,12 @@ less customer-blueprint-bundle.packed.toml
 
 当客户拥有多个数据库、多个 Parquet 或 Avro 数据集，或只希望批准选定的源/表用于基准测试生成时，请使用 `docs/BATCH_AND_BUNDLES.md`。
 
-默认将以下内容作为受访问控制的本地证据保留：
+<a id="review-and-share"></a>
 
-```text
-blueprint.audit.txt
-blueprint.pptx
-command-used.txt
-```
+### 审阅与分享
 
-审计和保存的命令可能包含数据库端点、已验证主体、本地路径、计时数据和清单源 ID。
-仅在有特定支持需要时，才通过已批准的安全渠道发送。不要发送密码文件、CA 私钥、
-客户转储或数据库日志。
+默认只分享已审阅的 `blueprint.toml` 或打包后的捆绑包。演示文稿只有在其内容和保密级别经过审阅，并依据组织政策单独获批后，才可一并提供。
+
+审计、命令记录、审阅笔记和未获批的演示文稿应作为受访问控制的本地证据保存。其中可能包含端点、已认证主体、本地路径、计时数据和清单标识符。仅在有明确的支持需求时，通过已批准的安全渠道发送运维证据。
+
+工具不会创建 `command-used.redacted.txt`；它是操作员可选记录的文件，而非标准交接成果。切勿包含密码或令牌文件、匿名化密钥、CA 私钥、客户数据转储或数据库日志。

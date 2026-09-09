@@ -252,6 +252,47 @@ class ReleaseArchiveTests(unittest.TestCase):
         )
         self.assertTrue(any("binary sha256" in failure for failure in failures), failures)
 
+    def test_rejects_version_drift_between_release_tag_and_sbom(self) -> None:
+        for kind in ("binary", "source"):
+            with self.subTest(kind=kind):
+                files = fixture_files() if kind == "binary" else source_fixture_files()
+                provenance = json.loads(files["PROVENANCE.json"][0])
+                provenance["source_ref"] = "refs/tags/v1.5.1"
+                files["PROVENANCE.json"] = (json_bytes(provenance), 0o644)
+                directory = self.root / f"tag-version-{kind}"
+                directory.mkdir()
+                top = TOP if kind == "binary" else SOURCE_TOP
+                path = directory / f"{top}.tar.gz"
+                write_tar(path, files, top=top)
+                failures = check_release_archive.validate_archive(path, kind, REVISION)
+                self.assertIn(
+                    "SBOM application version does not match the provenance release tag",
+                    failures,
+                )
+
+    def test_manual_branch_build_does_not_invent_a_release_tag(self) -> None:
+        files = fixture_files()
+        provenance = json.loads(files["PROVENANCE.json"][0])
+        provenance["source_ref"] = "refs/heads/main"
+        files["PROVENANCE.json"] = (json_bytes(provenance), 0o644)
+        self.assertEqual(
+            check_release_archive.validate_archive(
+                self.archive("manual-branch", files), "binary", REVISION
+            ),
+            [],
+        )
+
+    def test_release_history_and_support_documents_are_required(self) -> None:
+        for name in ("CHANGELOG.md", "CONTRIBUTING.md", "SUPPORT.md"):
+            with self.subTest(name=name):
+                self.assertIn(name, check_release_archive.COMMON_REQUIRED)
+                files = fixture_files()
+                del files[name]
+                failures = check_release_archive.validate_archive(
+                    self.archive(f"missing-{name}", files), "binary", REVISION
+                )
+                self.assertIn(f"missing required archive member: {name}", failures)
+
     def test_rejects_wrong_workflow_revision(self) -> None:
         failures = check_release_archive.validate_archive(
             self.archive("revision"), "binary", "c" * 40
@@ -307,9 +348,25 @@ class ReleaseArchiveTests(unittest.TestCase):
             any("docs/de/README.md" in failure for failure in failures), failures
         )
 
+    def test_rejects_archive_without_current_examples_or_their_guide(self) -> None:
+        files = fixture_files()
+        missing = (
+            "samples/README.md",
+            "samples/postgresql-v6-catalog.toml",
+            "samples/mysql-v6-sampled.toml",
+            "samples/sqlserver-v6-analyzed.toml",
+        )
+        for name in missing:
+            del files[name]
+        failures = check_release_archive.validate_archive(
+            self.archive("current-examples", files), "binary", REVISION
+        )
+        for name in missing:
+            self.assertIn(f"missing required archive member: {name}", failures)
+
     def test_rejects_internal_or_unregistered_operator_documents(self) -> None:
         files = fixture_files()
-        files["docs/ESTIMATOR_HANDOFF.md"] = (b"internal\n", 0o644)
+        files["docs/SYNTHETIC_UNLISTED_DOCUMENT.md"] = (b"internal\n", 0o644)
         files["docs/de/UNREGISTERED.md"] = (b"unregistered translation\n", 0o644)
         files["sql/grants/INTERNAL-NOTES.md"] = (b"internal\n", 0o644)
         failures = check_release_archive.validate_archive(
@@ -318,7 +375,7 @@ class ReleaseArchiveTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "unexpected file in closed operator-document/script subtree" in failure
-                and "docs/ESTIMATOR_HANDOFF.md" in failure
+                and "docs/SYNTHETIC_UNLISTED_DOCUMENT.md" in failure
                 and "docs/de/UNREGISTERED.md" in failure
                 and "sql/grants/INTERNAL-NOTES.md" in failure
                 for failure in failures

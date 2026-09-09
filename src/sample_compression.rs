@@ -15,21 +15,25 @@ use std::time::Instant;
 
 use zstd::bulk::Compressor;
 
-use dbwarp_blueprint_core::WIRE_CHUNK_BYTES;
+use dbwarp_blueprint_core::{
+    encode_columnar_transfer_probe_streaming_frames, measure_zstd_streaming_probe_frames,
+    measure_zstd_streaming_probe_frames_with_chunk_bytes,
+    TRANSFER_SAMPLE_STREAMING_CHUNKED_ENCODING_TAG, TRANSFER_SAMPLE_STREAMING_ENCODING_TAG,
+};
 
 use crate::format::{self, BlueprintCompression};
 use crate::sample_encode;
 
 #[derive(Debug)]
 pub struct PreparedCompressionSample {
-    pub table_bytes: Vec<u8>,
-    /// Byte ranges for complete rows inside `table_bytes`.
-    pub row_ranges: Vec<(usize, usize)>,
     pub column_bytes: Vec<Vec<u8>>,
     pub sample_rows: u64,
     pub sample_method: String,
     pub sampled_with_bias: bool,
     pub bias_reason: String,
+    /// When present, replay the persistent zstd context using this probe
+    /// chunk boundary and emit the chunk-aware v3 measurement tag.
+    pub compression_chunk_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -171,75 +175,62 @@ fn receive_job(
     }
 }
 
-/// Split the sample into fixed-size chunks that end on row boundaries. A
-/// chunk closes once it reaches `WIRE_CHUNK_BYTES`; the final chunk carries
-/// the remainder. Rows longer than the chunk size become single-row chunks.
-fn chunk_ranges(row_ranges: &[(usize, usize)]) -> Vec<(usize, usize)> {
-    let mut chunks = Vec::new();
-    let mut chunk_start: Option<usize> = None;
-    let mut chunk_end = 0_usize;
-    for (start, end) in row_ranges {
-        if chunk_start.is_none() {
-            chunk_start = Some(*start);
-        }
-        chunk_end = *end;
-        if chunk_end.saturating_sub(chunk_start.unwrap_or(0)) >= WIRE_CHUNK_BYTES {
-            if let Some(started) = chunk_start.take() {
-                chunks.push((started, chunk_end));
-            }
-        }
-    }
-    if let Some(started) = chunk_start {
-        if chunk_end > started {
-            chunks.push((started, chunk_end));
-        }
-    }
-    chunks
-}
-
 fn analyze_sample(
     sample: PreparedCompressionSample,
     compressors: &mut ReusableZstdCompressors,
 ) -> io::Result<CompressionMeasurements> {
-    if sample.table_bytes.is_empty() {
+    if sample.sample_rows == 0 || sample.column_bytes.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "compression sample buffer is empty",
+            "compression sample has no rows or columns",
         ));
     }
 
+    let transfer_frames = encode_columnar_transfer_probe_streaming_frames(
+        sample.column_bytes.as_slice(),
+        sample.sample_rows,
+    )
+    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let mut work = CompressionWorkReport::default();
-    let chunks = chunk_ranges(&sample.row_ranges);
-    let mut per_chunk_ratios = Vec::with_capacity(chunks.len());
-    for (start, end) in &chunks {
-        let chunk = sample.table_bytes.get(*start..*end).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "compression sample contains an invalid row range",
-            )
-        })?;
-        let started = Instant::now();
-        let compressed_len = compressors.level_3_len(chunk);
-        work.chunk_level_3_attempts = work.chunk_level_3_attempts.saturating_add(1);
-        work.compression_ms = work.compression_ms.saturating_add(elapsed_ms(started));
-        if let Ok(compressed_len) = compressed_len {
-            if compressed_len > 0 && !chunk.is_empty() {
-                per_chunk_ratios.push(chunk.len() as f64 / compressed_len as f64);
-            }
-        }
-    }
-
     let started = Instant::now();
-    let comp_3_len = compressors.level_3_len(&sample.table_bytes);
+    let streaming = match sample.compression_chunk_bytes {
+        Some(chunk_bytes) => {
+            measure_zstd_streaming_probe_frames_with_chunk_bytes(&transfer_frames, 3, chunk_bytes)
+        }
+        None => measure_zstd_streaming_probe_frames(&transfer_frames, 3),
+    }
+    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error));
+    let compression_attempts = sample.compression_chunk_bytes.map_or_else(
+        || transfer_frames.len() as u64,
+        |chunk_bytes| {
+            transfer_frames
+                .iter()
+                .map(|frame| frame.len().div_ceil(chunk_bytes) as u64)
+                .sum()
+        },
+    );
+    work.chunk_level_3_attempts = work
+        .chunk_level_3_attempts
+        .saturating_add(compression_attempts);
     work.table_level_3_attempts = work.table_level_3_attempts.saturating_add(1);
     work.compression_ms = work.compression_ms.saturating_add(elapsed_ms(started));
-    let comp_3_len = comp_3_len?;
+    let streaming = streaming?;
+    let comp_3_len = streaming.total_compressed_bytes;
     if comp_3_len == 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "zstd returned an empty table sample",
         ));
     }
+
+    let per_chunk_ratios = transfer_frames
+        .iter()
+        .zip(streaming.frame_compressed_bytes.iter().copied())
+        .filter_map(|(frame, compressed_len)| {
+            (compressed_len > 0 && !frame.is_empty())
+                .then_some(frame.len() as f64 / compressed_len as f64)
+        })
+        .collect::<Vec<_>>();
 
     let stddev = if per_chunk_ratios.len() > 1 {
         let mean = per_chunk_ratios.iter().sum::<f64>() / per_chunk_ratios.len() as f64;
@@ -256,13 +247,17 @@ fn analyze_sample(
     let table = BlueprintCompression {
         measured: true,
         sample_rows: sample.sample_rows,
-        sample_bytes: format::round_sample_bytes(sample.table_bytes.len() as u64),
+        sample_bytes: format::round_sample_bytes(streaming.total_input_bytes as u64),
         sample_method: sample.sample_method.clone(),
         sampled_with_bias: sample.sampled_with_bias,
         bias_reason: sample.bias_reason.clone(),
-        ratio_zstd_3: format::round_ratio(sample.table_bytes.len() as f64 / comp_3_len as f64),
+        ratio_zstd_3: format::round_ratio(streaming.total_input_bytes as f64 / comp_3_len as f64),
         ratio_stddev: format::round_ratio(stddev),
-        sample_encoding: sample_encode::SAMPLE_ENCODING_TAG.to_string(),
+        sample_encoding: if sample.compression_chunk_bytes.is_some() {
+            TRANSFER_SAMPLE_STREAMING_CHUNKED_ENCODING_TAG.to_string()
+        } else {
+            TRANSFER_SAMPLE_STREAMING_ENCODING_TAG.to_string()
+        },
         ..BlueprintCompression::default()
     };
 
@@ -350,7 +345,7 @@ mod tests {
         let binary = (0_u32..65_537)
             .flat_map(|value| value.to_le_bytes())
             .collect::<Vec<_>>();
-        let repetitive = "dbwarp-blueprint-rowframe-v1|".repeat(16_384);
+        let repetitive = "blueprint-compression-probe-v2|".repeat(16_384);
         let inputs = [
             &[][..],
             b"one small sampled row".as_slice(),
@@ -366,50 +361,33 @@ mod tests {
         }
     }
 
-    #[test]
-    fn chunk_ranges_end_on_row_boundaries_at_wire_size() {
-        // 3000 rows of 100 bytes: chunks close at the first row boundary at or
-        // past 64 KiB, i.e. every 656 rows (65_600 bytes), remainder last.
-        let rows = (0..3000)
-            .map(|i| (i * 100, (i + 1) * 100))
-            .collect::<Vec<_>>();
-        let chunks = chunk_ranges(&rows);
-        assert_eq!(chunks.len(), 5);
-        assert_eq!(chunks[0], (0, 65_600));
-        assert_eq!(chunks[1], (65_600, 131_200));
-        assert_eq!(chunks.last().copied().unwrap(), (262_400, 300_000));
-        // A row larger than the chunk size becomes its own chunk.
-        let big = vec![
-            (0, WIRE_CHUNK_BYTES * 2),
-            (WIRE_CHUNK_BYTES * 2, WIRE_CHUNK_BYTES * 2 + 10),
-        ];
-        let chunks = chunk_ranges(&big);
-        assert_eq!(chunks.len(), 2);
-        // Empty row list yields no chunks.
-        assert!(chunk_ranges(&[]).is_empty());
-    }
-
     fn prepared_sample() -> PreparedCompressionSample {
-        let rows = [
-            b"first deterministic row".as_slice(),
-            b"second deterministic row with repeated repeated text".as_slice(),
-            b"third deterministic row".as_slice(),
-        ];
-        let mut table_bytes = Vec::new();
-        let mut row_ranges = Vec::new();
-        for row in rows {
-            let start = table_bytes.len();
-            table_bytes.extend_from_slice(row);
-            row_ranges.push((start, table_bytes.len()));
+        let mut column_bytes = vec![Vec::new(), Vec::new()];
+        for number in [b"1".as_slice(), b"2".as_slice(), b"3".as_slice()] {
+            sample_encode::encode_row(
+                &mut column_bytes[0],
+                &[sample_encode::Cell::new(
+                    sample_encode::TypeTag::TextUtf8,
+                    b"alpha",
+                )],
+            )
+            .unwrap();
+            sample_encode::encode_row(
+                &mut column_bytes[1],
+                &[sample_encode::Cell::new(
+                    sample_encode::TypeTag::NumberText,
+                    number,
+                )],
+            )
+            .unwrap();
         }
         PreparedCompressionSample {
-            table_bytes,
-            row_ranges,
-            column_bytes: vec![b"alpha|alpha|alpha".to_vec(), b"1|2|3".to_vec()],
+            column_bytes,
             sample_rows: 3,
             sample_method: "deterministic test".to_string(),
             sampled_with_bias: false,
             bias_reason: String::new(),
+            compression_chunk_bytes: None,
         }
     }
 
@@ -431,6 +409,8 @@ mod tests {
             measurement_signature(one.submit(prepared_sample()).unwrap().resolve().unwrap());
         drop(one);
 
+        assert!(one_signature.contains(TRANSFER_SAMPLE_STREAMING_ENCODING_TAG));
+
         for worker_count in [2, 4, 8] {
             let pool = CompressionWorkerPool::new(worker_count).unwrap();
             let tickets = (0..16)
@@ -443,6 +423,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn probe_chunked_samples_emit_distinct_v3_contract() {
+        let mut sample = prepared_sample();
+        sample.compression_chunk_bytes = Some(8);
+        let pool = CompressionWorkerPool::new(1).unwrap();
+        let measurement = pool.submit(sample).unwrap().resolve().unwrap();
+        assert_eq!(
+            measurement.table.sample_encoding,
+            TRANSFER_SAMPLE_STREAMING_CHUNKED_ENCODING_TAG
+        );
+        assert!(measurement.work.chunk_level_3_attempts > 1);
     }
 
     #[test]

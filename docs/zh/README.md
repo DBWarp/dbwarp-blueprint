@@ -17,7 +17,8 @@
 
 **语言：** [English](../../README.md) | [Deutsch](../de/README.md) | [Français](../fr/README.md) | [Español](../es/README.md) | [Polski](../pl/README.md) | [日本語](../ja/README.md) | **简体中文**
 
-英文文档具有最高效力。机器翻译文档集可能在经过多次独立审查后单独提供，但仍可能包含错误。
+英文是规范版本；机器辅助翻译仅为补充资料，可能包含错误。
+[`MACHINE_TRANSLATIONS.md`](https://github.com/DBWarp/dbwarp-blueprint/blob/main/MACHINE_TRANSLATIONS.md).
 
 ## 产品简介
 
@@ -42,7 +43,7 @@ DBWarp Blueprint 免费且开源，并且完全在您的环境中运行。借助
 
 ---
 
-`dbwarp-blueprint` 是 DBWarp 的客户侧 Blueprint 采集器。在客户自己的环境中运行它，可生成经过脱敏且可审阅的 `blueprint.toml` 文件。DBWarp 可使用该文件进行迁移容量估算、合成测试数据集生成和预检规划，而无需获取数据库访问权限、转储、模式名称或行数据。
+`dbwarp-blueprint` 是 DBWarp 的客户侧 Blueprint 采集器。在客户自己的环境中运行它，可生成有界、匿名化且可审阅的 `blueprint.toml` 文件。DBWarp 可使用该文件进行迁移容量估算、合成测试数据集生成和预检规划，而无需获取数据库访问权限、转储、模式名称或行数据。
 
 它可连接 PostgreSQL、MySQL 或 SQL Server，读取目录元数据，按需从有界行样本测量本地压缩率，并写出纯文本 TOML。如果输入已经是结构化数据文件而非实时数据库，它还可以在离线模式下从本地 Parquet 或 Avro 文件推导 Blueprint。您可以打开输出、逐行审阅，然后决定是否分享。
 
@@ -57,11 +58,11 @@ DBWarp 需要足够的结构信息来估算和规划传输：
 - 表和索引大小；
 - 列类型系列、精确的结构容量/索引前缀，以及默认按隐私策略舍入的观测宽度；
 - 索引和外键结构；
-- 隐私安全的非表对象计数和外部部署前提条件；
+- 有界且无名称的非表对象计数和外部部署前提条件；
 - 从少量本地样本得到的可选表级和列级压缩摘要；
 - 可选的客户侧数据库 RTT 证据。
 
-这些事实足以估算传输大小、选择 DBWarp 批量传输的初始方案，并生成具有代表性的合成基准测试数据集，但不足以重建客户的模式或数据。
+这些事实足以估算传输大小、选择 DBWarp 批量传输的初始方案，并生成具有代表性的合成基准测试数据集。源名称和行值会被省略，但独特的结构和统计信息仍可能形成工作负载指纹；匿名化是降低风险，而不是承诺不可逆。
 
 ## 不会执行的操作
 
@@ -72,8 +73,8 @@ DBWarp 需要足够的结构信息来估算和规划传输：
 - 上传 Blueprint 文件；
 - 读取 `~/.pgpass`、`~/.my.cnf`、云凭据或 SSH 密钥；
 - 读取 `PGPASSWORD` 或 `MYSQL_PWD` 等默认密码环境变量；
-- 写入当前模式所选输出之外的任何内容；批处理模式会写入包含子 Blueprint、
-  子审计和可选故障证据的捆绑包目录；
+- 使用隐式系统临时、缓存或配置目录；它只写入明确选择的输出文件，而批处理模式为了
+  原子发布还会在 `--out-dir` 旁使用相邻的暂存或恢复目录；
 - 在输出中包含真实表名、列名、索引名或模式名、非表对象名、SQL 定义、外部端点、凭据、密钥、证书、二进制文件或行值。
 
 实时 Blueprint 采集会与您指定的端点建立数据库会话。DNS 可能使用已配置的
@@ -88,25 +89,53 @@ DBWarp 需要足够的结构信息来估算和规划传输：
 | 下载二进制文件 | 快速试用、售前工程通话、隔离测试主机 | [`binaries/README.md`](BINARIES.md) |
 | 从精简源代码克隆构建 | 安全审查、生产策略、可重现性检查 | [`BUILD.md`](BUILD.md) |
 | 从带依赖源代码的发布包构建 | 严格的离线依赖审计 | GitHub Releases |
+| 审阅并运行 SQL 回退 | DBA 策略拒绝第三方二进制文件 | [`sql/blueprint.pg.sql`](../../sql/blueprint.pg.sql)、[`sql/blueprint.mysql.sql`](../../sql/blueprint.mysql.sql)、[`sql/blueprint.sqlserver.sql`](../../sql/blueprint.sqlserver.sql) 和 [`blueprint_format.py`](../../blueprint_format.py) |
+
+### SQL 回退边界
+
+SQL 回退是可审阅的最低目录路径，而不是 Rust 采集器的同等功能替代品。每个 SQL 脚本都会写入包含真实模式、表、列和索引名称的中间 JSON 文档；MySQL `COLUMN_TYPE` 还可能包含已声明的 enum/set 成员。请将该 JSON 视为敏感模式材料，保留在源环境中，使用 `blueprint_format.py` 在本地规范化，并只分享经过审阅的 TOML 输出。
+
+回退没有 `--schema` 选择器：PostgreSQL 覆盖所连接数据库中的所有非系统模式，MySQL 和 SQL Server 覆盖所选数据库中的所有用户表。只批准子集时不要使用。其 TOML 包含表/列/索引/FK 结构和近似本地大小，但不包含行采样、RTT 证据、非表对象清单或实时拓扑探测；拓扑和数据集完整性会明确标记为 `unknown`。
 
 最重视信任的方式是从源代码构建。常规仓库保持精简，并使用 `Cargo.lock` 固定依赖版本。对于更严格的离线审计，每个版本还会发布一个包含所有依赖源文件的依赖完整源代码包。为方便使用，也提供带 SHA256 校验和的发布二进制文件。
 
 ## 快速开始
 
+在任何实时运行前，请 DBA 使用 [`sql/grants/`](../../sql/grants/) 中与引擎、版本和
+层级匹配的脚本配置专用最小权限采集账户，并批准确切的架构范围。切勿从应用所有者
+或管理员账户开始。通过 `--schema` 传入每个获批架构；采集完成后，使用
+[`sql/revoke/`](../../sql/revoke/) 中对应的脚本删除专用账户。完整的首次运行流程请
+参阅 [`docs/QUICKSTART.md`](QUICKSTART.md)。
+
 需要时可选择显示语言。默认语言为英语；二进制文件内嵌了完整的德语、法语、西班牙语、波兰语、日语和简体中文目录：
 
 ```bash
 ./dbwarp-blueprint --lang ja --help
-./dbwarp-blueprint --lang de --connect postgresql://db.internal/payments --dry-run
+./dbwarp-blueprint --lang de --connect postgresql://db.internal/payments --schema app --dry-run
 ```
 
 只有面向用户的帮助、提示、诊断、进度和 PowerPoint 演示文稿标签会被翻译。命令和选项名称、可接受值、URI 方案、环境变量名称、选择器、DBP 代码、审计键以及生成的 TOML 始终使用规范英文标记。这样可确保所有语言下的自动化和支持流程完全一致。请参阅 [`docs/INTERNATIONALISATION.md`](INTERNATIONALISATION.md)。
+
+连接数据库前，请先查看 [`samples/`](../../samples/) 下检入的示例。它们是普通的
+Blueprint TOML，无需设置即可审阅。获取二进制文件后，首次离线运行可以在不使用
+数据库或网络的情况下，将其中一个示例渲染为演示文稿：
+
+请先查看 [`samples/README.md`](../../samples/README.md) 中的小型 schema v6 示例：
+仅含目录信息的 PostgreSQL 示例、包含采样的 MySQL 示例，以及包含采样和工件分析的
+SQL Server 示例。这些是手工编写的合成示例，并非客户采集数据或资格验证结果。
+较大的 schema v1 示例仍作为兼容性测试资料保留。在批准客户采集前，请使用
+[`FORMAT.md`](FORMAT.md) 审阅完整输出范围；没有哪个示例涵盖所有可选字段。
+
+```bash
+./dbwarp-blueprint --from-toml samples/sqlserver-v6-analyzed.toml --deck sample.pptx
+```
 
 首先进行试运行。它只打印计划，不连接数据库：
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --dry-run
 ```
 
@@ -115,6 +144,7 @@ DBWarp 需要足够的结构信息来估算和规划传输：
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -125,7 +155,7 @@ DBWarp 需要足够的结构信息来估算和规划传输：
   --audit-log audit.txt
 ```
 
-使用 `--measure-compression --yes` 时，输出会包含表级 zstd 比率和逐列压缩预测。逐列块与表级比率使用相同的有界样本计算；它们用于 DBWarp 测试数据集估算，不会把采样值写入磁盘。模式 v3 及更高版本还会输出隐私安全的逐列基数与分布聚合，以及推断得到的索引前缀和关系摘要。临时指纹在内存中有明确上限并会被丢弃；值和指纹绝不会出现在 Blueprint TOML 中。
+使用 `--measure-compression --yes` 时，输出会包含表级 zstd 比率和逐列压缩预测。逐列块与表级比率使用相同的有界样本计算；它们用于 DBWarp 测试数据集估算，不会把采样值写入磁盘。若某个二进制样本在字节量上占显著主导地位，并带有可识别的标准压缩容器签名，则只会获得粗粒度的 `style = "precompressed"` 标签；文件类型、签名和采样值都不会被序列化。生成的孪生数据会把该标签转换为中立、确定性的压缩容器测试数据，而不会声称客户原始内容属于任何类型。模式 v3 及更高版本还会输出有界、无名称的逐列基数与分布聚合，以及推断得到的索引前缀和关系摘要。临时逐值哈希在内存中有明确上限并会被丢弃；采样值和逐值哈希绝不会出现在 Blueprint TOML 中，但已记录的聚合值会出现。
 
 从模式 v4 开始，Blueprint 还会清点非表对象。默认的 `--artifact-detail summary` 不读取定义，
 只按对象类别和外部前提类别保存有界计数。`graph` 添加匿名依赖拓扑，
@@ -135,6 +165,7 @@ DBWarp 需要足够的结构信息来估算和规划传输：
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --artifact-detail analyzed \
   --out blueprint.toml \
@@ -153,6 +184,7 @@ DBWarp 需要足够的结构信息来估算和规划传输：
 ```bash
 ./dbwarp-blueprint \
   --connect mysql://mysql-primary.internal:3306/appdb \
+  --schema appdb \
   --password-file /etc/dbwarp/mysql-blueprint.pass \
   --measure-compression --yes \
   --out mysql-appdb.blueprint.toml
@@ -163,6 +195,7 @@ DBWarp 需要足够的结构信息来估算和规划传输：
 ```bash
 ./dbwarp-blueprint \
   --connect mysql://mysql-primary.internal:3306/appdb \
+  --schema appdb \
   --password-file /etc/dbwarp/mysql-blueprint.pass \
   --measure-compression \
   --length-fidelity exact --yes \
@@ -170,7 +203,7 @@ DBWarp 需要足够的结构信息来估算和规划传输：
   --audit-log mysql-appdb-exact.audit.txt
 ```
 
-使用 `--length-fidelity strict` 可对声明长度、观测长度和前缀长度沿用旧版粗粒度、适合分享的分桶方式。Strict 模式会刻意牺牲测试数据集/索引保真度，不适合客户基准测试。旧版 `--preserve-exact-lengths --yes` 写法仍作为 `--length-fidelity exact --yes` 的兼容别名保留。
+使用 `--length-fidelity strict` 可对声明长度、观测长度和前缀长度沿用旧版粗粒度隐私分桶方式。Strict 模式会刻意牺牲测试数据集/索引保真度，不适合客户基准测试。旧版 `--preserve-exact-lengths --yes` 写法仍作为 `--length-fidelity exact --yes` 的兼容别名保留。
 
 新 Blueprint 文件会分别记录 `declared_length_fidelity`、`index_length_fidelity` 和 `observed_length_fidelity` 字段。旧版 `length_metadata` 字段仍保留，以便与旧消费者进行保守兼容。PostgreSQL 字符容量使用精确的目录值；依赖编码的字节上限和索引前缀长度仍不可用。
 
@@ -183,9 +216,9 @@ less blueprint.toml
 less audit.txt
 ```
 
-如果符合您的策略，可将 `blueprint.toml` 分享给 DBWarp。演示文稿经审阅后也可以
-分享。审计日志包含端点、身份、路径和计时详细信息；除非特定支持案例要求通过已批准的
-安全渠道提供，否则应将其作为受访问控制的运维证据保留。
+请遵循[交接政策](QUICKSTART.md#review-and-share)。
+默认只分享已审阅的 `blueprint.toml` 或打包后的捆绑包。演示文稿只有在其内容和保密级别经过审阅，并依据组织政策单独获批后，才可一并提供。
+默认将运维证据保留在本地。
 
 ## 结构化文件模式
 
@@ -207,7 +240,7 @@ less audit.txt
 
 Parquet 模式读取页脚和行组元数据。Avro 对象容器没有等效的页脚行数，因此 Avro 模式会遍历容器统计记录数，并使用写入器模式获取列结构。两种模式都不会连接数据库，也不会读取凭据选项。
 
-如果策略允许解码采样，文件模式还可以从有界本地样本估算 DBWarp 传输风格的压缩率：
+如果策略允许解码采样，文件模式还可以测量有界的本地可压缩性，供下游规划使用：
 
 ```bash
 ./dbwarp-blueprint \
@@ -218,7 +251,7 @@ Parquet 模式读取页脚和行组元数据。Avro 对象容器没有等效的�
   --audit-log audit.txt
 ```
 
-相同选项也适用于 `--from-avro`。采样值会在内存中编码为 `dbwarp-blueprint-rowframe-v1`；只有聚合 zstd 压缩比会写入 Blueprint TOML。
+相同选项也适用于 `--from-avro`。采样值会在内存中编码为 `blueprint-compression-probe-v2`；Blueprint 会保存聚合压缩、空值密度、基数/频率、长度和样式测量值，绝不保存采样值。
 
 ## 批处理和捆绑包模式
 
@@ -258,6 +291,7 @@ PostgreSQL：
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -270,6 +304,7 @@ MySQL：
 ```bash
 ./dbwarp-blueprint \
   --connect mysql://app@db.internal/payments \
+  --schema payments \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -282,6 +317,7 @@ SQL Server：
 ```bash
 ./dbwarp-blueprint \
   --connect sqlserver://dbwarp_user@db.internal,1433/payments \
+  --schema dbo \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
@@ -293,19 +329,21 @@ SQL Server：
 
 ## 仅目录模式
 
-如果策略禁止采样行，请省略 `--measure-compression`：
+如果策略只允许表/列/索引/FK 目录，请省略 `--measure-compression`，并明确禁用默认的非表对象摘要：
 
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
+  --artifact-detail none \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
   --out blueprint.toml \
   --yes
 ```
 
-仅目录模式只读取元数据。DBWarp 仍可根据表大小、行数、类型系列和索引/FK 结构进行估算，但由于必须推断文本/二进制熵，压缩和合成测试数据集的真实性会较弱。
+此仅目录模式读取表元数据和统计信息，但不读取行值或非表对象目录。DBWarp 仍可根据表大小、行数、类型系列和索引/FK 结构进行估算，但由于必须推断文本/二进制熵，压缩和合成测试数据集的真实性会较弱。如果不使用 `--artifact-detail none`，默认摘要还会读取非表对象目录，但不读取定义。
 
 ## 输出预览
 
@@ -333,8 +371,8 @@ index_bytes = 1100000000
 
 [tables.table-001]
 rows = 12500000
-table_bytes = 4200000000
-index_bytes = 1100000000
+table_bytes = 4194304000
+index_bytes = 1048576000
 schema = "schema-A"
 has_clustered_index = false
 
@@ -359,6 +397,7 @@ cols = [1]
 ```bash
 ./dbwarp-blueprint \
   --connect postgresql://app@db.internal/payments \
+  --schema app \
   --password-file /etc/dbwarp/db.pass \
   --tls-mode verify-full \
   --tls-ca /etc/pki/internal-root.crt \
