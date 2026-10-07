@@ -1,5 +1,5 @@
 -- =============================================================================
--- dbwarp-blueprint least-privilege grants — SQL Server 2019 (15.x)
+-- dbwarp-blueprint least-privilege grants: SQL Server 2019 (15.x)
 -- Tier: STANDARD
 -- =============================================================================
 -- Authorizes this command:
@@ -8,15 +8,16 @@
 --       --password-file /etc/dbwarp/db.pass --artifact-detail none --measure-compression --yes --sample-rows 1000 --max-wall-secs 300 \
 --       --out blueprint.toml --audit-log blueprint.audit.txt
 --
--- STANDARD = BASIC + bounded row samples (synthetic-copy-ready). Adds SELECT on
--- the in-scope schemas so the collector can run on the same database session:
+-- STANDARD = BASIC + bounded row samples. Adds SELECT on
+-- each current local table in the in-scope schemas so the collector can run on
+-- the same database session:
 --   SELECT TOP (N) bounded-column-projection FROM [s].[t]
 --   ORDER BY (SELECT NULL) + separately bounded column style probes
 --
 -- Scope rule: make --schema match the edited schema list below. Omitting the
 -- selector retains the broader walk of every visible user schema. A selected
--- table it cannot read yields DBP1407W. Schema SELECT also covers views and table-valued
--- functions in the schema (read-only; broader than the base-table minimum).
+-- local table it cannot read yields DBP1407W. The exact path below deliberately
+-- excludes external tables and must be rerun after approved tables are added.
 -- db_datareader is the per-database low-maintenance alternative (all current
 -- and future tables/views in this one database).
 --
@@ -60,7 +61,7 @@
 --   ALL = every schema that owns a user table (for an unscoped run),
 --   or an explicit comma-separated list, e.g.  :setvar schemas "app, billing"
 :setvar use_db_datareader 0
---   1 = add the login to db_datareader instead of granting schema SELECT.
+--   1 = add the login to db_datareader instead of granting object SELECT.
 -- -----------------------------------------------------------------------------
 :on error exit
 SET NOCOUNT ON;
@@ -91,20 +92,24 @@ END
 ELSE
 BEGIN
     -- STRING_SPLIT needs database compatibility level 130+ (SQL Server 2016).
-    DECLARE @s sysname, @sql nvarchar(max);
+    DECLARE @s sysname, @o sysname, @sql nvarchar(max);
     DECLARE c CURSOR LOCAL FAST_FORWARD FOR
-        SELECT s.name FROM sys.schemas s
-        WHERE ('$(schemas)' = 'ALL'
-               AND EXISTS (SELECT 1 FROM sys.tables t WHERE t.schema_id = s.schema_id AND t.is_ms_shipped = 0))
-           OR ('$(schemas)' <> 'ALL'
-               AND s.name IN (SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT('$(schemas)', ',')))
-        ORDER BY s.name;
-    OPEN c; FETCH NEXT FROM c INTO @s;
+        SELECT s.name, t.name
+        FROM sys.schemas s
+        JOIN sys.tables t ON t.schema_id = s.schema_id
+        LEFT JOIN sys.external_tables et ON et.object_id = t.object_id
+        WHERE t.is_ms_shipped = 0
+          AND et.object_id IS NULL
+          AND ('$(schemas)' = 'ALL'
+               OR s.name IN (SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT('$(schemas)', ',')))
+        ORDER BY s.name, t.name;
+    OPEN c; FETCH NEXT FROM c INTO @s, @o;
     WHILE @@FETCH_STATUS = 0
     BEGIN
-        SET @sql = N'GRANT SELECT ON SCHEMA::' + QUOTENAME(@s) + N' TO ' + QUOTENAME('$(login)') + N';';
+        SET @sql = N'GRANT SELECT ON OBJECT::' + QUOTENAME(@s) + N'.' + QUOTENAME(@o)
+                 + N' TO ' + QUOTENAME('$(login)') + N';';
         PRINT @sql; EXEC sp_executesql @sql;
-        FETCH NEXT FROM c INTO @s;
+        FETCH NEXT FROM c INTO @s, @o;
     END
     CLOSE c; DEALLOCATE c;
 END
@@ -117,8 +122,11 @@ SELECT 'dbwarp-blueprint STANDARD tier applied for' AS note, '$(login)' AS login
 SELECT s.name AS schema_name,
        COUNT(*) AS visible_user_tables,
        SUM(CASE WHEN HAS_PERMS_BY_NAME(QUOTENAME(s.name) + '.' + QUOTENAME(t.name), 'OBJECT', 'SELECT') = 1 THEN 1 ELSE 0 END) AS readable_tables
-FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id
+FROM sys.tables t
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+LEFT JOIN sys.external_tables et ON et.object_id = t.object_id
 WHERE t.is_ms_shipped = 0
+  AND et.object_id IS NULL
 GROUP BY s.name ORDER BY s.name;
 SELECT COUNT(*) AS partition_stats_rows
 FROM sys.dm_db_partition_stats p JOIN sys.tables t ON t.object_id = p.object_id WHERE t.is_ms_shipped = 0;

@@ -7,8 +7,8 @@ Prebuilt `dbwarp-blueprint` binaries are published on the GitHub Releases page:
 You can download a binary, verify its checksum, run it locally, and inspect the generated `blueprint.toml` before sharing anything with DBWarp.
 
 Choose an exact release tag, for example
-`https://github.com/DBWarp/dbwarp-blueprint/releases/tag/v1.5.0`, then download
-the archive and `SHA256SUMS.txt` from that same tag. Do not use a mutable
+`https://github.com/DBWarp/dbwarp-blueprint/releases/tag/<release-tag>`, then
+download the archive and `SHA256SUMS.txt` from that same tag. Do not use a mutable
 `releases/latest` URL for a reproducible or audited run.
 
 ## Files
@@ -21,8 +21,13 @@ the archive and `SHA256SUMS.txt` from that same tag. Do not use a mutable
 | Windows x86_64 | `dbwarp-blueprint-windows-x86_64.zip` |
 | Offline source audit bundle | `dbwarp-blueprint-source-vendored.tar.gz` |
 | Checksums | `SHA256SUMS.txt` |
+| Extracted executable checksum | `dbwarp-blueprint-<platform>.binary.sha256` |
 
 Each release also includes `SHA256SUMS.txt`.
+
+Each Linux archive includes SQL Server Kerberos/GSSAPI support without a
+Kerberos library startup dependency. The binary loads the platform runtime
+only when integrated authentication is selected.
 
 The platform archives are ready-to-run operator bundles, not source trees.
 They include operating and audit references, but they cannot be rebuilt in
@@ -50,6 +55,19 @@ Get-FileHash .\dbwarp-blueprint-windows-x86_64.zip -Algorithm SHA256
 ```
 
 Compare the printed hash with the matching line in `SHA256SUMS.txt`.
+
+After extracting the archive into the same directory, verify the executable
+itself with the matching `*.binary.sha256` file from the same release tag. Each
+file names the executable inside its extracted folder, for example
+`dbwarp-blueprint-linux-x86_64/dbwarp-blueprint`:
+
+```bash
+sha256sum -c dbwarp-blueprint-linux-x86_64.binary.sha256
+```
+
+On macOS use `shasum -a 256 -c`, and on Windows compare
+`Get-FileHash .\dbwarp-blueprint-windows-x86_64\dbwarp-blueprint.exe` with the
+value in the `.binary.sha256` file.
 
 ## Downloaded binary or local build?
 

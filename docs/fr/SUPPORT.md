@@ -34,17 +34,9 @@ vérifiez chaque pièce jointe avant de la partager.
 
 ## Configurations prises en charge
 
-[STATUS.md](../../STATUS.md) décrit les capacités et la matrice des moteurs
-qualifiés. [BUILD.md](BUILD.md) décrit les exigences de compilation propres à
-la plateforme et à l’authentification. Rust est figé à la version exacte de
-`rust-toolchain.toml` ; le champ `rust-version` du paquet ne garantit pas que
-toute chaîne d’outils plus récente est qualifiée.
+[STATUS.md](../../STATUS.md) décrit les fonctionnalités et les versions de base de données prises en charge. [BUILD.md](BUILD.md) décrit les exigences de compilation spécifiques à la plateforme et à l'authentification. Rust est fixé à la version exacte indiquée dans `rust-toolchain.toml` ; les autres chaînes d'outils n'ont pas nécessairement été testées.
 
-Les consignes d’autorisation des services gérés n’affirment pas que chaque
-service ou configuration a été testé. Utilisez les
-[exigences d’autorisation](../../sql/grants/DATABASE_PERMISSIONS.md)
-correspondantes et qualifiez la configuration exacte avant toute utilisation
-en production.
+Les directives de permissions pour les services gérés ne constituent pas une affirmation que chaque service ou configuration a été testé. Utilisez les [exigences de permissions](../../sql/grants/DATABASE_PERMISSIONS.md) correspondantes et testez la configuration exacte avant toute utilisation en production.
 
 Pour les changements entre versions du collecteur, consultez
 [CHANGELOG.md](CHANGELOG.md).

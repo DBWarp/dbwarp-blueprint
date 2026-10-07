@@ -1,4 +1,4 @@
-// dbwarp-blueprint — customer-side schema-and-compression Blueprint tool.
+// dbwarp-blueprint: customer-side schema-and-compression Blueprint tool.
 //
 // See README.md, SECURITY.md, FORMAT.md, AUDIT.md.
 //
@@ -7,6 +7,7 @@
 // The tool has no telemetry, licence-check, or upload path. Read SECURITY.md
 // and grep src/secret.rs for `\.expose\(\)` to verify the credential boundary.
 
+mod app_oracle;
 mod artifacts;
 mod audit;
 mod banner;
@@ -15,8 +16,17 @@ mod engine_common;
 mod engine_mssql;
 mod engine_mysql;
 mod engine_pg;
+mod environment;
 mod format;
 mod i18n;
+mod oracle_basic;
+mod oracle_catalog;
+mod oracle_dba_spool;
+mod oracle_offline;
+mod oracle_provider;
+mod oracle_scope;
+mod oracle_session;
+mod oracle_sqlplus;
 mod sample_compression;
 mod sample_encode;
 mod schema_scope;
@@ -172,7 +182,7 @@ fn parse_deck_confidentiality(value: &str) -> std::result::Result<DeckConfidenti
     })
 }
 
-/// Customer-side schema-and-compression Blueprint tool for dbwarp pre-flight estimation.
+/// Database Blueprint collector for migration sizing and planning.
 ///
 /// Connects to a database, captures an anonymized Blueprint, and produces a
 /// reviewable plain-text TOML file. No row content is read (Tier 1) unless
@@ -184,7 +194,7 @@ fn parse_deck_confidentiality(value: &str) -> std::result::Result<DeckConfidenti
     name = "dbwarp-blueprint",
     version,
     about = "Anonymized database Blueprint for migration estimation",
-    long_about = "Collect sanitized database or structured-file Blueprint metadata for DBWarp sizing, synthetic fixture generation, and migration planning.\n\nLive database modes read catalog/statistics metadata. Tier 2 compression measurement is opt-in with --measure-compression --yes; sampled bytes are encoded and compressed in memory, then discarded. Offline modes read local TOML, Parquet, Avro, or bundle files and do not connect to a database.",
+    long_about = "Collect sanitized database or structured-file Blueprint metadata for DBWarp migration sizing and planning.\n\nLive database modes read catalog/statistics metadata. Tier 2 compression measurement is opt-in with --measure-compression --yes; sampled bytes are encoded and compressed in memory, then discarded. Offline modes read local TOML, Parquet, Avro, or bundle files and do not connect to a database.",
     after_long_help = r#"Examples:
   Table-catalog-only PostgreSQL Blueprint:
     dbwarp-blueprint --connect postgresql://db.internal/app \
@@ -219,6 +229,9 @@ Notes:
   - See docs/COOKBOOK.md and docs/BATCH_AND_BUNDLES.md for operator recipes."#
 )]
 struct Cli {
+    #[arg(skip)]
+    tls_mode_explicit: bool,
+
     /// Presentation language for help, prompts, diagnostics, progress, and decks.
     /// Command names, option names, values, URIs, identifiers, and output schemas
     /// remain canonical English tokens in every language.
@@ -260,6 +273,8 @@ struct Cli {
             "from_toml",
             "from_parquet",
             "from_avro",
+            "from_oracle_basic",
+            "oracle_basic_script_out",
             "batch_manifest",
             "bundle_list",
             "bundle_extract",
@@ -270,6 +285,8 @@ struct Cli {
             "from_toml",
             "from_parquet",
             "from_avro",
+            "from_oracle_basic",
+            "oracle_basic_script_out",
             "batch_manifest",
             "bundle_list",
             "bundle_extract",
@@ -415,6 +432,75 @@ struct Cli {
     )]
     from_avro: Option<PathBuf>,
 
+    /// Oracle Basic preview: build a Blueprint from a versioned,
+    /// checksummed local catalogue capture without connecting to Oracle.
+    #[arg(
+        long = "from-oracle-basic",
+        value_name = "PATH",
+        hide = true,
+        conflicts_with_all = [
+            "connect",
+            "from_toml",
+            "from_parquet",
+            "from_avro",
+            "batch_manifest",
+            "bundle_list",
+            "bundle_extract",
+            "bundle_pack"
+        ]
+    )]
+    from_oracle_basic: Option<PathBuf>,
+
+    /// Oracle Basic preview: render a DBA-run SQL*Plus capture script.
+    #[arg(
+        long,
+        value_name = "PATH",
+        hide = true,
+        requires = "oracle_basic_script_family",
+        conflicts_with_all = [
+            "connect",
+            "from_toml",
+            "from_parquet",
+            "from_avro",
+            "from_oracle_basic",
+            "batch_manifest",
+            "bundle_list",
+            "bundle_extract",
+            "bundle_pack"
+        ]
+    )]
+    oracle_basic_script_out: Option<PathBuf>,
+
+    /// Oracle Basic preview: server family for --oracle-basic-script-out.
+    #[arg(
+        long,
+        value_name = "12.1|12.2|19c|21c|26ai",
+        hide = true,
+        requires = "oracle_basic_script_out"
+    )]
+    oracle_basic_script_family: Option<String>,
+
+    /// Acknowledgement required for Oracle Basic preview capture and conversion.
+    #[arg(long, hide = true)]
+    acknowledge_oracle_preview: bool,
+
+    /// Oracle Basic preview: absolute path to the selected SQL*Plus executable.
+    #[arg(long, value_name = "PATH", hide = true, requires = "connect")]
+    oracle_sqlplus: Option<PathBuf>,
+
+    /// Oracle Basic preview: private, empty directory used as isolated TNS_ADMIN.
+    #[arg(long, value_name = "DIR", hide = true, requires = "connect")]
+    oracle_network_config_dir: Option<PathBuf>,
+
+    /// Oracle Basic preview: atomically write the normalized capture stream.
+    #[arg(
+        long,
+        value_name = "PATH",
+        hide = true,
+        requires_all = ["connect", "oracle_sqlplus"]
+    )]
+    oracle_basic_capture_out: Option<PathBuf>,
+
     /// Run multiple Blueprint captures from a manifest and write a bundle directory.
     /// Requires --out-dir. A non-dry-run batch requires --yes.
     #[arg(
@@ -528,7 +614,7 @@ struct Cli {
 
     /// Length metadata policy for live PostgreSQL and MySQL capture.
     /// balanced (default): exact schema/index lengths plus <=~3.2% relative
-    /// rounding for sampled value lengths; strict: legacy coarse anonymization;
+    /// rounding for sampled value lengths; strict: coarse length buckets;
     /// exact: preserve all lengths exactly and require --yes.
     #[arg(
         long,
@@ -595,7 +681,7 @@ struct Cli {
     /// Blueprint file with `connect_total_ms`, `query_rtt_ms_p50`, and
     /// `query_rtt_ms_p95`.
     /// Disable if your DBA forbids any non-catalog queries against
-    /// production. The probe never reads row data — each query
+    /// production. The probe never reads row data: each query
     /// returns the constant integer 1.
     #[arg(long = "no-rtt-probe", default_value_t = false, hide_short_help = true)]
     no_rtt_probe: bool,
@@ -620,11 +706,11 @@ struct Cli {
     password_file: Option<PathBuf>,
 
     /// Read password from a named environment variable. Tool reads ONLY the
-    /// var you name — no fallback to PGPASSWORD/MYSQL_PWD/etc.
+    /// var you name: no fallback to PGPASSWORD/MYSQL_PWD/etc.
     #[arg(long, value_name = "VAR")]
     password_env: Option<String>,
 
-    /// Read a 32-byte or 64-hex-character customer-held HMAC key from a file.
+    /// Read a 32-byte or 64-hex-character HMAC key you hold from a file.
     /// Reusing the same key preserves anonymous object IDs across runs. When
     /// omitted, a fresh process-local key prevents offline name guessing.
     #[arg(
@@ -647,9 +733,7 @@ struct Cli {
     /// SQL Server engine only. Mutually exclusive with --password-file
     /// and --password-env. The token is consumed once via the same
     /// zeroizing wrapper as a password. File mode must not allow
-    /// group/other read on Unix. Generate with:
-    ///   az account get-access-token --resource https://database.windows.net/ \
-    ///       --query accessToken -o tsv > entra.token
+    /// group/other read on Unix. See AUTH.md for private-file examples.
     #[arg(long, value_name = "PATH", hide_short_help = true)]
     azure_token_file: Option<PathBuf>,
 
@@ -659,7 +743,7 @@ struct Cli {
     #[arg(long, value_name = "VAR", hide_short_help = true)]
     azure_token_env: Option<String>,
 
-    /// Database authentication method. Optional — defaults to sql-auth,
+    /// Database authentication method. Optional: defaults to sql-auth,
     /// except SQL Server infers entra-token from --azure-token-*. Use
     /// cloud-token for an externally generated PostgreSQL/MySQL managed-service
     /// token supplied by exactly one --password-file/-env; this mode requires
@@ -699,7 +783,7 @@ struct Cli {
     /// require the same protected customer key, source state, options, and
     /// producer. Without this flag the current UTC time at run start is used.
     /// Recorded in the audit log when set. This CLI flag is the only way to
-    /// pin the timestamp — no environment variable is consulted for that purpose.
+    /// pin the timestamp: no environment variable is consulted for that purpose.
     #[arg(long, value_name = "ISO8601_UTC", hide_short_help = true)]
     generated_at: Option<String>,
 
@@ -718,7 +802,7 @@ struct Cli {
     #[arg(long, value_name = "PATH")]
     tls_ca: Option<PathBuf>,
 
-    /// Path to a client TLS certificate (PEM). Used for PostgreSQL/MySQL mTLS —
+    /// Path to a client TLS certificate (PEM). Used for PostgreSQL/MySQL mTLS;
     /// must be paired with --tls-key. SQL Server client certificates are
     /// unavailable.
     #[arg(long, value_name = "PATH", hide_short_help = true)]
@@ -729,12 +813,13 @@ struct Cli {
     #[arg(long, value_name = "PATH", hide_short_help = true)]
     tls_key: Option<PathBuf>,
 
-    /// Reserved for a future release. Passing this currently fails loudly
-    /// rather than being silently ignored by engine-specific drivers.
+    /// The TLS server name cannot be overridden. Passing
+    /// this option fails loudly rather than being silently ignored by
+    /// engine-specific drivers.
     #[arg(long, value_name = "NAME", hide_short_help = true)]
     tls_server_name: Option<String>,
 
-    /// Disable certificate verification entirely. Loud — emits a stderr
+    /// Disable certificate verification entirely. Loud: emits a stderr
     /// warning, recorded in audit. Refused on non-loopback addresses unless
     /// --i-know-what-im-doing is also set.
     #[arg(long, hide_short_help = true)]
@@ -952,7 +1037,7 @@ fn main() -> std::process::ExitCode {
     // vendored dep graph (pulled in transitively by `rustls` / `webpki`)
     // and are part of the audit surface, but their default-provider
     // installation is suppressed by this explicit ring install_default()
-    // call — and `rustls/rustls-webpki` are configured to prefer the
+    // call, and `rustls/rustls-webpki` is configured to prefer the
     // pure-Rust implementations. Run `cargo tree -i aws-lc-rs` to see
     // the transitive presence; it does not run code in the live binary.
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -968,10 +1053,16 @@ fn main() -> std::process::ExitCode {
     match run_main() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            if format!("{error:#}").starts_with("DBP1011E") {
+            let detail = format!("{error:#}");
+            if let Some(detail) = detail.strip_prefix("DBP1011E ") {
+                let detail = anyhow!(detail.to_string());
                 let message = format!(
                     "{}\n",
-                    render_operator_error("DBP1011E", "Command-line arguments are invalid", &error,)
+                    render_operator_error(
+                        "DBP1011E",
+                        "Command-line arguments are invalid",
+                        &detail,
+                    )
                 );
                 let rendered =
                     terminal_style::render_status(&message, terminal_style::OutputStream::Stderr);
@@ -988,7 +1079,7 @@ fn run_main() -> Result<()> {
     let raw_args = std::env::args().collect::<Vec<_>>();
     let locale = i18n::resolve_locale(argv_lang_hint(&raw_args));
     i18n::set_active_locale(locale);
-    let cli = match Cli::try_parse_from(&raw_args) {
+    let mut cli = match Cli::try_parse_from(&raw_args) {
         Ok(cli) => cli,
         Err(error)
             if matches!(
@@ -1022,6 +1113,10 @@ fn run_main() -> Result<()> {
             bail!("DBP1011E {error}")
         }
     };
+    cli.tls_mode_explicit = raw_args
+        .iter()
+        .skip(1)
+        .any(|argument| argument == "--tls-mode" || argument.starts_with("--tls-mode="));
     terminal_style::configure(cli.color.into());
     if cli.banner {
         let lockup = banner::render(
@@ -1058,6 +1153,10 @@ fn run_main() -> Result<()> {
     } else if cli.bundle_list.is_some() || cli.bundle_extract.is_some() || cli.bundle_pack.is_some()
     {
         "blueprint-bundle"
+    } else if cli.from_oracle_basic.is_some() {
+        "oracle-basic-offline-preview"
+    } else if cli.oracle_basic_script_out.is_some() {
+        "oracle-basic-dba-script-preview"
     } else if cli.from_parquet.is_some() || cli.from_avro.is_some() {
         "blueprint-from-file"
     } else if cli.measure_compression {
@@ -1251,6 +1350,10 @@ fn render_operator_error(default_code: &str, default_text: &str, err: &anyhow::E
             continue;
         }
         out.push_str(&format!("\n{}: ", i18n::text("diag.chain")));
+        let cause = cause
+            .strip_prefix(code)
+            .map(str::trim_start)
+            .unwrap_or(cause);
         out.push_str(cause);
     }
     out
@@ -1336,6 +1439,8 @@ enum CommandMode<'a> {
     BundlePack(&'a Path),
     DeckFromToml(&'a Path),
     StructuredFile(&'a Path, StructuredFileBlueprintKind),
+    OracleOffline(&'a Path),
+    OracleDbaScript(&'a Path),
     LiveCapture(&'a str),
 }
 
@@ -1367,18 +1472,44 @@ fn command_mode(cli: &Cli) -> Result<CommandMode<'_>> {
             StructuredFileBlueprintKind::Avro,
         ));
     }
+    if let Some(path) = cli.from_oracle_basic.as_deref() {
+        return Ok(CommandMode::OracleOffline(path));
+    }
+    if let Some(path) = cli.oracle_basic_script_out.as_deref() {
+        return Ok(CommandMode::OracleDbaScript(path));
+    }
     cli.connect
         .as_deref()
         .map(CommandMode::LiveCapture)
         .ok_or_else(|| {
             anyhow!(
                 "DBP1000E --connect is required unless an offline input mode is used. \
-                 Next: pass --connect URI, or use --from-toml/--from-parquet/--from-avro/--batch-manifest/--bundle-*."
+                 Next: pass --connect URI, or use an available offline input mode."
             )
         })
 }
 
 fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
+    let has_oracle_preview_option = cli.acknowledge_oracle_preview
+        || cli.oracle_sqlplus.is_some()
+        || cli.oracle_network_config_dir.is_some()
+        || cli.oracle_basic_capture_out.is_some()
+        || cli.oracle_basic_script_out.is_some()
+        || cli.oracle_basic_script_family.is_some();
+    if cli.batch_manifest.is_some() && has_oracle_preview_option {
+        bail!("DBP1011E Oracle Basic preview is standalone-only in 1.6 and cannot be enabled inside --batch-manifest");
+    }
+    let oracle_mode = cli.from_oracle_basic.is_some()
+        || cli.oracle_basic_script_out.is_some()
+        || cli
+            .connect
+            .as_deref()
+            .is_some_and(app_oracle::is_oracle_connect);
+    if !oracle_mode && has_oracle_preview_option {
+        bail!(
+            "DBP1011E Oracle preview options require an oracle:// connection or --from-oracle-basic"
+        );
+    }
     let connect = match command_mode(cli)? {
         CommandMode::Batch(path) => return run_batch_manifest(cli, audit, path),
         CommandMode::BundleList(path) => return run_bundle_list(cli, audit, path),
@@ -1388,9 +1519,40 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
         CommandMode::StructuredFile(path, kind) => {
             return run_blueprint_from_structured_file(cli, audit, path, kind)
         }
+        CommandMode::OracleOffline(path) => {
+            return app_oracle::run_oracle_offline(cli, audit, path)
+        }
+        CommandMode::OracleDbaScript(path) => {
+            if !cli.acknowledge_oracle_preview {
+                bail!("DBP1426E Oracle Basic is a preview in 1.6; rerun with --acknowledge-oracle-preview after reviewing the limitations");
+            }
+            app_oracle::validate_oracle_script_options(cli)?;
+            let family = cli
+                .oracle_basic_script_family
+                .as_deref()
+                .and_then(oracle_dba_spool::OracleDbaScriptFamily::parse)
+                .ok_or_else(|| {
+                    anyhow!("DBP1426E --oracle-basic-script-family must be 12.1, 12.2, 19c, 21c, or 26ai")
+                })?;
+            let script = oracle_dba_spool::render_oracle_basic_dba_script(family);
+            atomic_write_bytes(path, script.as_bytes())
+                .context("DBP1426E writing Oracle Basic DBA capture script")?;
+            audit.record_file_written(
+                path.to_path_buf(),
+                script.len() as u64,
+                hex::encode(Sha256::digest(script.as_bytes())),
+            );
+            audit
+                .network_egress
+                .push("none (Oracle DBA script rendering)".to_string());
+            return Ok(());
+        }
         CommandMode::LiveCapture(connect) => connect,
     };
 
+    if app_oracle::is_oracle_connect(connect) {
+        return app_oracle::run_oracle_live(cli, audit, connect);
+    }
     let tls_params = TlsParams {
         mode: TlsMode::parse(&cli.tls_mode).context("DBP1602E parsing --tls-mode")?,
         ca_bundle: cli.tls_ca.clone(),
@@ -1411,11 +1573,11 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
     if tls_params.server_name_override.is_some() {
         match engine_kind {
             EngineKind::Mssql => bail!(
-                "DBP1003E --tls-server-name is not supported by this release; use a --connect hostname \
+                "DBP1003E --tls-server-name is not supported; use a --connect hostname \
                  that matches the certificate. SQL Server validates that hostname in both verify-ca and verify-full modes."
             ),
             EngineKind::Postgresql | EngineKind::MySQL => bail!(
-                "DBP1003E --tls-server-name is not supported by this release; use a --connect hostname \
+                "DBP1003E --tls-server-name is not supported; use a --connect hostname \
                  that matches the certificate, or use --tls-mode=verify-ca if your policy \
                  permits CA validation without hostname validation."
             ),
@@ -1435,7 +1597,7 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
         if cli.length_fidelity == LengthFidelity::Strict {
             bail!(
                 "DBP1008E --preserve-exact-lengths conflicts with --length-fidelity strict. \
-                 Next: remove the legacy alias or use --length-fidelity exact --yes."
+                 Next: remove --preserve-exact-lengths or use --length-fidelity exact --yes."
             );
         }
         LengthFidelity::Exact
@@ -1452,7 +1614,7 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
         && matches!(engine_kind, EngineKind::Mssql)
     {
         bail!(
-            "DBP1007E explicit --length-fidelity modes currently apply to live PostgreSQL and MySQL capture only. \
+            "DBP1007E explicit --length-fidelity modes apply to live PostgreSQL and MySQL capture only. \
              Next: remove the explicit mode for SQL Server capture."
         );
     }
@@ -1556,7 +1718,7 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
         }
     };
     audit.connection.user_source = Some(resolved_user_source.to_string());
-    audit.connection.uri_redacted = format!("(planned; not connected) {redacted_uri}");
+    audit.connection.uri_redacted = format!("(not connected) {redacted_uri}");
 
     // Validate policy, option combinations, paths, and sensitive-file modes
     // before dry-run. Do not parse PEM content yet: dry-run must not read a
@@ -1567,12 +1729,12 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
 
     // Refuse URI-embedded passwords entirely. The whole `--connect`
     // value is visible in `ps`, in process tracing, and in any shell
-    // history that captured the command — there is no warning text loud
+    // history that captured the command: there is no warning text loud
     // enough to defend that. The customer's alternatives are:
     //
     //   --password-file PATH   (recommended; mode 0600)
     //   --password-env VAR     (when the secret is already in the env)
-    //   TTY prompt             (no flag — read once at startup)
+    //   TTY prompt             (no flag: read once at startup)
     //
     // The error message names them all and points to AUTH.md / SECURITY.md.
     if embedded_pw.is_some() {
@@ -1626,10 +1788,7 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
             resolved_user_source,
         );
         if !confirm_yes()? {
-            // Exit via Err so the audit still gets emitted with
-            // outcome="error: aborted (no consent)". anyhow will print
-            // "Error: aborted (no consent)" on stderr — that's fine;
-            // the audit is the forensic artefact.
+            // Return an error so the audit records the refused consent.
             bail!("DBP1701E aborted (no consent)");
         }
     }
@@ -1652,10 +1811,13 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
         tls::build_client_config(&tls_params)
             .context("DBP1602E parsing TLS trust and client-certificate material")?;
     }
+    if let Some(path) = tls_params.client_key.as_deref() {
+        record_sensitive_file_mode_warning(audit, path, "--tls-key");
+    }
 
     // Credential acquisition. embedded_pw is unconditionally None here
     // (the URI-embedded-password refusal above runs first). For
-    // --auth-mode=integrated there is no credential to acquire — the
+    // --auth-mode=integrated there is no credential to acquire: the
     // OS-level Kerberos TGT cache (Linux) or current Windows session
     // (Windows) supplies it; we use a synthetic placeholder Secret so
     // the engine signature stays uniform.
@@ -1786,7 +1948,7 @@ fn run_with_audit(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
             audit.connection.user_source = Some(src.to_string());
             // Translate the operator-facing AuthMode → engine-facing
             // MssqlAuthMode. resolve_mssql_auth_mode rejects Integrated
-            // on vanilla builds; on feature-enabled builds it passes
+            // on default builds; on feature-enabled builds it passes
             // through and the engine's Integrated arm dispatches
             // tiberius's AuthMethod::Integrated.
             let auth_mode = match resolved_auth_mode {
@@ -1905,7 +2067,16 @@ fn configure_anonymization_key(cli: &Cli, audit: &mut AuditLog) -> Result<()> {
         .set(source)
         .map_err(|_| anyhow!("DBP1607E anonymization key source initialization raced"))?;
     audit.anonymization_key_source = Some(source.to_string());
+    if let Some(path) = cli.anonymization_key_file.as_deref() {
+        record_sensitive_file_mode_warning(audit, path, "anonymization key file");
+    }
     Ok(())
+}
+
+fn record_sensitive_file_mode_warning(audit: &mut AuditLog, path: &Path, label: &str) {
+    if let Some(detail) = secret::sensitive_file_mode_warning(path, label) {
+        audit.record_warning("DBP1605W", detail);
+    }
 }
 
 fn parse_anonymization_key(bytes: &[u8]) -> Result<[u8; 32]> {

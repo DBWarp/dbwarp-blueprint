@@ -4,8 +4,8 @@
 
 **Idiomas:** [English](../../BUILD.md) | [Deutsch](../de/BUILD.md) | [Français](../fr/BUILD.md) | **Español** | [Polski](../pl/BUILD.md) | [日本語](../ja/BUILD.md) | [中文](../zh/BUILD.md)
 
-Esta guía está destinada a clientes que prefieren compilar la herramienta por
-sí mismos antes de ejecutarla contra una base de datos.
+Utilice esta guía si prefiere compilar la herramienta usted mismo antes de
+ejecutarla contra una base de datos.
 
 ## Compilación rápida
 
@@ -98,23 +98,30 @@ Windows PowerShell:
 Get-FileHash .\dbwarp-blueprint-windows-x86_64.zip -Algorithm SHA256
 ```
 
+Cada versión también publica un archivo
+`dbwarp-blueprint-<platform>.binary.sha256` para el ejecutable extraído. Consulte
+[Descargar binarios](BINARIES.md) para ver el comando de verificación.
+
 ## Compilaciones específicas de autenticación
 
 La compilación predeterminada admite flujos de contraseña, archivo de token,
 token de entorno y TLS; mTLS mediante certificado de cliente está disponible
 para PostgreSQL y MySQL.
 
-La autenticación integrada de SQL Server tiene compilaciones específicas de la
-plataforma:
+La autenticación integrada de SQL Server tiene compatibilidad específica para
+cada plataforma:
 
 | Plataforma | Comando de compilación | Finalidad |
 |---|---|---|
-| Linux | `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh` | Kerberos / GSSAPI |
-| Windows | Binario de Windows de GitHub Release, o `cargo build --release --features winauth` | Windows Integrated Auth / SSPI |
+| Linux | Binario de Linux de la versión de GitHub, o `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh` | Autenticación por contraseña, token y TLS, además de Kerberos / GSSAPI cuando se selecciona |
+| Windows | Binario de Windows de GitHub Release, o `cargo build --release --locked --features winauth` | Windows Integrated Auth / SSPI |
 
-Kerberos en Linux requiere las bibliotecas de ejecución habituales de MIT
-Kerberos. Si `kinit` funciona en el host, normalmente ya estarán presentes los
-componentes de ejecución necesarios.
+Los binarios de la versión de Linux no necesitan bibliotecas Kerberos para
+iniciarse. Cargan el entorno de ejecución GSSAPI de la plataforma solo cuando
+se selecciona `--auth-mode integrated`. Si `kinit` funciona, normalmente ya
+estarán presentes los componentes de ejecución necesarios. Las compilaciones
+desde el código fuente habilitan Kerberos/GSSAPI con `integrated-auth-gssapi`,
+como se muestra arriba.
 
 ## Compilar sin el script
 
@@ -138,12 +145,7 @@ cargo build --release --locked --features integrated-auth-gssapi
 
 ## Reproducir un binario de versión
 
-`./build.sh` demuestra que el código revisado compila; la identidad byte a byte
-requiere además todas las entradas nativas de la versión. Use la revisión exacta
-registrada en `PROVENANCE.json`, su destino y lista de funciones, la cadena Rust
-fijada, el compilador/enlazador nativo registrado, la fecha del commit como
-`SOURCE_DATE_EPOCH` y las opciones de reasignación de rutas y enlazado del flujo
-de publicación. Las versiones de Windows también usan `clang-cl` y `/Brepro`.
+`./build.sh` demuestra que el origen revisado se compila correctamente; la identidad de bytes requiere, además, todas las entradas de compilación nativa completas de la versión. Consulte la revisión exacta del origen registrada en `PROVENANCE.json`, publicada con cada versión, utilice su lista de destinos y características, la cadena de herramientas Rust especificada, la compilación nativa registrada compiler/linker, la marca de tiempo del commit como `SOURCE_DATE_EPOCH` y las rutas de remapeo y las banderas del enlazador del flujo de trabajo de la versión. Las versiones de Windows también utilizan `clang-cl` y `/Brepro`.
 
 Tras reproducir esas entradas, compare el binario extraído con el resultado local:
 
@@ -152,17 +154,16 @@ SOURCE_BIN=target/release/dbwarp-blueprint \
   ./verify.sh /path/to/extracted/dbwarp-blueprint
 ```
 
-Si los hashes difieren, no trate los binarios como equivalentes. La CI de
-publicación compila dos veces en el mismo runner y en directorios Cargo distintos,
-y rechaza cualquier diferencia; `PROVENANCE.json` registra los datos necesarios
-para evaluar una reproducción local.
+Si los hashes son diferentes, no considere que los binarios son equivalentes. Cada versión se construye dos veces y una discrepancia de bytes hace que la versión falle. `PROVENANCE.json` registra la revisión de origen, el destino, las características, la cadena de herramientas, la época de la fecha de origen, el compilador nativo, el tamaño del binario y el hash necesarios para evaluar una reproducción local.
 
 ## Dependencias incluidas
 
-El repositorio normal incluye una pequeña dependencia corregida bajo
-`vendor/mysql_async` para que `--tls-ca` de MySQL tenga la misma semántica
-restrictiva de confianza que el resto de la herramienta. Todas las demás
-versiones de dependencias están fijadas mediante `Cargo.lock`.
+El repositorio incluye dependencias parcheadas en `vendor/`. Conservan las
+reglas restrictivas de confianza de `--tls-ca` para MySQL y SQL Server. La
+autenticación integrada de Linux carga GSSAPI solo cuando se solicita. La
+autenticación integrada de Windows utiliza una dependencia mantenida para la
+generación de números aleatorios. Todas las demás versiones de dependencias
+están fijadas mediante `Cargo.lock`.
 
 Cada GitHub Release publica un paquete independiente
 `dbwarp-blueprint-source-vendored.tar.gz` para los equipos de seguridad que deseen
@@ -175,7 +176,7 @@ cd dbwarp-blueprint-source-vendored
 DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh
 ```
 
-Ese paquete contiene la versión corregida de `vendor/mysql_async`, un árbol
+Ese paquete contiene las dependencias corregidas en `vendor/`, un árbol
 `vendor-crates/` generado con todas las demás dependencias y un archivo
 `.cargo/config.toml` generado que redirige crates.io al árbol local de
 dependencias. En ese modo, `build.sh` utiliza

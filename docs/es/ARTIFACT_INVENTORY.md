@@ -7,17 +7,9 @@
 [Polski](../pl/ARTIFACT_INVENTORY.md) | [日本語](../ja/ARTIFACT_INVENTORY.md) |
 [简体中文](../zh/ARTIFACT_INVENTORY.md)
 
-Desde el esquema v4, los Blueprints pueden describir objetos de base de datos que no son tablas y requisitos
-de despliegue sin publicar sus nombres de origen, definiciones, cadenas de
-puntos de conexión, secretos, certificados, claves ni binarios. El inventario ayuda a
-DBWarp a estimar la complejidad de la migración y a identificar trabajo que
-requiere paquetes, infraestructura, aprobación de seguridad o conversión
-asistida.
+Los Blueprints pueden describir objetos de base de datos que no son tablas y los requisitos previos de implementación sin publicar sus nombres de origen, definiciones, cadenas de punto final, secretos, certificados, claves o binarios. Este inventario ayuda a DBWarp a estimar la complejidad de la migración e identificar el trabajo que necesita paquetes, infraestructura, aprobación de seguridad o conversión asistida.
 
-El inventario no es una afirmación de capacidad. Que un objeto aparezca no
-significa que DBWarp pueda recrearlo o traducirlo automáticamente. La capacidad
-de migración se comprueba por separado en la matriz de rutas y artefactos de
-DBWarp.
+El inventario no es una declaración de capacidad. El hecho de que se informe sobre un objeto no significa que DBWarp pueda recrearlo o traducirlo automáticamente. Confirme con DBWarp qué tipos de objetos son compatibles.
 
 ## Niveles de detalle
 
@@ -26,7 +18,7 @@ planificación:
 
 | Valor | Lecturas de base de datos | Salida Blueprint | Consentimiento |
 |---|---|---|---|
-| `none` | Sin catálogos ni definiciones de artefactos | Sin recuentos ni grafo | Sin consentimiento adicional |
+| `none` | Sin catálogos de inventario ni definiciones (la sonda de topología que solo cuenta sigue ejecutándose) | Inventario v7 explícitamente no solicitado; sin recuentos ni grafo | Sin consentimiento adicional |
 | `summary` | Catálogos, pero no definiciones | Recuentos por clase de objeto y requisito externo | Predeterminado; sin consentimiento adicional |
 | `graph` | Catálogos y metadatos de dependencias, pero no definiciones | Recuentos, objetos anónimos estables y aristas | Requiere `--yes` |
 | `analyzed` | Catálogos, dependencias y definiciones disponibles | Grafo y bandas limitadas de lenguaje y complejidad | Requiere `--yes` |
@@ -57,7 +49,8 @@ vocabulario cerrado:
   `view-001`, `function-002` y `schema-A`; la estabilidad entre ejecuciones
   requiere reutilizar el mismo archivo protegido `--anonymization-key-file`;
 - símbolos cerrados de clase, subclase, nivel, visibilidad y modo de seguridad;
-- dependencias expresadas solo mediante identificadores anónimos de artefacto o tabla;
+- relaciones tipadas expresadas solo mediante identificadores anónimos de artefacto o tabla, con tokens cerrados de evidencia y motivo no resuelto;
+- requisitos de funciones acotados y calificados por motor para planificar la migración;
 - recuentos y bandas limitadas, no descripciones libres;
 - etiquetas de catálogo estándar como `pg_proc`, `information_schema.views` o `sys.objects`;
 - clases de requisitos externos, nunca sus nombres ni su material.
@@ -84,24 +77,73 @@ El bloque `[artifact_inventory]` se audita a sí mismo:
 
 | Campo | Significado |
 |---|---|
-| `contract` | Contrato con versión independiente; actualmente `dbwarp-blueprint-artifacts/v1` |
+| `contract` | Contrato con versión independiente; v7 usa `dbwarp-blueprint-artifacts/v2` y los esquemas Blueprint anteriores conservan v1 |
 | `detail` | Nivel de detalle solicitado |
+| `scope` | Alcance del catálogo v7: `all-visible-schemas`, `selected-schemas`, `structured-source` o `unknown` |
 | `visibility` | `full`, `privilege_filtered` o `unknown` |
 | `inventory_complete` | Verdadero solo con visibilidad total, sin catálogos ilegibles ni familias no modeladas declaradas |
 | `dependencies_complete` | Verdadero solo si las fuentes de dependencias eran legibles y las familias modeladas están cubiertas |
+| `requirements_complete` | Agregado V7: verdadero solo después de comprobar la versión y edición del motor, con cobertura completa de la población de evaluación para el alcance seleccionado y `requirement_status = complete | not_applicable` en cada artefacto emitido; la omisión significa falso |
 | `analysis_complete` | Verdadero solo con `analyzed` y análisis completo de todas las definiciones disponibles |
 | `catalogs_read` | Familias de catálogos estándar inspeccionadas correctamente |
-| `catalogs_unreadable` | Familias que fallaron o no estaban disponibles |
-| `families_not_inventoried` | Familias conocidas fuera del contrato actual |
+| `catalogs_unreadable` | Familias que fallaron o no estaban disponibles; se degradan las afirmaciones afectadas sin borrar evidencia independiente por objeto |
+| `catalogs_not_applicable` | Familias cuya inaplicabilidad se ha demostrado; disjuntas de los conjuntos legible e ilegible |
+| `families_not_inventoried` | Familias de objetos conocidas omitidas del inventario de esta versión |
 
 Un fallo de catálogo opcional no elimina objetos en silencio. La ejecución emite
 `DBP1410W`, registra el catálogo y fuerza a falso las afirmaciones de
 completitud correspondientes. Una cuenta de pocos privilegios puede producir
 un inventario parcial útil sin presentar ausencia como prueba.
 
+`object_count` cuenta registros de artefactos emitidos, no filas de un único
+catálogo nativo. Los paquetes y tipos de objeto Oracle se modelan como
+especificación, cuerpo y miembros; el cuerpo posee el análisis de lenguaje
+combinado. Un objeto visto en varios catálogos se cuenta una vez. Los metadatos
+y el código de un desencadenador se unen por identidad nativa antes de anonimizar.
+
+## Contrato de complejidad agregada
+
+El esquema v7 define `[artifact_inventory.complexity]`, un registro solo
+agregado para `graph` y `analyzed`. No añade lecturas ni permisos: la evaluación
+se deriva del grafo anónimo y el censo de lenguaje ya aprobados. Es obligatorio
+para `graph` y `analyzed`, y está ausente en `none` y `summary`.
+
+El informe de evaluación describe siete dimensiones: volumen, flujo de control, amplitud de funciones, interconexión, acoplamiento ambiental, opacidad y acoplamiento de dialectos. Los resultados se presentan en rangos, no como una puntuación numérica. `overall_score` está reservado y no se completa, porque un valor de 0 a 100 implicaría una precisión no soportada.
+
+Cada dimensión contiene un histograma exacto unidimensional de la población
+elegible. El volumen usa bandas de tamaño y las otras seis bandas de recuento.
+Ambas formas añaden `not_applicable` y `unknown`, y cumplen
+`eligible = assessed + not_applicable + unknown`. No hay compuesto por objeto ni
+tablas cruzadas por tipo, función o esquema. Los objetos generados por el motor
+y secundarios identificados de forma positiva se excluyen de la evaluación,
+pero siguen visibles; los temporales y los que carecen de indicadores siguen
+siendo elegibles. Los complementos instalados en el sitio, ensamblados CLR, Java y bibliotecas
+siguen siendo trabajo real aunque no se pueda leer su cuerpo; solo un indicador
+afirmativo de generación por el motor los excluye.
+
+`assessment_population_complete` indica si se conocen todos los objetos
+elegibles. Es independiente de `inventory_complete` y su omisión significa
+falso. Una población incompleta fuerza una banda global `unknown`, salvo que el
+límite inferior conocido ya sea `very-high`.
+
+La cobertura se registra por dimensión. `not_applicable` es una evaluación
+completa. Parcial significa que se conoce una dimensión aplicable y otra no;
+sin evaluar significa que no se conoce ninguna aplicable. La evidencia
+desconocida nunca equivale a baja complejidad. Una dimensión parcial es
+`unknown`, salvo que su límite inferior ya sea `very-high`; la banda global solo
+se emite cuando coinciden los límites. `graph` no emite veredicto global para
+una población no vacía porque no lee definiciones. Una población vacía y
+completa es `not-applicable`.
+
+Los objetos encapsulados contribuyen al histograma de opacidad al "bucket" `unknown`, incluso cuando no se puede producir un censo parcial del lenguaje. Lea la banda de opacidad junto con su cobertura para que una banda observada pequeña no se lea sin su población desconocida. Si la evaluación en sí falla, el inventario completo se conserva con un agregado canónico de "todo desconocido". Las definiciones encapsuladas o retenidas, los gráficos incompletos, la evidencia de requisitos incompleta, los límites de alcance seleccionados y los lenguajes o dialectos no admitidos siguen siendo limitaciones explícitas. Las aserciones de limitación se derivan del artefacto y la evidencia del censo siempre que sea posible. `unsupported-dialect` sigue siendo distinto porque el censo puede nombrar un dialecto e informar `unavailable`, pero no tiene estado `unsupported`; significa que la definición se leyó, pero el analizador nombrado no admite ese dialecto, no que la fuente se haya retenido o encapsulado.
+
+El registro contiene la única versión del analizador y conjuntos ordenados de intervalos de análisis, dialectos y perfiles de gramática presentes en el censo elegible. Dos capturas solo son comparables cuando esos conjuntos, el contrato, el evaluador, el alcance y la política de población coinciden. Un paquete conserva la complejidad por cada fuente secundaria y nunca la agrega entre motores o analizadores.
+
+La versión del contrato de complejidad y del evaluador son independientes. Para obtener información precisa sobre los campos y las invariantes, consulte la [Referencia de formato](FORMAT.md).
+
 ## Cobertura por motor
 
-El recopilador v1 modela estas familias:
+El recopilador actual modela estas familias:
 
 | Motor | Familias de objetos modeladas |
 |---|---|
@@ -112,6 +154,12 @@ El recopilador v1 modela estas familias:
 Cada Blueprint enumera las familias conocidas no modeladas. Un recuento cero no
 prueba ausencia salvo que `visibility`, los indicadores de completitud y la
 lista de familias no inventariadas respalden esa conclusión.
+
+## Evidencia de requisitos
+
+Los requisitos de los artefactos son datos del motor provenientes de columnas de catálogo delimitadas o de comprobaciones de sintaxis específicas del motor. El análisis léxico genérico no crea requisitos específicos del motor. Cuando una característica del lenguaje analizada refleja el mismo dato, el requisito tiene prioridad y la característica permanece como una observación léxica. La falta de un requisito no es prueba de que se haya comprobado cada token de requisito.
+
+Cada objeto de la versión v7 graph/analyzed registra `requirement_status` como `complete`, `partial`, `unavailable` o `not_applicable`. Solo `complete` convierte una lista vacía en una prueba de cero requisitos para ese objeto. `partial` registra que algún hecho o productor tuvo éxito sin una cobertura exhaustiva; `unavailable` registra que ningún productor estableció una cobertura utilizable y, por lo tanto, no puede acompañar a la evidencia conocida de requisitos o prerrequisitos externos. Tal evidencia requiere `partial`. Ambos contribuyen a observaciones de complejidad derivadas de requisitos desconocidos, mientras que los objetos completos y sin afectar siguen siendo evaluables. `not_applicable` prohíbe los registros de requisitos y prerrequisitos externos. El valor `requirements_complete` a nivel de inventario solo es verdadero después de las comprobaciones de la versión y edición del motor, una población de evaluación completa y cuando cada objeto emitido está completo o no es aplicable. PostgreSQL, MySQL y SQL Server establecen el agregado solo después de que se haya intentado cada catálogo de artefactos aplicable y se haya demostrado que la población del alcance seleccionado está completa. Un catálogo denegado o ilegible, o un límite de selección cuya población no se puede demostrar, mantiene el agregado en falso sin borrar la evidencia completa por objeto de los catálogos que se leyeron. Los requisitos de los artefactos no se informan para Oracle.
 
 ## Requisitos externos
 
@@ -138,35 +186,29 @@ migración, no en omisiones de mejor esfuerzo.
 
 ## Censo de características del lenguaje
 
-El detalle `analyzed` añade bloques `dbwarp-language-feature-census/v1` para
-definiciones SQL y procedurales disponibles. El primer analizador es
-`lexical-v1` y declara `status = "partial"`; no es un parser, compilador,
-enlazador semántico ni garantía de traducción.
+`analyzed` El detalle agrega `dbwarp-language-feature-census/v1` bloques. El esquema v7 emite `lexical-v2`, que analiza solo el cuerpo ejecutable o declarativo y registra `analysis_span = "executable-body"`. Excluye el envoltorio de creación externo, la identidad, la firma, la declaración de retorno y las opciones del módulo. Si el cuerpo no se puede aislar de forma segura, el recolector registra un rango desconocido y evidencia no disponible; los objetos sin dimensión de definición utilizan `not-applicable`. Un rango omitido se interpreta como desconocido en lugar de inferirse del motor. El analizador informa `status = "partial"` para definiciones admitidas porque no es un analizador, compilador, vinculador semántico ni una garantía de éxito de la traducción. La evidencia faltante o no admitida de la definición es `unavailable`, mientras que un análisis demostrado como inaplicable es `not_applicable`.
 
 Registra bandas limitadas de tamaño, sentencias, símbolos, anidación,
 complejidad ciclomática y regiones opacas/dinámicas. Un vocabulario cerrado
 describe control, joins, subconsultas, CTE, agregados, ventanas, DML, DDL,
-objetos temporales, SQL dinámico, JSON, XML, espacial, vector y seguridad. El
+objetos temporales, SQL dinámico, JSON, XML, espacial, vector, errores lanzados,
+control de transacciones, ref cursors, tipos anclados, intervalos, zonas horarias,
+Boolean, LOB y seguridad. El
 contexto incluye el perfil gramatical normalizado, modos SQL de MySQL y, para
 SQL Server, compatibilidad, `ANSI_NULLS` y `QUOTED_IDENTIFIER`.
 
-El analizador elimina comentarios, literales e identificadores entre comillas.
-Reglas de contexto cubren eventos de desencadenador, `EXECUTE FUNCTION` de
-PostgreSQL y opciones de módulos SQL Server. Los resultados siguen siendo
-evidencia aproximada. Un futuro analizador gramatical podrá usar otra versión
-sin cambiar el contrato exterior.
+El analizador léxico elimina comentarios, literales entre comillas e identificadores entre comillas antes de contar. Tiene reglas de contexto para las declaraciones de eventos de activación, PostgreSQL `EXECUTE FUNCTION` y las opciones de los módulos de SQL Server. A pesar de esto, todos los resultados siguen siendo evidencia de planificación general. El elemento envuelto PL/SQL es rechazado; los bytes ofuscados nunca se convierten en medidas corporales plausibles.
 
 ## Flujo de revisión recomendado
 
 1. Ejecute el nivel predeterminado `summary` con una revisión de los catálogos
    de artefactos. Si la política solo permite catálogos de tablas, use en su
-   lugar `--artifact-detail none` y omita este inventario.
+   lugar `--artifact-detail none`; v7 registra explícitamente la decisión en vez
+   de omitir el estado del inventario.
 2. Revise recuentos, clases externas, visibilidad, catálogos ilegibles y familias no modeladas.
 3. Apruebe `graph` solo si acepta la topología anónima.
 4. Apruebe `analyzed` solo si acepta la lectura transitoria de definiciones.
 5. Conserve el registro de auditoría localmente como evidencia con acceso controlado. Compártalo solo cuando un destinatario identificado necesite los detalles de puntos de conexión, identidades, rutas y degradaciones a través de un canal seguro aprobado.
-6. Compare el inventario con la matriz de capacidades DBWarp antes de prometer recreación o traducción automática.
+6. No suponga que un objeto inventariado puede recrearse o traducirse automáticamente; confírmelo con DBWarp.
 
-Los campos exactos están en la [Referencia de formato](FORMAT.md). Las lecturas,
-escrituras, advertencias y afirmaciones de confianza están en la [Referencia de
-auditoría](AUDIT.md).
+Para conocer los campos serializados exactos, consulte la [referencia del formato](FORMAT.md). Para las lecturas, escrituras, advertencias y afirmaciones de confianza durante la ejecución, consulte la [referencia de auditoría](AUDIT.md).

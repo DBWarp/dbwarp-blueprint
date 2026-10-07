@@ -28,35 +28,11 @@ ces tampons avec zstd au niveau 3 et dérive des mesures agrégées de compressi
 densité NULL, de cardinalité/fréquence, de longueur et de style, avant de
 supprimer les valeurs échantillonnées et les empreintes temporaires.
 
-Pour certaines colonnes de texte ou de données binaires, Tier 2 peut également échantillonner uniquement cette colonne. Cela permet aux outils de planification en aval de reproduire l'entropie par colonne au lieu de reposer uniquement sur des moyennes au niveau de la table.
+Pour les colonnes text/binary sélectionnées, le niveau 2 peut également échantillonner cette colonne seule. Cela permet d'obtenir un taux de compression par colonne, au lieu de seulement des moyennes au niveau de la table.
 
-Les ratios de tables de bases actives utilisent une séquence neutre de groupes
-bornés de 1 000 lignes, avec un descripteur par colonne, des longueurs de valeur
-à largeur fixe et des charges utiles contiguës par colonne. Cela mesure la
-structure pertinente pour la compression que partagent les transports de masse,
-sans capturer un protocole de base de données ni un format réseau DBWarp. Les
-ratios par colonne conservent `blueprint-compression-probe-v2`, dont les valeurs
-balisées et préfixées par leur longueur restent l'entrée d'entropie la plus précise.
+Les ratios de tables de bases de données en direct utilisent une séquence neutre de groupes de 1 000 lignes, avec un descripteur par colonne, des longueurs de valeurs fixes et des charges utiles contiguës aux colonnes. Cela mesure la structure pertinente pour la compression sans capturer aucune information de base de données ou de protocole de transfert. Les ratios par colonne conservent `blueprint-compression-probe-v2`, dont les valeurs préfixées par leur longueur restent l'entrée d'entropie la plus spécifique.
 
-Les blocs de table PostgreSQL utilisent actuellement
-`blueprint-columnar-transfer-probe-v2`, qui transmet les groupes de lignes à un
-contexte zstd persistant de niveau 3 et le vide après chaque groupe. MySQL et SQL
-Server utilisent `blueprint-columnar-transfer-probe-v3` : les mêmes octets neutres
-et le même contexte persistant, avec des vidages supplémentaires aux limites des
-blocs de sonde de 256 KiB. Les échantillons SQL Server `nvarchar`, `nchar` et
-`ntext` sont mesurés sous forme de distributions d'octets UTF-16LE.
-`varchar`, `char` et `text` conservent leur largeur d'octets étroite
-échantillonnée ; le Blueprint enregistre la page de codes de la collation source
-comme `utf-8`, `windows-N` ou `code-page-N`, afin qu'un consommateur approuvé
-puisse choisir un encodeur natif compatible au lieu d'élargir les valeurs. Le
-pilote expose encore des chaînes décodées à l'échantillonneur : aucune identité
-d'octets n'est donc revendiquée pour les anciennes pages de codes. Le
-`ratio_stddev` de table est mesuré entre les sorties des groupes de lignes
-externes. Les blocs de projection par colonne restent des mesures d'entropie
-indépendantes en une passe et émettent `0.0`. Les anciennes mesures de table
-balisées `blueprint-columnar-transfer-probe-v1` utilisaient une seule opération
-avec taille annoncée sur les trames jointes ; la version explicite empêche leur
-réinterprétation silencieuse selon la politique de streaming actuelle.
+Les blocs de tables PostgreSQL utilisent `blueprint-columnar-transfer-probe-v2`, ce qui transmet des groupes de lignes via un contexte zstd de niveau 3 persistant et effectue une vidange après chaque groupe. MySQL et SQL Server utilisent `blueprint-columnar-transfer-probe-v3` : les mêmes octets neutres et un contexte persistant, avec des vidanges supplémentaires aux limites de blocs de 256 Ko. Les échantillons `nvarchar`, `nchar` et `ntext` de SQL Server sont mesurés en tant que distributions d'octets UTF-16LE. Les échantillons `varchar`, `char` et `text` de SQL Server conservent leur largeur d'octet étroite échantillonnée ; le Blueprint enregistre la page de code du catalogue de collation de la source sous forme de `utf-8`, `windows-N` ou `code-page-N`. Le pilote de base de données expose toujours des chaînes décodées à l'échantillonneur, de sorte que l'identité d'octet de la page de code héritée n'est pas revendiquée. La table `ratio_stddev` est mesurée sur les sorties de groupes de lignes externes. Les blocs de projection par colonne restent des mesures d'entropie indépendantes ponctuelles et émettent `0.0`. Les Blueprints des versions antérieures peuvent contenir `blueprint-columnar-transfer-probe-v1` ; les ratios avec des étiquettes différentes ne sont pas comparables.
 
 Les octets échantillonnés transitent uniquement par la session de base de
 données sélectionnée vers le processus local. Ils ne sont ni écrits sur disque,
@@ -112,9 +88,9 @@ style = "json"
 measured = true
 sample_rows = 1000
 sample_bytes = 65536
-sample_method = "column LIMIT N (engine-specific bounded sample)"
+sample_method = "LIMIT N (fallback after underfilled adaptive TABLESAMPLE; simple-query text fields; raw binary/vector decoded; server-side cell cap)"
 sampled_with_bias = true
-bias_reason = "unordered_limit_after_empty_TABLESAMPLE"
+bias_reason = "unordered_limit_after_underfilled_adaptive_TABLESAMPLE+server_side_cell_cap"
 ratio_zstd_3 = 12.35
 ratio_stddev = 0.2
 sample_encoding = "blueprint-compression-probe-v2"
@@ -130,7 +106,7 @@ ratio_stddev = 0.15
 sample_encoding = "blueprint-columnar-transfer-probe-v3"
 ```
 
-Ces valeurs aident les outils en aval approuvés à estimer la taille du transfert réseau et à générer des données synthétiques textuelles/binaires offrant une compressibilité similaire.
+Ces valeurs sont utilisées pour estimer la taille du transfert réseau.
 
 ## Importance de la mesure
 
@@ -148,17 +124,15 @@ Certains moteurs ne proposent pas un échantillonnage de table parfaitement
 uniforme. MySQL répartit un échantillon borné sur quatre plages de clé primaire
 numérique lorsque ce chemin d'accès existe, sinon il se rabat sur `LIMIT N` ; les
 deux restent explicitement marqués comme biaisés, car aucun n'est un échantillon
-statistique aléatoire. Les autres replis de moteur moins idéaux sont également
-consignés par `sampled_with_bias` et `bias_reason`.
+statistique aléatoire. Les fenêtres de plage non finales ont une borne supérieure
+exclusive. Les zones de clé primaire clairsemées ou asymétriques peuvent donc
+sous-remplir une fenêtre, mais aucune fenêtre ne peut relire les lignes de la
+suivante. Les autres replis de moteur moins idéaux sont également consignés par
+`sampled_with_bias` et `bias_reason`.
 
-Lorsqu'un échantillon borné possède une disposition qui affecte la génération
-synthétique, Blueprint l'enregistre séparément de ces champs textuels.
-L'échantillonnage MySQL par plages de clé primaire numérique émet
-`sample_layout = "primary-key-range-windows"` et ordonne chaque fenêtre selon la
-clé primaire complète. Les consommateurs peuvent ainsi préserver la localité
-groupée des clés composites sans analyser `sample_method` ni `bias_reason`.
+Blueprint enregistre la structure d'un échantillon limité séparément des champs textuels correspondants. L'échantillonnage de plages de clés primaires numériques pour MySQL génère `sample_layout = "primary-key-range-windows"` et trie chaque fenêtre en fonction de la clé primaire complète.
 
-Les échantillons biaisés restent utiles, mais les outils en aval doivent leur accorder un niveau de confiance inférieur. L'audit indique que l'échantillonnage était activé et le nombre d'octets de sonde encodés localement. Les totaux d'octets de la session de base restent `unknown` si le pilote ne les expose pas.
+Les échantillons biaisés restent utiles, mais ils ont une fiabilité moindre. Le journal d'audit enregistre que l'échantillonnage des lignes a été activé, ainsi que le nombre d'octets de la sonde encodée localement. Les totaux d'octets de la session de base de données sont signalés comme `unknown` lorsque le pilote ne les expose pas.
 
 ## Paramètres d'échantillonnage pratiques
 
@@ -170,7 +144,7 @@ Premier passage sûr en production :
 --max-wall-secs 120
 ```
 
-Meilleure entrée pour l'estimateur lorsqu'une réplique en lecture ou une fenêtre de maintenance est disponible :
+Des mesures plus précises lorsque une réplique de lecture ou une fenêtre de maintenance est disponible :
 
 ```bash
 --measure-compression --yes \
@@ -198,17 +172,6 @@ plafond de charge utile configuré, les requêtes exécutées et le nombre exact
 d’octets de sonde encodés localement ; il ne rapporte pas une mesure du trafic
 réseau de la base de données.
 
-## Utilisation par les consommateurs en aval
+## Comment les mesures sont interprétées.
 
-Un consommateur en aval doit utiliser les éléments de compression dans l'ordre suivant :
-
-1. blocs de compression par colonne reconnus ;
-2. blocs de compression au niveau de la table reconnus ;
-3. valeurs par défaut de type/style lorsqu'aucun ratio mesuré n'est disponible.
-
-Le champ `sample_encoding` fait partie du contrat. Les consommateurs ne doivent
-utiliser que les ratios portant une balise d'encodage reconnue, car des encodages
-d'échantillons différents peuvent produire des ratios de compression différents
-pour les mêmes données logiques. En particulier, le ratio de la sonde de
-transfert en colonnes au niveau de la table et les ratios v2 par colonne sont
-des mesures complémentaires et ne doivent pas se substituer les uns aux autres.
+Le champ `sample_encoding` fait partie du contrat. Les ratios ne sont comparables que dans une seule balise d'encodage, car différents encodages d'échantillons peuvent produire des ratios de compression différents pour les mêmes données logiques. En particulier, le ratio de transfert colonne par colonne au niveau de la table et les ratios v2 par colonne sont des mesures complémentaires et ne doivent pas être substitués l'un à l'autre.

@@ -123,7 +123,7 @@ pub fn validate(p: &TlsParams, host: &str) -> Result<()> {
         if !is_loopback(host) {
             bail!(
                 "--tls-skip-verify against non-loopback host '{host}' is refused. \
-                 Add --i-know-what-im-doing to override (NOT RECOMMENDED — this \
+                 Add --i-know-what-im-doing to override (NOT RECOMMENDED: this \
                  disables certificate verification entirely)."
             );
         }
@@ -154,7 +154,7 @@ pub fn validate(p: &TlsParams, host: &str) -> Result<()> {
     }
     if p.server_name_override.is_some() {
         bail!(
-            "--tls-server-name is not supported by this release; use a --connect hostname \
+            "--tls-server-name is not supported; use a --connect hostname \
              that matches the certificate, or use --tls-mode=verify-ca if your policy \
              permits CA validation without hostname validation"
         );
@@ -173,10 +173,10 @@ pub fn validate(p: &TlsParams, host: &str) -> Result<()> {
         if !p.exists() {
             bail!("--tls-key '{}' does not exist", p.display());
         }
-        // SECURITY.md and AUDIT.md claim --tls-key gets the same mode
-        // check as --password-file. Enforced here so the docs match
-        // reality: refuses 0644+ on Unix; emits a loud warning on
-        // Windows (same posture as --password-file).
+        // --tls-key gets the same mode check as --password-file: refuse 0644+
+        // on Unix; the caller records an audit warning
+        // on Windows after the TLS material has parsed successfully (the same
+        // posture as --password-file).
         crate::secret::check_sensitive_file_mode(p, "--tls-key")?;
     }
     Ok(())
@@ -426,7 +426,7 @@ impl ServerCertVerifier for VerifyChainOnlyVerifier {
             // mismatch against our placeholder is the *expected* result
             // and is the only failure we suppress. We narrowly match
             // only the two name-mismatch variants `webpki-rs` reports
-            // (NotValidForName + NotValidForNameContext) — masking the
+            // (NotValidForName + NotValidForNameContext): masking the
             // full `InvalidCertificate(_)` family would also swallow
             // Expired, Revoked, BadEncoding, BadSignature, UnknownIssuer
             // and every other rustls cert failure. Anything else
@@ -687,11 +687,9 @@ mod tests {
         assert!(res.is_ok(), "0600 --tls-key should pass; got: {res:?}");
     }
 
-    // Regression suite: verify-ca semantics are *narrow* — only
-    // hostname mismatch is suppressed, every other cert failure
-    // (expired, revoked, bad signature, unknown issuer, bad encoding)
-    // must propagate. Previously a single `RustlsError::InvalidCertificate(_)`
-    // arm masked all of them.
+    // verify-ca semantics are narrow: only hostname mismatch is suppressed.
+    // Every other certificate failure (expired, revoked, bad signature,
+    // unknown issuer or bad encoding) must propagate.
     use std::sync::Mutex;
 
     #[derive(Debug)]
@@ -754,7 +752,7 @@ mod tests {
         // Use a syntactically-valid name so ServerName::try_from succeeds;
         // the mock ignores it anyway.
         let name = ServerName::try_from("example.test").unwrap();
-        // Empty cert is fine — mock doesn't inspect.
+        // Empty cert is fine: mock doesn't inspect.
         let cert = CertificateDer::from(vec![0u8]);
         v.verify_server_cert(
             &cert,

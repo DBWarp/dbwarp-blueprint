@@ -18,7 +18,7 @@ values, identifiers, and output schemas canonical:
 ```
 
 For unattended runs, set `DBWARP_BLUEPRINT_LANG=fr` or a standard process locale.
-An explicit `--lang` always wins. DBP codes and low-level provider details stay
+An explicit `--lang` always wins. DBP codes and low-level driver details stay
 canonical so a localized failure can be searched and shared with support.
 
 ## Recipe: PostgreSQL With Internal CA
@@ -54,32 +54,18 @@ Useful when the username contains characters awkward to URI-encode.
   --audit-log mysql-appdb.audit.txt
 ```
 
-For a performance-representative synthetic reconstruction, use the default
-balanced policy: exact MySQL declaration/index metadata and tightly rounded
-sampled widths:
-
-```bash
-./dbwarp-blueprint \
-  --connect mysql://mysql-primary.internal:3306/appdb \
-  --user-file /etc/dbwarp/mysql-blueprint.user \
-  --password-file /etc/dbwarp/mysql-blueprint.pass \
-  --tls-mode verify-full \
-  --tls-ca /etc/pki/mysql-ca.pem \
-  --measure-compression --yes \
-  --out mysql-appdb.blueprint.toml \
-  --audit-log mysql-appdb.audit.txt
-```
+The recipe above already uses the default balanced policy: exact MySQL
+declaration/index metadata and tightly rounded sampled widths.
 
 Confirm `declared_length_fidelity = "exact"`,
 `index_length_fidelity = "exact"`, and
 `observed_length_fidelity = "relative-rounded-v2"`. Use
-`--length-fidelity exact --yes` only after the customer approves sharing exact
+`--length-fidelity exact --yes` only after your organization approves sharing exact
 sampled length statistics. Names and values remain excluded.
 
-On estates with thousands of tables, raise `--max-wall-secs` above its 300-second
-default if needed. Fidelity markers certify policy, while the downstream
-estimator separately requires observed average/p95 lengths for every nonempty
-variable-width indexed column before marking a fixture benchmark-ready.
+On databases with thousands of tables, raise `--max-wall-secs` above its
+300-second default if needed. Fidelity markers describe the policy; they do not
+show that sampling reached every table.
 
 ## Recipe: SQL Server SQL Authentication
 
@@ -107,10 +93,10 @@ Generate the token outside the tool, then pass it by file:
 ```bash
 install -d -m 700 "$HOME/.cache/dbwarp-blueprint"
 TOKEN_FILE="$HOME/.cache/dbwarp-blueprint/sql-token"
+install -m 600 /dev/null "$TOKEN_FILE"
 az account get-access-token \
   --resource https://database.windows.net/ \
   --query accessToken -o tsv > "$TOKEN_FILE"
-chmod 600 "$TOKEN_FILE"
 
 ./dbwarp-blueprint \
   --connect sqlserver://sql-primary.database.windows.net,1433/appdb \
@@ -118,11 +104,14 @@ chmod 600 "$TOKEN_FILE"
   --auth-mode entra-token \
   --azure-token-file "$TOKEN_FILE" \
   --tls-mode verify-full \
-  --tls-ca /etc/pki/sqlserver-ca.pem \
   --measure-compression --yes \
   --out mssql-entra.blueprint.toml \
   --audit-log mssql-entra.audit.txt
 ```
+
+Azure SQL presents a certificate from a public CA, so this recipe leaves
+`--tls-ca` unset and uses the operating-system trust store. A supplied
+`--tls-ca` file replaces that store with one certificate; see [TLS](../TLS.md).
 
 ## Recipe: Catalog-Only Security Review
 
@@ -138,7 +127,7 @@ chmod 600 "$TOKEN_FILE"
   --yes
 ```
 
-This is the lowest-friction review mode. It avoids row sampling but produces less accurate compression and egress estimates downstream.
+This is the lowest-friction review mode. It avoids row sampling but produces less accurate compression and egress estimates.
 
 ## Recipe: Assess Non-Table Migration Complexity
 
@@ -171,8 +160,8 @@ complexity evidence:
 Review `visibility`, all three completeness flags, `catalogs_unreadable`,
 `families_not_inventoried`, and `counts_by_external_class`. Treat each external
 class as an explicit migration task. Do not treat an inventoried object as proof
-that DBWarp can recreate or translate it; compare it with the migration
-capability matrix. See [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
+that DBWarp can recreate or translate it; ask DBWarp which object types are
+supported for your migration. See [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
 
 ## Recipe: Disable the RTT Probe
 
@@ -207,9 +196,9 @@ For large production systems, keep the first run conservative:
 
 If the output marks many samples as biased or missing, rerun from a read replica with a larger time budget.
 
-## Recipe: One Customer, Multiple Databases
+## Recipe: Several Databases In One Package
 
-Use a batch manifest when a customer wants one reviewed package for several databases.
+Use a batch manifest when you want one reviewed package for several databases.
 
 `customer.batch.toml`:
 
@@ -265,9 +254,9 @@ Run:
 This writes `bundle.toml`, one child Blueprint per source, and one audit per source.
 The child Blueprints remain reviewable independently.
 
-## Recipe: One Customer, Mixed Databases And Data Lake Files
+## Recipe: Mixed Databases And Data Lake Files
 
-Use structured-file sources in the same batch when the customer has Parquet or Avro extracts next to live databases.
+Use structured-file sources in the same batch when you have Parquet or Avro extracts next to live databases.
 
 ```toml
 [defaults]
@@ -286,7 +275,7 @@ tags = ["database"]
 [[source]]
 id = "orders_parquet"
 kind = "parquet"
-paths = ["/mnt/customer/orders/year=*/month=*/*.parquet"]
+paths = ["/data/orders/year=*/month=*/*.parquet"]
 dataset_mode = "partitioned_dataset"
 logical_table = "orders"
 tags = ["lake", "orders"]
@@ -294,12 +283,12 @@ tags = ["lake", "orders"]
 [[source]]
 id = "events_avro"
 kind = "avro"
-paths = ["/mnt/customer/events/*.avro"]
+paths = ["/data/events/*.avro"]
 dataset_mode = "one_table_per_file"
 tags = ["lake", "events"]
 ```
 
-`partitioned_dataset` currently merges files like `merge_same_schema`, but keeps the customer's intent visible in the bundle. Keep unrelated schemas in separate sources.
+`partitioned_dataset` merges files like `merge_same_schema` and records the declared mode in the bundle. Keep unrelated schemas in separate sources.
 
 ## Recipe: Extract Only One Source Or Table From A Bundle
 
@@ -327,13 +316,13 @@ Extract one table from one source:
   --out erp_pg_table_042.blueprint.toml
 ```
 
-Use this when the customer approves only part of an estate for a benchmark, or when you want to generate a small focused fixture from a large bundle.
+Use this when only part of a bundle is approved for sharing.
 
-## Recipe: Pack A Separately Reviewed Bundle For Handoff
+## Recipe: Pack A Reviewed Bundle For Sharing
 
 The working bundle directory contains child Blueprints and access-controlled
 audits. Do not transfer it wholesale. After reviewing the manifest values and
-child Blueprints, create a single-file handoff:
+child Blueprints, create a single file to share:
 
 ```bash
 ./dbwarp-blueprint \
@@ -345,14 +334,14 @@ The packed file retains operator-supplied source IDs, tags, dataset-group IDs,
 and audit-path metadata. Use anonymous values, inspect the packed TOML, and
 transfer it only through the approved channel.
 
-## Recipe: Batch Handoff Package
+## Recipe: Batch Package To Share
 
-Follow the [handoff policy](QUICKSTART.md#review-and-share). Keep the working
-manifest, audits, command records, and reviewer notes local; create this
+Follow the [review-and-share guidance](QUICKSTART.md#review-and-share). Keep the working
+manifest, audits, and command records local; create this
 separate directory from the reviewed packed Blueprint only.
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   customer-blueprint-bundle.packed.toml
 ```
 
@@ -368,7 +357,7 @@ This mode reads only the TOML file and writes the deck. It rejects live database
 
 ## Recipe: Byte-Identical Reproducibility
 
-Pin the timestamp and reuse the same protected customer-held anonymization key:
+Pin the timestamp and reuse the same protected anonymization key that you hold:
 
 ```bash
 ./dbwarp-blueprint \
@@ -382,24 +371,22 @@ Pin the timestamp and reuse the same protected customer-held anonymization key:
 ```
 
 The key file must contain exactly 32 raw bytes or 64 hexadecimal characters,
-must not be group/world-readable on Unix, and must never be included in the
-handoff. Without this option, a fresh operating-system-random key intentionally
+must not be group/world-readable on Unix, and must never be shared. Without this option, a fresh operating-system-random key intentionally
 changes anonymous label ordering on every run. Pinning only `--generated-at`
 is insufficient. Use the complete recipe for approved forensic snapshots; a
 deck generated twice from the exact same reviewed Blueprint remains
 byte-identical when its timestamp and language are unchanged.
 
-## Recipe: Handoff Package for DBWarp
+## Recipe: Package To Share With DBWarp
 
-Follow the [handoff policy](QUICKSTART.md#review-and-share). The default
+Follow the [review-and-share guidance](QUICKSTART.md#review-and-share). The default
 package contains only the approved Blueprint:
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   blueprint.toml
 ```
 
 Add `blueprint.pptx` only after separate review and approval. Keep audits,
-command records, reviewer notes, and credential/key material out of the
-handoff directory; operational evidence is shared only for a specific support
-need through an approved secure channel.
+command records, and credential/key material out of the shared directory; send
+audits only for a specific support need through an approved secure channel.

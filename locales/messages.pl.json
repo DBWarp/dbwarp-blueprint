@@ -20,11 +20,11 @@
     "DBP1002E": {
       "summary": "Schemat URI bazy danych nie jest obsługiwany",
       "cause": "Wartość --connect nie korzystała z obsługiwanego schematu URI PostgreSQL, MySQL ani SQL Server.",
-      "action": "Użyj postgresql://, postgres://, mysql://, sqlserver://, mssql:// lub tds://. mariadb:// jest akceptowany wyłącznie jako alias URI MySQL; MariaDB nie jest osobno kwalifikowanym silnikiem."
+      "action": "Użyj postgresql://, postgres://, mysql://, sqlserver://, mssql:// lub tds://. mariadb:// jest akceptowany wyłącznie jako alias URI MySQL i nie dodaje obsługi MariaDB."
     },
     "DBP1003E": {
       "summary": "Zastąpienie nazwy serwera TLS jest niedostępne",
-      "cause": "Ta wersja nie implementuje --tls-server-name.",
+      "cause": "--tls-server-name nie jest obsługiwane.",
       "action": "Użyj nazwy hosta --connect odpowiadającej certyfikatowi. PostgreSQL i MySQL mogą używać verify-ca, gdy zasady dopuszczają wyłącznie weryfikację łańcucha; SQL Server sprawdza nazwę hosta w obu trybach weryfikujących."
     },
     "DBP1004E": {
@@ -44,13 +44,13 @@
     },
     "DBP1007E": {
       "summary": "Tryb wierności długości jest niedostępny dla tego silnika",
-      "cause": "Jawne kontrole wierności długości mają obecnie zastosowanie do przechwytywania na żywo PostgreSQL i MySQL, ale nie SQL Server.",
-      "action": "Usuń tryb jawny dla przechwytywania SQL Server. Aliasy zgodności URI nie rozszerzają kwalifikowanej macierzy silników."
+      "cause": "Kontrola dokładności długości danych obowiązuje podczas odczytu danych z działających baz danych PostgreSQL i MySQL, ale nie z SQL Server.",
+      "action": "Usuń jawny tryb wierności długości przy przechwytywaniu z SQL Server. Aliasy zgodności URI nie dodają obsługi innego silnika bazy danych."
     },
     "DBP1008E": {
       "summary": "Konflikt opcji wierności długości",
-      "cause": "Starszy alias exact dla długości został połączony z trybem wierności strict.",
-      "action": "Usuń starszy alias lub użyj --length-fidelity exact --yes."
+      "cause": "--preserve-exact-lengths połączono z wiernością długości strict.",
+      "action": "Usuń --preserve-exact-lengths lub użyj --length-fidelity exact --yes."
     },
     "DBP1009E": {
       "summary": "Dokładna wierność długości nie ma wyraźnej zgody",
@@ -60,11 +60,11 @@
     "DBP1010E": {
       "summary": "Wbudowany katalog lokalizacji jest niekompletny",
       "cause": "Reklamowany język nie pokrywa dokładnie obszaru aktywnego CLI, diagnostycznego lub prezentacyjnego.",
-      "action": "Zainstaluj pełną kompilację lub wybierz język angielski; opiekunowie muszą zaktualizować każde ustawienie regionalne każdym ciągiem znaków widocznym dla klienta."
+      "action": "Zainstaluj kompletną wersję lub wybierz język angielski."
     },
     "DBP1011E": {
       "summary": "Argumenty wiersza poleceń są nieprawidłowe",
-      "cause": "Clap odrzucił opcję, wartość, konflikt, wymaganie lub argument pozycyjny.",
+      "cause": "Opcja, wartość, konflikt, wymaganie lub argument pozycyjny są nieprawidłowe.",
       "action": "Popraw komendę, używając dbwarp-blueprint --help i spróbuj ponownie."
     },
     "DBP1012E": {
@@ -299,7 +299,7 @@
     },
     "DBP1607E": {
       "summary": "Nie udało się zainicjować klucza anonimizacji",
-      "cause": "Plik klucza przechowywany przez klienta był niezabezpieczony, nieczytelny lub nieprawidłowy albo systemowe źródło losowości było niedostępne.",
+      "cause": "Plik klucza anonimizacji był niezabezpieczony, nieczytelny lub nieprawidłowy albo systemowe źródło losowości było niedostępne.",
       "action": "Użyj pliku o ograniczonych uprawnieniach zawierającego dokładnie 32 surowe bajty lub 64 znaki szesnastkowe albo pomiń --anonymization-key-file, aby użyć nowego klucza lokalnego dla procesu."
     },
     "DBP1701E": {
@@ -381,6 +381,56 @@
       "summary": "Dowód podmiotu bazy danych był niedostępny",
       "cause": "Połączona sesja SQL Server nie mogła zgłosić uwierzytelnionego podmiotu, efektywnego podmiotu serwera lub podmiotu bazy danych, dlatego pola tożsamości w audycie są niekompletne.",
       "action": "Sprawdź łączność i zachowanie serwera; uruchom ponownie przed użyciem audytu jako dowodu tożsamości przechwytywania."
+    },
+    "DBP1422W": {
+      "summary": "Ocena złożoności artefaktów nie powiodła się",
+      "cause": "Nie można było ukończyć lokalnego, pochodnego obliczenia złożoności. Inwentarz artefaktów został zachowany, ale wszystkie objęte problemem zagregowane wymiary są nieznane.",
+      "action": "Sprawdź szczegóły audytu i wykonaj przechwytywanie ponownie; nie polegaj na ocenie złożoności, dopóki ostrzeżenie nie przestanie występować."
+    },
+    "DBP1423W": {
+      "summary": "Katalog struktur był niedostępny",
+      "cause": "Po pomyślnym utworzeniu podstawowego spisu tabel i kolumn nie można było odczytać katalogu indeksów lub relacji, dlatego zachowano Blueprint z jawnie niepełnym pokryciem struktur.",
+      "action": "Sprawdź uprawnienia źródła i stan katalogu, a następnie wykonaj przechwytywanie ponownie, jeśli wymagane są kompletne dane o indeksach i relacjach."
+    },
+    "DBP1424W": {
+      "summary": "Widoczność zabezpieczeń wierszy była niedostępna",
+      "cause": "Blueprint nie mógł potwierdzić, czy dana tabela SQL Server ma aktywny filtr zabezpieczeń wierszy, dlatego pominięto próbkowanie poziomu 2 dla tej tabeli zamiast uznać przefiltrowany podzbiór za całą tabelę.",
+      "action": "Nadaj VIEW DEFINITION na poziomie bazy danych lub ALTER ANY SECURITY POLICY albo zaakceptuj brak statystyk poziomu 2 dla tej tabeli."
+    },
+    "DBP1425W": {
+      "summary": "Aktywny filtr zabezpieczeń wierszy wyłączył próbkowanie",
+      "cause": "SQL Server zgłosił włączony predykat filtru dla danej tabeli. Blueprint celowo pominął próbkowanie poziomu 2 zamiast opisywać przefiltrowany podzbiór widoczny dla połączonego podmiotu jako całą tabelę.",
+      "action": "Jeśli wymagane są pełne statystyki poziomu 2, użyj zatwierdzonego podmiotu przechwytywania bez filtrów albo zaakceptuj jawnie brakujące statystyki dla tej tabeli."
+    },
+    "DBP1426E": {
+      "summary": "Nie udało się wykonać podstawowego przechwytywania danych z Oracle.",
+      "cause": "Podstawowa konfiguracja Oracle, uruchomienie SQL*Plus, rozwiązywanie nazw właścicieli, przechwytywanie lub mapowanie nie mogły zostać zakończone bezpiecznie.",
+      "action": "Sprawdź szczegóły techniczne, potwierdzenie podglądu, ścieżkę SQL*Plus, odizolowany katalog sieciowy, URI usługi bezpośredniej, dane logowania i minimalne uprawnienia do katalogu, a następnie spróbuj ponownie."
+    },
+    "DBP1427W": {
+      "summary": "Wersja klienta Oracle nie została zweryfikowana.",
+      "cause": "Katalog Oracle został pomyślnie pobrany, ale nie udało się w pełni zweryfikować lokalnej wersji klienta SQL*Plus.",
+      "action": "Sprawdź ograniczenia środowiska źródłowego Blueprint i zweryfikuj wybrany klient, zanim polegasz na jego informacjach o wersji."
+    },
+    "DBP1428W": {
+      "summary": "Przechwytywanie Oracle Basic zakończyło się przedwcześnie",
+      "cause": "Sesja Oracle została zakończona przed zakończeniem wszystkich planowanych zapytań do katalogu; odczytane tabele, kolumny, wiersze i rozmiary zostały zachowane, a Blueprint został oznaczony jako niekompletny.",
+      "action": "Sprawdź zestaw danych i ograniczenia katalogu, napraw nieprawidłowe źródło i ponownie pobierz dane, jeśli brakujące dane katalogu są wymagane."
+    },
+    "DBP1429W": {
+      "summary": "Dodatkowe dane katalogowe przechwycenia Oracle Basic są niekompletne",
+      "cause": "Podstawowe dane dotyczące tabel, kolumn, wierszy i rozmiarów zostały zachowane, ale co najmniej jedno dodatkowe zapytanie do katalogu Oracle było niedostępne.",
+      "action": "Przejrzyj katalog Blueprint oraz ograniczenia dotyczące poszczególnych obiektów, popraw opcjonalne uprawnienia lub stan katalogu, i odzyskaj dane katalogu, jeśli są one wymagane."
+    },
+    "DBP1430W": {
+      "summary": "Strumień offline Oracle Basic nie został zapisany",
+      "cause": "Plik Blueprint został utworzony, ale opcjonalny, lokalny plik strumieniowy nie mógł zostać zapisany bezpiecznie w ramach zdefiniowanych limitów.",
+      "action": "Zachowaj Blueprint; popraw miejsce docelowe strumienia lub jego limit i uruchom ponownie tylko wtedy, gdy wymagany jest strumień działający w trybie offline."
+    },
+    "DBP1505E": {
+      "summary": "Przechwytywanie offline Oracle Basic nie powiodło się",
+      "cause": "Lokalny strumień Oracle Basic był nieczytelny, miał niebezpieczne uprawnienia, nie był ograniczony, miał nieprawidłowy format, był niespójny albo nie odpowiadał sumie kontrolnej i skompilowanemu kontraktowi zapytań.",
+      "action": "Zachowaj strumień wewnątrz swojego środowiska i ustaw uprawnienia na 0600 na systemach Unix; użyj strumienia utworzonego przez odpowiednią wersję DBWarp Blueprint i nie edytuj go przed konwersją."
     },
     "DBP1420E": {
       "summary": "Żądany schemat nie jest widoczny",

@@ -1,15 +1,7 @@
 # Operator Message Codes
 
 `dbwarp-blueprint` uses stable operator message identifiers for DBWarp-owned validation and workflow failures.
-The format is inspired by IBM-style operator messages: a subsystem prefix, a numeric identifier, and a severity suffix.
-IBM CICS documentation describes a program identifier plus a four-digit message number and severity letter; IBM MQ similarly uses component/prefix fields, a numeric identifier, and a final message type code. Microsoft error-message guidance reinforces the practical rule that an error should describe the problem and provide an action the user can take.
-
-References:
-
-- IBM CICS message format: https://www.ibm.com/docs/en/cics-pa/5.3.0?topic=messages-message-format
-- IBM CICS message information layout: https://www.ibm.com/docs/en/cics-ts/6.x?topic=messages-format-cics-message-information
-- IBM MQ for z/OS message format: https://www.ibm.com/docs/SSFKSJ_9.2.0/com.ibm.mq.ref.doc/q050270_.htm
-- Microsoft error-message guidance: https://learn.microsoft.com/en-us/windows/win32/uxguide/mess-error
+Each message has a subsystem prefix, a numeric identifier, and a severity suffix, and states the problem and a corrective action.
 
 ## Format
 
@@ -26,7 +18,7 @@ Fields:
 The code is stable and language-neutral. Its summary, cause, and corrective
 action are localized when `--lang` or the process locale selects a supported
 language. Dynamic operating-system, database-driver, path, and causal-chain
-details remain verbatim so support engineers can search the original failure.
+details remain verbatim so the original failure can be searched.
 Message text must not include secrets or unredacted connection URIs.
 
 ## Ranges
@@ -56,8 +48,8 @@ Message text must not include secrets or unredacted connection URIs.
 | `DBP1004E` | Azure token flag used with a non-SQL Server engine. |
 | `DBP1005E` | Authentication mode is unavailable for the selected engine. |
 | `DBP1006E` | Structured-file compression sampling requested without explicit `--yes`. |
-| `DBP1007E` | Explicit length-fidelity mode requested for an engine that does not yet expose that contract. |
-| `DBP1008E` | Legacy exact-length alias conflicts with strict length fidelity. |
+| `DBP1007E` | Explicit length-fidelity mode requested for an engine that does not support it. |
+| `DBP1008E` | `--preserve-exact-lengths` conflicts with strict length fidelity. |
 | `DBP1009E` | Exact sampled-length fidelity requested without explicit `--yes`. |
 | `DBP1010E` | Embedded localization catalog is incomplete or inconsistent. |
 | `DBP1011E` | Command-line arguments are invalid. |
@@ -111,10 +103,20 @@ Message text must not include secrets or unredacted connection URIs.
 | `DBP1419E` | Live capture exceeded `--max-wall-secs`; the client dropped the connection and reports the engine-specific server limit. |
 | `DBP1420E` | At least one requested `--schema` was not visible, so no ambiguously scoped Blueprint was written. |
 | `DBP1421W` | SQL Server session principal evidence was unavailable; capture continued without an identity claim. |
+| `DBP1422W` | Artifact complexity assessment failed; the inventory was retained and affected aggregate dimensions are unknown. |
+| `DBP1423W` | An index or relationship structure catalog was unavailable; core tables and columns were retained with explicit incomplete coverage. |
+| `DBP1424W` | Complete SQL Server security-policy catalog visibility could not be proved; Tier-2 sampling was skipped for each affected table. |
+| `DBP1425W` | SQL Server reported an active row-security filter; Tier-2 sampling was deliberately skipped rather than measuring a filtered subset. |
+| `DBP1426E` | Oracle Basic capture failed during configuration, SQL*Plus start, owner resolution, capture, or mapping. |
+| `DBP1427W` | Oracle SQL*Plus client-version provenance could not be fully attested; capture continued with an explicit limitation. |
+| `DBP1428W` | Oracle Basic stopped before every intended catalogue query completed; the tables, columns, rows, and sizes already read were kept and the Blueprint is marked incomplete. |
+| `DBP1429W` | Oracle Basic kept its core table, column, row, and size data while one or more additional catalogue queries were unavailable. |
+| `DBP1430W` | Oracle Basic published its Blueprint but could not write the optional offline stream file. |
 | `DBP1501E` | Structured-file capture boundary failed. |
 | `DBP1502E` | Blueprint or bundle output failed. |
 | `DBP1503E` | PowerPoint deck generation failed. |
 | `DBP1504W` | Audit log could not be written. |
+| `DBP1505E` | The Oracle Basic offline stream failed its file-permission, size-limit, checksum, query-set, or catalogue-shape validation. |
 | `DBP1601E` | Credential acquisition failed. |
 | `DBP1602E` | TLS configuration failed. |
 | `DBP1603E` | Database username acquisition failed. |
@@ -126,15 +128,9 @@ Message text must not include secrets or unredacted connection URIs.
 | `DBP1702E` | Consent response could not be read from standard input. |
 | `DBP1801E` | The asynchronous runtime could not be initialized. |
 
-Every advertised language must contain every current DBP summary, cause, and
-action. The binary validates this at startup and fails with `DBP1010E` rather
-than silently falling back to English.
-
-Predictable decision-boundary failures are exercised by an adversarial CLI
-matrix. A known condition must emit its specific code as the first operator
-code and must not fall back to `DBP0001E`. The renderer also scans the complete
-error chain so an uncoded implementation context cannot hide a coded inner
-cause.
+Every supported language carries every DBP summary, cause, and action. The
+binary checks this at startup and fails with `DBP1010E` rather than silently
+falling back to English.
 
 Non-fatal database sampling warnings are printed with their stable warning
 code and recorded in the run audit. This distinguishes a complete Tier 2
@@ -143,11 +139,12 @@ optional probe failure into a total collection failure.
 
 ## Support Checklist
 
-When a customer reports a failure, ask for:
+When requesting support for a failure, provide:
 
 - the complete terminal output, including the `DBP` code;
 - the audit log if `--audit-log` was used;
 - the redacted command line;
 - for bundle errors, the output of `dbwarp-blueprint --bundle-list ...`.
 
-Do not ask for password files, token files, private keys, or raw database row samples.
+Never include password files, token files, private keys, or raw database row
+samples in a support request.

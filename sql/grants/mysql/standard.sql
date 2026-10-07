@@ -1,6 +1,6 @@
 -- =============================================================================
--- dbwarp-blueprint least-privilege grants — MySQL 8.0 / 8.4 / 9.7
--- Tier: STANDARD  (catalog walk + bounded row samples => synthetic-copy-ready)
+-- dbwarp-blueprint least-privilege grants: MySQL 8.0 / 8.4 / 9.7
+-- Tier: STANDARD  (catalog walk + bounded row samples)
 -- =============================================================================
 -- Authorizes this command:
 --
@@ -11,14 +11,16 @@
 --
 -- SELECT replaces REFERENCES: it exposes the same INFORMATION_SCHEMA rows and
 -- authorizes the bounded samples the collector runs on the same database session:
---   SELECT bounded-column-projection FROM `s`.`t` LIMIT N
+--   disjoint bounded numeric-primary-key range windows when eligible, or
+--   SELECT bounded-column-projection FROM `s`.`t` LIMIT N as the fallback
 --   plus separately bounded single-column style probes
--- (verified: metadata identical to BASIC, row sample returns rows).
 --
 -- NOT granted: PROCESS, FILE, LOCK TABLES, SHOW VIEW, EXECUTE, TRIGGER, EVENT,
 -- any DDL/DML, replication, anything on *.* .
--- Note: schema-level SELECT also covers views in that schema (read-only,
--- broader than the base-table minimum).
+-- Note: schema-level SELECT also covers views and FEDERATED tables in that
+-- schema. Blueprint never samples FEDERATED tables, but the same principal can
+-- follow them in another client; use object-level SELECT plus REFERENCES on
+-- external tables when those external targets are not approved.
 --
 -- Scope rule: make --schema match the GRANT schema below. Omitting --schema
 -- retains the broader walk of every visible non-system schema; an unreadable
@@ -27,7 +29,8 @@
 -- PRE-CAPTURE REQUIREMENTS (full engine/tier matrix: ../README.md): keep DDL
 -- stable; record expected counts; have a DBA
 -- run ANALYZE TABLE after material loads only when its lock/write cost is
--- approved; confirm replica/filtering and first-row ordering are acceptable.
+-- approved; confirm replica/filtering, primary-key distribution, and fallback
+-- first-row ordering are acceptable.
 -- Start with sample-rows 1000 / max-wall-secs 300 and raise both for higher
 -- requested detail. Do not grant INSERT or create histograms for Blueprint.
 --
@@ -45,6 +48,8 @@ GRANT SELECT ON `appdb`.* TO 'dbwarp_blueprint_standard'@'collector-host';
 
 -- Object-level alternative when only named tables are approved (each table):
 --   GRANT SELECT ON `appdb`.`orders` TO 'dbwarp_blueprint_standard'@'collector-host';
+-- Metadata-only external-table alternative (each FEDERATED table):
+--   GRANT REFERENCES ON `appdb`.`external_orders` TO 'dbwarp_blueprint_standard'@'collector-host';
 
 -- ---- verification (informational) ------------------------------------------
 SHOW GRANTS FOR 'dbwarp_blueprint_standard'@'collector-host';

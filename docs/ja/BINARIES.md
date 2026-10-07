@@ -10,7 +10,11 @@
 
 バイナリをダウンロードし、チェックサムを検証してローカルで実行し、DBWarp と何かを共有する前に生成された `blueprint.toml` を確認できます。
 
-たとえば `https://github.com/DBWarp/dbwarp-blueprint/releases/tag/v1.5.0` のような正確なリリースタグを選び、同じタグからアーカイブと `SHA256SUMS.txt` をダウンロードしてください。再現可能または監査対象の実行では、可変の `releases/latest` URL を使用しないでください。
+たとえば
+`https://github.com/DBWarp/dbwarp-blueprint/releases/tag/<release-tag>` の
+ような正確なリリースタグを選び、同じタグからアーカイブと
+`SHA256SUMS.txt` をダウンロードしてください。再現可能または監査対象の実行では、
+可変の `releases/latest` URL を使用しないでください。
 
 ## ファイル
 
@@ -22,8 +26,13 @@
 | Windows x86_64 | `dbwarp-blueprint-windows-x86_64.zip` |
 | オフラインソース監査バンドル | `dbwarp-blueprint-source-vendored.tar.gz` |
 | チェックサム | `SHA256SUMS.txt` |
+| 展開済み実行ファイルのチェックサム | `dbwarp-blueprint-<platform>.binary.sha256` |
 
 各リリースには `SHA256SUMS.txt` も含まれます。
+
+各 Linux アーカイブには SQL Server Kerberos/GSSAPI のサポートが含まれ、
+起動時に Kerberos ライブラリへ依存しません。バイナリは統合認証が選択された
+場合にのみプラットフォームのランタイムを読み込みます。
 
 プラットフォームアーカイブは実行可能な運用者向けバンドルであり、ソースツリー
 ではありません。運用および監査の参照資料は含まれますが、その場で再ビルドする
@@ -53,6 +62,19 @@ Get-FileHash .\dbwarp-blueprint-windows-x86_64.zip -Algorithm SHA256
 ```
 
 表示されたハッシュを `SHA256SUMS.txt` の対応する行と比較してください。
+
+アーカイブを同じディレクトリに展開した後、同じリリースタグの対応する
+`*.binary.sha256` ファイルで実行ファイル自体も検証します。各ファイルには、
+たとえば `dbwarp-blueprint-linux-x86_64/dbwarp-blueprint` のように、展開先
+フォルダー内の実行ファイル名が記載されています。
+
+```bash
+sha256sum -c dbwarp-blueprint-linux-x86_64.binary.sha256
+```
+
+macOS では `shasum -a 256 -c` を使用します。Windows では
+`Get-FileHash .\dbwarp-blueprint-windows-x86_64\dbwarp-blueprint.exe` と
+`.binary.sha256` ファイル内の値を比較します。
 
 ## ダウンロード済みバイナリかローカルビルドか
 

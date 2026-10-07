@@ -24,12 +24,8 @@
 
 ## 受支持的配置
 
-[STATUS.md](../../STATUS.md) 描述功能及已通过资格验证的引擎矩阵。
-[BUILD.md](BUILD.md) 描述平台及认证方式特定的构建要求。
-Rust 固定为 `rust-toolchain.toml` 中的确切版本；软件包的 `rust-version` 并不保证
-每个更新的工具链都已通过资格验证。
+[STATUS.md](../../STATUS.md) 描述了功能以及支持的数据库版本。 [BUILD.md](BUILD.md) 描述了平台和身份验证相关的构建要求。 Rust 被固定到 `rust-toolchain.toml` 中的确切版本； 其他工具链可能尚未经过测试。
 
-托管服务权限指南并不意味着所有服务或配置都经过测试。
-请使用对应的[权限要求](../../sql/grants/DATABASE_PERMISSIONS.md)，并在投入生产前验证确切配置。
+托管服务权限指南并非意味着所有服务或配置都经过了测试。请使用相应的[权限要求](../../sql/grants/DATABASE_PERMISSIONS.md)，并在生产环境中使用之前，测试具体的配置。
 
 有关采集器版本之间的变更，请参阅 [CHANGELOG.md](CHANGELOG.md)。

@@ -37,11 +37,11 @@ pozostają kanoniczne oraz neutralne językowo. Walidacja katalogu kończy się
 błędem zamiast zastępować brakującą frazę prezentacji tekstem angielskim. Zobacz
 [`INTERNATIONALISATION.md`](INTERNATIONALISATION.md).
 
+Każdy slajd zawiera również lokalizowane notatki dla prelegenta. Notatki przekształcają widoczne dane w krótkie, naturalne podsumowanie, zamiast powtarzać każdą etykietę i wartość na slajdzie. Używają tylko pomiarów z Blueprint i pomijają powtarzający się nagłówek, dzięki czemu widok prezentera i wydrukowane notatki dodają interpretację, nie wprowadzając nowych faktów.
+
 ## Stopka i poufność
 
-Każdy slajd z treścią używa firmowej stopki DBWarp: małego logo po lewej,
-opcjonalnego separatora i poziomu poufności, samego wyśrodkowanego numeru slajdu
-oraz `DBWarp.com` po prawej. Slajd tytułowy pozostaje bez numeru.
+Każdy slajd zawiera ten sam nagłówek: mały logo po lewej stronie, opcjonalny separator i poziom poufności, numer slajdu pośrodku oraz `DBWarp.com` po prawej stronie. Slajd tytułowy nie jest ponumerowany.
 
 Opcja `--deck-confidentiality public|internal|confidential|restricted` dodaje
 jedną ze zlokalizowanych, wbudowanych etykiet klasyfikacji. Każda inna bezpieczna
@@ -64,19 +64,19 @@ bajty prezentacji są powtarzalne.
 - **Bez sieci aplikacji.** Generowanie prezentacji nie otwiera żadnego połączenia
   sieciowego; odczyt Blueprint ze ścieżki zamontowanej w sieci nadal podlega
   stosowi pamięci masowej hosta.
-- **Bez bibliotek stron trzecich.** OOXML jest tworzony bezpośrednio w
-  `src/deck.rs`; plik `.pptx` jest zwykłym archiwum ZIP części XML, które można
-  rozpakować poleceniem `unzip` i odczytać. Bez automatyzacji programu PowerPoint,
-  usługi renderowania ani dodatkowego pakietu crate w grafie zależności.
-  Zatwierdzone obrazy logo DBWarp i statyczne kroje DM Sans są wbudowane w
-  binarkę Rust i zapisywane jako części multimedialne i fontowe OOXML;
-  generowanie nie odczytuje ścieżki zasobu w czasie działania.
+- **Bez bibliotek stron trzecich.** Moduł zapisujący OOXML jest zaimplementowany
+  w `src/deck.rs` i jego modułach `deck_*`. Plik `.pptx` jest archiwum ZIP
+  złożonym z części XML, które można sprawdzić za pomocą `unzip`. Nie używa
+  automatyzacji PowerPoint, usługi renderowania ani dodatkowej zależności.
+  Logotypy DBWarp i statyczne czcionki DM Sans są osadzone w binarnym pliku Rust
+  i zapisywane jako fragmenty media/font w formacie OOXML; generowanie nie
+  odczytuje ścieżki do zasobu w czasie działania.
 - **Bez rzeczywistych identyfikatorów i danych wierszy.** Tabele, kolumny i
   indeksy występują jako te same anonimowe symbole zastępcze co w pliku Blueprint
   (`table-001`, `col-1`, `idx-1`, `schema-A`). Pomiary źródłowe zachowują
   udokumentowaną dokładność; każda prognoza jest obliczana wyłącznie z pól już
-  obecnych w Blueprint. Prezentacja nie zawiera informacji specyficznych dla
-  klienta poza tym wejściem.
+  obecnych w Blueprint. Poza tym wejściem prezentacja nie zawiera niczego
+  specyficznego dla Twojej bazy danych.
 - **Powtarzalna ze stałego wejścia.** Ten sam sprawdzony Blueprint tworzy
   identyczny bajtowo plik `.pptx` dla tego samego języka, etykiety poufności i
   ustalonego znacznika czasu (stała kolejność części i znaczniki czasu). Nie
@@ -105,7 +105,9 @@ Prezentacja dostosowuje się do rozmiaru schematu:
 - **Zmierzona kompresja** (tylko Poziom 2) — liczba próbkowanych tabel, ważony
   współczynnik zstd-3, przewidywany rozmiar po kompresji i najbardziej podatne
   na kompresję spośród próbkowanych tabel.
-- **Model zaufania** — slajd końcowy podsumowujący powyższe gwarancje.
+- **Logika bazy danych wykraczająca poza tabele.** Obiekty nietablicowe (`graph` i `analyzed` zawierają szczegółowe informacje): sześć grup w języku naturalnym wyjaśnia logikę i zależności bazy danych poza zwykłymi definicjami tabel: warstwy zapytań, wykonywalna logika, automatyczne zachowania, typy i obiekty wytwarzające wartości, zewnętrzne zależności oraz konfiguracja platformy. Wyświetlane liczby pochodzą z inwentarza artefaktów Blueprint.
+- **Złożoność artefaktów** (tylko dla poziomów szczegółowości `graph` i `analyzed`): łączny poziom złożoności obiektów innych niż tabele, pokrycie populacji obiektów podlegających ocenie oraz poziomy wszystkich siedmiu wymiarów. Slajd definiuje te wymiary jako rozmiar definicji, rozgałęzienia, wykorzystanie funkcji, zależności, wymagania środowiskowe, ukryty kod źródłowy i zachowanie specyficzne dla dialektu. Każdy wymiar pokazuje pokrycie obok poziomu, dlatego częściowe lub nieznane dowody nie mogą wyglądać jak niska złożoność. Ogólny wynik `unknown` oznacza niekompletne dowody; `not applicable` wymaga pustej, udowodnionej jako kompletna populacji obiektów podlegających ocenie.
+- **Model zaufania** — slajd końcowy podsumowujący powyższe właściwości zaufania.
 
 ## Przeglądanie danych wyjściowych
 
@@ -117,7 +119,4 @@ unzip -l blueprint.pptx           # list parts
 unzip -p blueprint.pptx ppt/slides/slide1.xml   # read a slide as plain XML
 ```
 
-Otwórz go w programie PowerPoint, LibreOffice Impress lub Google Slides.
-Generator znajduje się w [`src/deck.rs`](https://github.com/DBWarp/dbwarp-blueprint/blob/main/src/deck.rs) i jest wbudowany w
-plik binarny Rust. Nie ma oddzielnego generatora prezentacji, który trzeba
-instalować, audytować lub utrzymywać w synchronizacji.
+Otwórz go w programie PowerPoint, LibreOffice Impress lub Google Slides. Mechanizm tworzenia prezentacji znajduje się w [`src/deck.rs`](../../src/deck.rs) i jest wbudowany w plik binarny Rust. Nie ma oddzielnego narzędzia do tworzenia prezentacji, które trzeba instalować lub audytować.

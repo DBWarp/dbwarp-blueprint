@@ -1,15 +1,12 @@
 use crate::{
     generated_table_name, ordered_columns, scaled_row_count, BlueprintFile, BlueprintRelationship,
 };
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 
-/// Target-neutral table and relationship metadata needed to plan generation.
-///
-/// Frontends with a compatible but not identical Blueprint model can construct this
-/// catalog without first serializing through the canonical TOML model.
+/// Table and relationship metadata needed to plan generation.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GenerationCatalog {
     pub tables: Vec<GenerationCatalogTable>,
@@ -48,10 +45,8 @@ pub struct GenerationPlanOptions {
     pub fixture_scale: f64,
     pub max_tables: Option<usize>,
     pub max_rows_per_table: Option<u64>,
-    /// Retain relationship cycles when the caller creates every table first,
-    /// loads all data, and adds constraints only after the complete load.
-    /// Live per-table adapters must leave this false until they have a
-    /// transfer-wide post-data finalization phase.
+    /// Retain relationship cycles. This is valid only when constraints are
+    /// added after all rows exist.
     pub retain_relationship_cycles: bool,
 }
 
@@ -85,9 +80,8 @@ pub struct GenerationForeignKeyPlan {
     pub child_ordinals: Vec<u32>,
     pub parent_ordinals: Vec<u32>,
     pub edge_ordinal: usize,
-    /// False means the source named parent columns but did not describe a
-    /// matching exact primary/unique index. An adapter may synthesize a support
-    /// index or reject the relationship according to its fidelity contract.
+    /// False means the source named parent columns without a matching exact
+    /// primary or unique index.
     pub parent_key_declared_exact: bool,
     pub on_update: String,
     pub on_delete: String,
@@ -113,7 +107,7 @@ pub struct BlueprintGenerationPlan {
     /// Tables remain in selection order so stable generated identities do not
     /// change merely because relationship ordering changes.
     pub tables: Vec<GenerationTablePlan>,
-    /// Selection indexes in deterministic parent-before-child execution order.
+    /// Selection indexes in deterministic dependency order.
     pub load_order: Vec<usize>,
     pub foreign_keys: Vec<GenerationForeignKeyPlan>,
     pub summary: GenerationPlanSummary,
@@ -184,7 +178,24 @@ pub fn plan_blueprint_generation(
     blueprint: &BlueprintFile,
     options: &GenerationPlanOptions,
 ) -> Result<BlueprintGenerationPlan> {
-    plan_generation_catalog(&generation_catalog_from_blueprint(blueprint), options)
+    let plan = plan_generation_catalog(&generation_catalog_from_blueprint(blueprint), options)?;
+    for planned_table in &plan.tables {
+        let table = &blueprint.tables[&planned_table.source_name];
+        for (name, column) in ordered_columns(table) {
+            crate::generator::validate_decimal_integer_generation(
+                table,
+                column,
+                planned_table.row_count,
+            )
+            .with_context(|| {
+                format!(
+                    "table '{}' column '{name}' cannot preserve numeric generation cardinality",
+                    planned_table.source_name
+                )
+            })?;
+        }
+    }
+    Ok(plan)
 }
 
 pub fn plan_generation_catalog(
@@ -560,6 +571,67 @@ mod tests {
     }
 
     #[test]
+    fn decimal_integer_generation_rejects_impossible_projected_cardinality_before_rows() {
+        let mut blueprint = BlueprintFile::default();
+        let mut source = table(1_000, &[1], &[]);
+        let column = source.cols.get_mut("col-1").unwrap();
+        column.column_type = "number".into();
+        column.numeric_model = "integer".into();
+        column.numeric_precision = Some(3);
+        column.numeric_precision_radix = "decimal".into();
+        column.cardinality = Some(crate::BlueprintCardinality {
+            measured: true,
+            sample_rows: 1_000,
+            non_null_rows: 1_000,
+            observed_distinct_count: 1_000,
+            estimated_distinct_count: 1_000,
+            ..Default::default()
+        });
+        blueprint.tables.insert("narrow".into(), source);
+        assert!(plan_blueprint_generation(&blueprint, &GenerationPlanOptions::default()).is_ok());
+        let options = GenerationPlanOptions {
+            fixture_scale: 2.0,
+            ..Default::default()
+        };
+        let error = format!(
+            "{:#}",
+            plan_blueprint_generation(&blueprint, &options).unwrap_err()
+        );
+        assert!(error.contains("table 'narrow' column 'col-1'"), "{error}");
+        assert!(
+            error.contains("2000") && error.contains("capacity 1999"),
+            "{error}"
+        );
+        let bounded = GenerationPlanOptions {
+            max_rows_per_table: Some(1_999),
+            ..options.clone()
+        };
+        assert!(plan_blueprint_generation(&blueprint, &bounded).is_ok());
+        blueprint
+            .tables
+            .get_mut("narrow")
+            .unwrap()
+            .cols
+            .get_mut("col-1")
+            .unwrap()
+            .numeric_unsigned = true;
+        let error = format!(
+            "{:#}",
+            plan_blueprint_generation(&blueprint, &bounded).unwrap_err()
+        );
+        assert!(error.contains("capacity 1000"), "{error}");
+        blueprint.tables.insert("wide".into(), table(10, &[1], &[]));
+        let selected = GenerationPlanOptions {
+            selected_table: Some("wide".into()),
+            ..options
+        };
+        assert!(
+            plan_blueprint_generation(&blueprint, &selected).is_ok(),
+            "unselected columns must not block a valid plan"
+        );
+    }
+
+    #[test]
     fn selection_scaling_and_target_override_are_stable() {
         let mut blueprint = BlueprintFile::default();
         blueprint.tables.insert("a".into(), table(101, &[1], &[]));
@@ -584,7 +656,7 @@ mod tests {
     }
 
     #[test]
-    fn composite_fk_loads_parent_before_lexically_earlier_child() {
+    fn composite_fk_respects_dependency_order() {
         let mut blueprint = BlueprintFile::default();
         blueprint
             .tables
@@ -642,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    fn cycles_are_removed_without_dropping_downstream_relationships() {
+    fn cycles_are_removed_without_dropping_dependent_relationships() {
         let mut blueprint = BlueprintFile::default();
         for name in ["a", "b", "c"] {
             blueprint

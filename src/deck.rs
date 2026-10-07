@@ -1,8 +1,8 @@
-//! Offline PowerPoint (.pptx) deck generator for a `BlueprintFile`.
+//! Offline PowerPoint (.pptx) deck writer for a `BlueprintFile`.
 //!
-//! Authors the OOXML directly — no third-party crate, no network, and no
-//! runtime asset lookup. The current DBWarp lockups and static DM Sans faces
-//! are embedded as package parts so PowerPoint renders the approved brand
+//! Authors the OOXML directly: no third-party crate, no network, and no
+//! runtime asset lookup. The DBWarp logos and static DM Sans faces
+//! are embedded as package parts so PowerPoint renders the intended fonts
 //! without requiring a local font install. Deterministic: the same `BlueprintFile` + pinned
 //! `generated_at` produces byte-identical output. Adaptive: management summary
 //! first, then detailed per-table view for small schemas or characterization
@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 use crate::format::{BlueprintFile, BlueprintTable, Totals};
 use crate::i18n::Locale;
+use dbwarp_blueprint_core::{ArtifactComplexity, ArtifactInventory};
 
 fn tr(key: &str) -> &'static str {
     crate::i18n::text(key)
@@ -122,7 +123,7 @@ const OVERVIEW_METRIC_VALUE_Y: f64 = 4.33;
 const OVERVIEW_METRIC_LABEL_Y: f64 = 4.66;
 const OVERVIEW_METRIC_NOTE_Y: f64 = 4.93;
 
-// Footer geometry is measured from the approved DBWarp mentor-deck reference.
+// Footer geometry follows the DBWarp slide template.
 // The content slides use a five-part footer: rule, small logo, optional
 // classification, bare centred page number, and right-aligned DBWarp.com.
 const FOOTER_X: f64 = 0.7;
@@ -363,6 +364,27 @@ fn index_metric_label(count: u64) -> &'static str {
     )
 }
 
+fn complexity_band_label(band: &str) -> &'static str {
+    match band {
+        "trivial" => tr("deck.complexity.band.trivial"),
+        "low" => tr("deck.complexity.band.low"),
+        "moderate" => tr("deck.complexity.band.moderate"),
+        "high" => tr("deck.complexity.band.high"),
+        "very-high" => tr("deck.complexity.band.very_high"),
+        "not-applicable" => tr("deck.complexity.band.not_applicable"),
+        _ => tr("deck.complexity.band.unknown"),
+    }
+}
+
+fn complexity_coverage_label(coverage: &str) -> &'static str {
+    match coverage {
+        "complete" => tr("deck.complexity.coverage.complete"),
+        "partial" => tr("deck.complexity.coverage.partial"),
+        "not-applicable" => tr("deck.complexity.coverage.not_applicable"),
+        _ => tr("deck.complexity.coverage.unknown"),
+    }
+}
+
 fn schema_label_key(schemas: usize) -> &'static str {
     if schemas == 1 {
         "deck.schema"
@@ -391,6 +413,7 @@ fn fmt_generated_at_display(generated: &str) -> String {
 
 include!("deck_layout.rs");
 include!("deck_analysis.rs");
+include!("deck_notes.rs");
 include!("deck_slides.rs");
 include!("deck_ooxml.rs");
 include!("deck_fonts.rs");
@@ -411,6 +434,12 @@ pub(crate) fn build_pptx_with_confidentiality(
     slides.push(build_title(&d));
     slides.push(build_executive(&d));
     slides.push(build_overview(&d));
+    if let Some(slide) = build_artifact_inventory(&d) {
+        slides.push(slide);
+    }
+    if let Some(slide) = build_artifact_complexity(&d) {
+        slides.push(slide);
+    }
     if d.tables.len() <= 4 {
         slides.push(build_tables(&d));
     } else {
@@ -458,6 +487,14 @@ pub(crate) fn build_pptx_with_confidentiality(
     parts.push(("ppt/tableStyles.xml".into(), tablestyles().into_bytes()));
     parts.push(("ppt/theme/theme1.xml".into(), theme().into_bytes()));
     parts.push((
+        "ppt/notesMasters/notesMaster1.xml".into(),
+        notes_master().into_bytes(),
+    ));
+    parts.push((
+        "ppt/notesMasters/_rels/notesMaster1.xml.rels".into(),
+        notes_master_rels().into_bytes(),
+    ));
+    parts.push((
         "ppt/media/dbwarp-logo-dark.png".into(),
         LOGO_DARK_PNG.to_vec(),
     ));
@@ -500,7 +537,15 @@ pub(crate) fn build_pptx_with_confidentiality(
         ));
         parts.push((
             format!("ppt/slides/_rels/slide{}.xml.rels", n1),
-            slide_rels().into_bytes(),
+            slide_rels(n1).into_bytes(),
+        ));
+        parts.push((
+            format!("ppt/notesSlides/notesSlide{}.xml", n1),
+            notes_slide(&sl.notes).into_bytes(),
+        ));
+        parts.push((
+            format!("ppt/notesSlides/_rels/notesSlide{}.xml.rels", n1),
+            notes_slide_rels(n1).into_bytes(),
         ));
     }
     parts.sort_by(|a, b| a.0.cmp(&b.0));

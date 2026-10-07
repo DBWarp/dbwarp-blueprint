@@ -1,0 +1,17 @@
+{
+  "contract": "dbwarp-blueprint-oracle-sqlplus-parser-fixtures/v1",
+  "files": {
+    "client-version-12c.txt": "897c5cd61bf1ef3eea8acdbed8850e69671f0fd7c3b92afbf58833f17031d7f8",
+    "client-version-19c.txt": "d10d694017270205c8ac48d7206197b29738200861526322ec3f47452fffc74d",
+    "client-version-21c.txt": "c51dccfd128b33c6e7d215657f3c0d3a9dd08ef430fa58e2313c564d66b1e8e0",
+    "client-version-23ai.txt": "3acb896e3cecb362deb9b2ede146d4b14c56f2a978f7af8ea7cc5ae7eb97d182",
+    "clean-login.txt": "d21774538b5aecd9f155c24c194df52894a1250bbe2a4c9a0bf6634a9484a6b0",
+    "expired-password.txt": "3072f9ac08193d519da315ac8e8868a9b7333f97546d8409cc76971e69ac4301",
+    "password-grace.txt": "447828d282115225da05e7f7d96082f42f1181c62e200817f44fca56b07910fb",
+    "query-permission-denied.txt": "828f22730d500124c8b8233c263e3cfb437acc097eaaadb52a8197a7b8b22d8e",
+    "site-settings-equivalent.txt": "243b57ab61209144ed8f9dcf4912af2878ef13d366b2e5e8806252febefdc511",
+    "sp2-error.txt": "b2d151ab341a7d5f91d688335517afdecd72b5c9fdf6b9bf6fc2c7b0581c6d1f",
+    "wrong-password.txt": "28e4f867e33c1e36967e39566284d28b5959f9b751cecadc6a55ac692608128e"
+  },
+  "purpose": "Sanitized SQL*Plus output shapes for parser tests only. These files are not database-support evidence."
+}

@@ -86,7 +86,7 @@ intentionnellement des clés différentes.
 Tous les catalogues sont compilés dans le binaire. Au démarrage, le programme
 vérifie que chaque langue non anglaise annoncée couvre exactement :
 
-- l'arborescence d'aide Clap active ;
+- chaque page d'aide ;
 - chaque code DBP stable et ses trois champs de diagnostic ;
 - chaque clé stable de demande, de progression, d'avertissement et de présentation ;
 - chaque espace réservé requis et chaque jeton opérationnel protégé.

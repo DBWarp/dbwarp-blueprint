@@ -1,8 +1,7 @@
 use crate::{BlueprintColumn, BlueprintFile};
 use anyhow::{Context, Result};
 
-/// A deterministic estimate of how much evidence the Blueprint contains for
-/// its intended sizing and synthetic-fixture uses.
+/// A deterministic estimate of the evidence contained in a Blueprint.
 ///
 /// This is deliberately an evidence score, not an observed error bound or a
 /// statistical confidence interval: the collector has no source ground truth
@@ -19,7 +18,7 @@ pub struct BlueprintFidelityEstimate {
     pub limitations: Vec<String>,
 }
 
-/// Estimate fidelity for the canonical shared Blueprint model.
+/// Estimate fidelity for the canonical Blueprint model.
 pub fn estimate_blueprint_fidelity(blueprint: &BlueprintFile) -> BlueprintFidelityEstimate {
     let mut limitations = Vec::new();
 
@@ -218,8 +217,8 @@ pub fn estimate_blueprint_fidelity(blueprint: &BlueprintFile) -> BlueprintFideli
     }
 }
 
-/// Compatibility entry point for an external serializable Blueprint model.
-/// Callers already holding a canonical `BlueprintFile` should use
+/// Estimate fidelity for any value that serialises to the Blueprint model.
+/// Values already held as `BlueprintFile` can use
 /// `estimate_blueprint_fidelity` directly.
 pub fn estimate_serializable_blueprint_fidelity<T>(
     blueprint: &T,
@@ -249,20 +248,50 @@ fn table_statistics_freshness_score(
     let mut total = 0u64;
     let mut count = 0u64;
     for table in blueprint.tables.values() {
-        let score = match table.stats_freshness.as_str() {
-            "fresh" => 100,
-            "stale" => {
+        let statistics_state = table
+            .statistics
+            .as_ref()
+            .map(|evidence| evidence.statistics_state.as_str());
+        let score = match statistics_state {
+            Some("current") => 100,
+            Some("possibly-stale") => {
+                limitations.push("table-statistics-possibly-stale".to_string());
+                80
+            }
+            Some("known-stale") => {
                 limitations.push("table-statistics-stale".to_string());
                 60
             }
-            "never_analyzed" => {
+            Some("never-analyzed") => {
                 limitations.push("table-statistics-never-analyzed".to_string());
                 30
             }
-            // Empty is the schema-v6 representation for engines and fallback
-            // paths that cannot defensibly establish freshness. Do not invent
-            // evidence or infer staleness for counter-based engines here.
-            _ => continue,
+            Some("locked") => {
+                limitations.push("table-statistics-locked".to_string());
+                70
+            }
+            Some("user-supplied") => {
+                limitations.push("table-statistics-user-supplied".to_string());
+                75
+            }
+            // Unknown and not-applicable states must not be invented into a
+            // freshness claim. Structured sources and counter-based engines
+            // can legitimately have no optimizer freshness evidence.
+            Some(_) => continue,
+            None => match table.stats_freshness.as_str() {
+                "fresh" => 100,
+                "stale" => {
+                    limitations.push("table-statistics-stale".to_string());
+                    60
+                }
+                "never_analyzed" => {
+                    limitations.push("table-statistics-never-analyzed".to_string());
+                    30
+                }
+                // Empty is the schema-v6 representation for engines and
+                // fallback paths that cannot establish freshness.
+                _ => continue,
+            },
         };
         total = total.saturating_add(score);
         count = count.saturating_add(1);
@@ -299,7 +328,7 @@ mod tests {
     use super::*;
     use crate::{
         ArtifactInventory, BlueprintCardinality, BlueprintCompression, BlueprintTable,
-        DatabaseTopology, DatasetScope, FkEdge,
+        DatabaseTopology, DatasetScope, FkEdge, TableStatisticsEvidence,
     };
     use std::collections::BTreeMap;
 
@@ -521,6 +550,48 @@ mod tests {
             .get_mut("table-001")
             .unwrap()
             .stats_freshness = "never_analyzed".to_string();
+        let never_analyzed = estimate_blueprint_fidelity(&blueprint);
+        assert!(never_analyzed.sizing_score < stale.sizing_score);
+        assert!(never_analyzed
+            .limitations
+            .contains(&"table-statistics-never-analyzed".to_string()));
+    }
+
+    #[test]
+    fn schema_v7_statistics_state_drives_the_fidelity_estimate() {
+        let mut blueprint = complete_blueprint();
+        {
+            let table = blueprint.tables.get_mut("table-001").unwrap();
+            table.stats_freshness.clear();
+            table.statistics = Some(TableStatisticsEvidence {
+                statistics_state: "current".to_string(),
+                ..Default::default()
+            });
+        }
+        let current = estimate_blueprint_fidelity(&blueprint);
+
+        blueprint
+            .tables
+            .get_mut("table-001")
+            .unwrap()
+            .statistics
+            .as_mut()
+            .unwrap()
+            .statistics_state = "known-stale".to_string();
+        let stale = estimate_blueprint_fidelity(&blueprint);
+        assert!(stale.sizing_score < current.sizing_score);
+        assert!(stale
+            .limitations
+            .contains(&"table-statistics-stale".to_string()));
+
+        blueprint
+            .tables
+            .get_mut("table-001")
+            .unwrap()
+            .statistics
+            .as_mut()
+            .unwrap()
+            .statistics_state = "never-analyzed".to_string();
         let never_analyzed = estimate_blueprint_fidelity(&blueprint);
         assert!(never_analyzed.sizing_score < stale.sizing_score);
         assert!(never_analyzed

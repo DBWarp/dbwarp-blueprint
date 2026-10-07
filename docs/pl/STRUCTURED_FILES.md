@@ -23,7 +23,7 @@ Jest to tryb offline:
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
@@ -50,18 +50,18 @@ plików, nie kompresji transportowej DBWarp, i nigdy nie są emitowane jako
 
 ```bash
 dbwarp-blueprint \
-  --from-avro /data/customer-sample.avro \
+  --from-avro /data/events.avro \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
 
-Kontenery obiektów Avro nie udostępniają liczby wierszy w stopce podobnej do Parquet. Dlatego tryb Avro przechodzi kontener jeden raz, aby policzyć rekordy, wyprowadzić logiczne `table_bytes` i zaobserwować dla każdej kolumny `len_avg`, `len_p95` oraz `null_fraction`. Schemat zapisu dostarcza metadane typów logicznych. `storage_bytes` i `ratio_storage` opisują kontener Avro, a nie estymację transferu DBWarp. Jest to odpowiednie do planowania estymatora i syntetycznego zestawu testowego.
+Kontenery obiektów Avro nie udostępniają liczby wierszy w stopce podobnej do Parquet. Dlatego tryb Avro przechodzi kontener jeden raz, aby policzyć rekordy, wyprowadzić logiczne `table_bytes` i zaobserwować dla każdej kolumny `len_avg`, `len_p95` oraz `null_fraction`. Schemat zapisu dostarcza metadane typów logicznych. `storage_bytes` i `ratio_storage` opisują kontener Avro, a nie estymację transferu DBWarp.
 
 ## Wierność typów logicznych
 
-Przechwytywanie plików strukturalnych zachowuje ograniczone metadane logiczne potrzebne estymatorowi: precyzję i skalę dziesiętną, rodziny daty i czasu, precyzję znacznika czasu i semantykę UTC/lokalną, UUID, stałą szerokość binarną, ciągi UTF-8 oraz surowe bajty. Pola zawierające wyłącznie NULL pozostają `type = "null"`, zamiast stawać się syntetycznym tekstem.
+Strukturalne pobieranie danych z plików zachowuje ograniczone metadane logiczne potrzebne do określenia rozmiaru: liczby dziesiętne precision/scale, typy danych daty i czasu, precyzja znaczników czasu oraz semantyka UTC/local, UUID-y, stała szerokość danych binarnych, ciągi UTF-8 i surowe bajty. Pola zawierające tylko wartości null pozostają `type = "null"`, zamiast być zastępowane syntetycznym tekstem.
 
-Zagnieżdżonych liści Parquet oraz tablic, map, rekordów i unii wielu typów Avro nie można przedstawić jako jednego dokładnego skalara SQL. Blueprint zapisuje znormalizowany typ `json` oraz `source_semantics`, takie jak `"repeated-leaf"`, `"nested-json"` lub `"multi-type-union"`. Generatory dalszego etapu muszą oznaczać te wartości jako reprezentatywne obciążenie JSON, a nie twierdzić, że dokładnie odtwarzają zagnieżdżony schemat.
+Zagnieżdżone elementy Parquet oraz tablice, mapy, rekordy lub unie wielotypowe w formacie Avro nie mogą być reprezentowane jako pojedyncza, dokładna wartość skalarna w SQL. Blueprint rejestruje znormalizowany typ `json` oraz `source_semantics`, takie jak `"repeated-leaf"`, `"nested-json"` lub `"multi-type-union"`. Kolumny te są rozmiarowane jako JSON; zagnieżdżona struktura nie jest odtwarzana dokładnie.
 
 Rdzenie nazw plików źródłowych, ścieżki Parquet, nazwy pól Avro i etykiety batch `logical_table` nie są zapisywane jako identyfikatory Blueprint. Wieloplikowy zbiór danych emituje chronione tajnym kluczem identyfikatory `table-NNN`, agreguje bajty obiektów, partycje, grupy wierszy, kodeki, szerokości, udziały NULL oraz zgodne pochodzenie kompresji i odrzuca pliki, których logiczne kontrakty kolumn są różne.
 
@@ -72,7 +72,7 @@ zdekodowanych danych:
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --measure-compression --yes \
   --sample-rows 5000 \
   --out blueprint.toml \
@@ -91,26 +91,16 @@ Po włączeniu `dbwarp-blueprint`:
 - zapisuje `sample_encoding = "blueprint-compression-probe-v2"` w wygenerowanym pliku
   TOML;
 - przechowuje próbkowane bajty wyłącznie w pamięci i nigdy nie zapisuje wartości
-  wierszy na dysku.
+`--measure-compression` wymaga `--yes`, ponieważ odczytuje zdekodowane wartości danych. Przechowuje zagregowane dane dotyczące kompresji, gęstości wartości null, cardinality/frequency, długości i stylu, a nigdy wartości pobrane w próbkach.
 
-`--measure-compression` wymaga `--yes`, ponieważ odczytuje zdekodowane wartości
-klienta. Utrwala zagregowane pomiary kompresji, udziału NULL,
-kardynalności/częstotliwości, długości i stylu, nigdy próbkowane wartości.
-
-Obecny próbnik używa deterministycznej próbki pierwszych N elementów. Jest to
-powtarzalne i niedrogie, ale może być obciążone, jeśli plik jest posortowany lub
-zgrupowany. W przypadku estymacji o wysokiej wadze wybierz reprezentatywny plik
-albo wygeneruj wiele plików Blueprint z różnych fragmentów. Przyszła wersja może
-dodać próbkowanie warstwowe według grup wierszy lub bloków.
+Obecny sampler wykorzystuje deterministyczny, pierwszy-N prób. Jest to powtarzalne i tanie, ale może być obciążone, jeśli plik jest posortowany lub zgrupowany. W przypadku ważnych oszacowań, preferowane jest użycie reprezentatywnego pliku lub wygenerowanie wielu plików Blueprint z różnych fragmentów.
 
 ## Zakres
 
 Tryb Blueprint plików strukturalnych jest przydatny do:
 
 - wymiarowania importu Parquet/Avro przed uruchomieniem DBWarp;
-- generowania reprezentatywnego syntetycznego zestawu testowego bez kopiowania
-  nazw źródłowych ani wartości wierszy;
-- planowania przepływów Parquet/Avro -> DBWarp columnar -> docelowa baza danych.
+- planowanie transferu danych do bazy danych Parquet/Avro.
 
 Nie zastępuje przechwytywania Blueprint działającej bazy danych, gdy rzeczywistym
 źródłem jest obsługiwana baza danych, czyli PostgreSQL, MySQL lub SQL Server.

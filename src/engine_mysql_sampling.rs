@@ -7,6 +7,7 @@ struct PendingCompressionSample {
     null_fractions: Vec<Option<f64>>,
     cardinalities: Vec<Option<format::BlueprintCardinality>>,
     payload_profiles: Vec<String>,
+    complete_source_rows: Option<u64>,
 }
 
 fn mysql_column_is_transfer_value(column: &ColumnRow) -> bool {
@@ -78,6 +79,40 @@ fn mysql_sample_bytes_per_character(column: &ColumnRow) -> usize {
     4
 }
 
+/// Floor the prefix so a pathologically small per-column budget cannot emit
+/// an always-empty LEFT(col, 0) sample. The byte limit re-covers the floored
+/// prefix's worst-case transcoding so the row re-clamp stays honest.
+fn mysql_floored_projection_limit(
+    column: &ColumnRow,
+    byte_limit: usize,
+) -> MysqlSampleProjectionLimit {
+    let bytes_per_character = mysql_sample_bytes_per_character(column);
+    let char_limit = (byte_limit / bytes_per_character).max(1);
+    MysqlSampleProjectionLimit {
+        byte_limit: byte_limit.max(char_limit.saturating_mul(bytes_per_character)),
+        char_limit,
+    }
+}
+
+fn mysql_rows_within_sample_budget(
+    planned_rows: u64,
+    columns: &[ColumnRow],
+    limits: &[MysqlSampleProjectionLimit],
+) -> u64 {
+    let payloads = columns
+        .iter()
+        .zip(limits)
+        .map(|(column, limit)| {
+            if mysql_is_variable_sample_column(column) {
+                limit.byte_limit as u64
+            } else {
+                mysql_fixed_sample_payload_reserve(column) as u64
+            }
+        })
+        .collect::<Vec<_>>();
+    crate::engine_common::rows_within_sample_budget(planned_rows, &payloads)
+}
+
 fn mysql_sample_projection_budget(
     requested_rows: u64,
     columns: &[ColumnRow],
@@ -105,10 +140,7 @@ fn mysql_sample_projection_budget(
                 let byte_limit = usize::try_from(plan.variable_byte_limits[index])
                     .unwrap_or(usize::MAX)
                     .max(1);
-                MysqlSampleProjectionLimit {
-                    byte_limit,
-                    char_limit: byte_limit / mysql_sample_bytes_per_character(column),
-                }
+                mysql_floored_projection_limit(column, byte_limit)
             } else {
                 MysqlSampleProjectionLimit {
                     byte_limit: 0,
@@ -116,8 +148,9 @@ fn mysql_sample_projection_budget(
                 }
             }
         })
-        .collect();
-    Ok((plan.sample_rows, limits))
+        .collect::<Vec<_>>();
+    let rows = mysql_rows_within_sample_budget(plan.sample_rows, columns, &limits);
+    Ok((rows, limits))
 }
 
 fn mysql_sample_projection(columns: &[ColumnRow], limits: &[MysqlSampleProjectionLimit]) -> String {
@@ -148,8 +181,8 @@ fn mysql_adaptive_projection_from_observed_lengths(
     columns: &[ColumnRow],
     requested_rows: u64,
 ) -> Result<Option<(u64, Vec<MysqlSampleProjectionLimit>)>> {
-    let (observed_max, truncated) = mysql_sample_observed_lengths(rows, columns);
-    if !truncated {
+    let (observed_max, truncated_columns) = mysql_sample_observed_lengths(rows, columns);
+    if !truncated_columns.iter().any(|truncated| *truncated) {
         return Ok(None);
     }
     mysql_adaptive_projection_budget(columns, &observed_max, requested_rows).map(Some)
@@ -158,9 +191,9 @@ fn mysql_adaptive_projection_from_observed_lengths(
 fn mysql_sample_observed_lengths(
     rows: &[mysql_async::Row],
     columns: &[ColumnRow],
-) -> (Vec<u64>, bool) {
+) -> (Vec<u64>, Vec<bool>) {
     let mut observed_max = vec![0_u64; columns.len()];
-    let mut truncated = false;
+    let mut truncated = vec![false; columns.len()];
     for row in rows {
         for (column_index, column) in columns.iter().enumerate() {
             if !mysql_is_variable_sample_column(column) {
@@ -179,7 +212,7 @@ fn mysql_sample_observed_lengths(
                 .and_then(mysql_observed_octet_length)
                 .unwrap_or(sampled_bytes);
             observed_max[column_index] = observed_max[column_index].max(original_bytes);
-            truncated |= sampled_bytes < original_bytes;
+            truncated[column_index] |= sampled_bytes < original_bytes;
         }
     }
     (observed_max, truncated)
@@ -213,11 +246,10 @@ fn mysql_adaptive_projection_budget(
         .enumerate()
         .map(|(index, column)| {
             if mysql_is_variable_sample_column(column) {
-                let byte_limit = plan.variable_byte_limits[index] as usize;
-                MysqlSampleProjectionLimit {
-                    byte_limit,
-                    char_limit: byte_limit / mysql_sample_bytes_per_character(column),
-                }
+                // Same floors as the initial projection: never emit an
+                // always-empty LEFT(col, 0) prefix on the retry either.
+                let byte_limit = (plan.variable_byte_limits[index] as usize).max(1);
+                mysql_floored_projection_limit(column, byte_limit)
             } else {
                 MysqlSampleProjectionLimit {
                     byte_limit: 0,
@@ -225,8 +257,9 @@ fn mysql_adaptive_projection_budget(
                 }
             }
         })
-        .collect();
-    Ok((plan.sample_rows, limits))
+        .collect::<Vec<_>>();
+    let rows = mysql_rows_within_sample_budget(plan.sample_rows, columns, &limits);
+    Ok((rows, limits))
 }
 
 fn mysql_observed_octet_length(value: &Value) -> Option<u64> {
@@ -274,18 +307,24 @@ async fn sample_compression(
     let (bounded_rows, projection_limits) =
         mysql_sample_projection_budget(sample_rows, sampled_columns.as_slice())?;
     let projection = mysql_sample_projection(sampled_columns.as_slice(), &projection_limits);
-    let (mut rows, sample_method, bias_reason, sample_layout) = query_mysql_compression_sample(
-        conn,
-        t,
-        &qname,
-        &projection,
-        range_sample_plan,
-        bounded_rows,
-        audit,
-    )
-    .await?;
-    let mut sample_method = sample_method.to_string();
-    let mut bias_reason = bias_reason.to_string();
+    let (mut rows, first_method, first_bias, first_layout, first_complete_row_read) =
+        query_mysql_compression_sample(
+            conn,
+            t,
+            &qname,
+            &projection,
+            range_sample_plan,
+            bounded_rows,
+            audit,
+        )
+        .await?;
+    let first = MysqlRetainedSampleProvenance {
+        method: first_method.to_string(),
+        bias_reason: first_bias.to_string(),
+        layout: first_layout,
+        complete_row_read: first_complete_row_read,
+    };
+    let mut retry = None;
     if let Some((retry_rows, retry_limits)) = mysql_adaptive_projection_from_observed_lengths(
         rows.as_slice(),
         sampled_columns.as_slice(),
@@ -293,21 +332,34 @@ async fn sample_compression(
     )? {
         let retry_projection = mysql_sample_projection(sampled_columns.as_slice(), &retry_limits);
         drop(rows);
-        rows = query_mysql_compression_sample(
-            conn,
-            t,
-            &qname,
-            &retry_projection,
-            range_sample_plan,
-            retry_rows,
-            audit,
-        )
-        .await?
-        .0;
-        sample_method.push_str("; adaptive byte-bounded retry from observed octet lengths");
-        bias_reason.push_str("+adaptive_observed_octet_length_retry");
+        let (retry_result, retry_method, retry_bias, retry_layout, retry_complete_row_read) =
+            query_mysql_compression_sample(
+                conn,
+                t,
+                &qname,
+                &retry_projection,
+                range_sample_plan,
+                retry_rows,
+                audit,
+            )
+            .await?;
+        rows = retry_result;
+        retry = Some(MysqlRetainedSampleProvenance {
+            method: retry_method.to_string(),
+            bias_reason: retry_bias.to_string(),
+            layout: retry_layout,
+            complete_row_read: retry_complete_row_read,
+        });
     }
-    if mysql_sample_observed_lengths(&rows, &sampled_columns).1 {
+    let MysqlRetainedSampleProvenance {
+        method: mut sample_method,
+        mut bias_reason,
+        layout: sample_layout,
+        mut complete_row_read,
+    } = mysql_retained_sample_provenance(first, retry);
+    let (_, column_value_truncated) =
+        mysql_sample_observed_lengths(&rows, &sampled_columns);
+    if column_value_truncated.iter().any(|truncated| *truncated) {
         crate::engine_common::record_sample_prefix_bias(&mut sample_method, &mut bias_reason);
     }
     if rows.is_empty() {
@@ -321,7 +373,16 @@ async fn sample_compression(
     // BLOB-with-binary-charset). Tagged, length-prefixed cells keep binary and complex
     // values distinct from genuinely empty fields.
     let projected_columns = rows[0].columns_ref();
-    if projected_columns.len() != sampled_columns.len().saturating_mul(3) {
+    let internal_range_columns = usize::from(matches!(
+        sample_layout,
+        format::BlueprintSampleLayout::PrimaryKeyRangeWindows
+    ));
+    if projected_columns.len()
+        != sampled_columns
+            .len()
+            .saturating_mul(3)
+            .saturating_add(internal_range_columns)
+    {
         bail!(
             "MySQL compression sample returned {} fields for {} source columns",
             projected_columns.len(),
@@ -332,7 +393,7 @@ async fn sample_compression(
         .iter()
         .step_by(3)
         .map(|c| (c.column_type(), c.character_set()))
-        .collect();
+        .collect::<Vec<_>>();
 
     let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
     let mut row_ranges: Vec<(usize, usize)> = Vec::with_capacity(rows.len());
@@ -413,6 +474,7 @@ async fn sample_compression(
     }
     let sample_bytes = buf.len() as u64;
     audit.record_encoded_sample_bytes(sample_bytes)?;
+    complete_row_read &= row_ranges.len() == rows.len();
 
     let column_lengths = column_payload_lengths
         .into_iter()
@@ -420,10 +482,15 @@ async fn sample_compression(
         .collect();
     let cardinalities = cardinality_accumulators
         .iter()
-        .map(|accumulator| {
+        .enumerate()
+        .map(|(index, accumulator)| {
             accumulator
-                .finish(
-                    t.rows_estimate,
+                .finish_with_source_rows(
+                    complete_row_read
+                        .then_some(row_ranges.len() as u64)
+                        .or(t.rows_estimate),
+                    complete_row_read,
+                    complete_row_read && !column_value_truncated[index],
                     sample_method.as_str(),
                     true,
                     bias_reason.as_str(),
@@ -433,10 +500,13 @@ async fn sample_compression(
                     cardinality
                 })
         })
-        .collect();
+        .collect::<Vec<_>>();
     let null_fractions = cardinality_accumulators
         .iter()
-        .map(sample_encode::CardinalityAccumulator::null_fraction)
+        .zip(cardinalities.iter())
+        .map(|(accumulator, cardinality)| {
+            accumulator.emitted_null_fraction(cardinality.as_ref())
+        })
         .collect();
     let payload_profiles = payload_profile_accumulators
         .iter()
@@ -468,10 +538,15 @@ async fn sample_compression(
         null_fractions,
         cardinalities,
         payload_profiles,
+        complete_source_rows: complete_row_read.then_some(encoded_sample_rows),
     }))
 }
 
 const MYSQL_COMPRESSION_RANGE_WINDOWS: u64 = 4;
+
+fn mysql_bounded_result_is_complete(returned_rows: usize, requested_rows: u64) -> bool {
+    returned_rows < requested_rows as usize
+}
 
 fn mysql_primary_range_sample_plan<'a>(
     qual: &(String, String),
@@ -521,9 +596,10 @@ async fn query_mysql_compression_sample(
     &'static str,
     &'static str,
     format::BlueprintSampleLayout,
+    bool,
 )> {
     if let Some(plan) = range_sample_plan.filter(|_| {
-        table.rows_estimate
+        table.rows_estimate.unwrap_or(0)
             >= bounded_rows
                 .saturating_mul(MYSQL_COMPRESSION_RANGE_WINDOWS)
                 .max(1)
@@ -553,53 +629,78 @@ async fn query_mysql_compression_sample(
                     (minimum.parse::<i128>(), maximum.parse::<i128>())
                 {
                     if maximum >= minimum {
-                        let thresholds = mysql_range_sample_thresholds(
+                        let windows = mysql_range_sample_windows(
                             minimum,
                             maximum,
                             MYSQL_COMPRESSION_RANGE_WINDOWS,
                         );
-                        let base_rows = bounded_rows / MYSQL_COMPRESSION_RANGE_WINDOWS;
-                        let extra_rows = bounded_rows % MYSQL_COMPRESSION_RANGE_WINDOWS;
-                        let mut sampled = Vec::with_capacity(
-                            usize::try_from(bounded_rows).unwrap_or(usize::MAX),
-                        );
+                        let window_count = u64::try_from(windows.len()).unwrap_or(1).max(1);
+                        let base_rows = bounded_rows / window_count;
+                        let extra_rows = bounded_rows % window_count;
+                        let mut window_limits = Vec::with_capacity(windows.len());
+                        let mut window_queries = Vec::with_capacity(windows.len());
                         let range_started = Instant::now();
-                        let mut range_failed = false;
-                        for (window, threshold) in thresholds.into_iter().enumerate() {
+                        for (window, (lower_bound, upper_bound)) in
+                            windows.into_iter().enumerate()
+                        {
                             let window = window as u64;
                             let window_rows = base_rows + u64::from(window < extra_rows);
                             if window_rows == 0 {
                                 continue;
                             }
-                            let sql = format!(
-                                "SELECT {projection} FROM {qname} FORCE INDEX (PRIMARY) WHERE {column_name} >= {threshold} ORDER BY {order_columns} LIMIT {window_rows}"
-                            );
-                            match conn.query::<mysql_async::Row, _>(sql).await {
-                                Ok(mut rows) => sampled.append(&mut rows),
-                                Err(_) => {
-                                    range_failed = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if !range_failed && !sampled.is_empty() {
-                            audit.record_query(
-                                "SELECT type-budgeted bounded projection plus original OCTET_LENGTH from four numeric primary-key ranges (compression sample)",
-                                elapsed_ms(range_started),
-                                sampled.len() as u64,
-                            );
-                            return Ok((
-                                sampled,
-                                "four-window numeric primary-key range sample (MySQL; type-budgeted projection; original octet lengths observed separately)",
-                                "numeric_primary_key_range_windows+no_native_tablesample+type_budgeted_projection",
-                                format::BlueprintSampleLayout::PrimaryKeyRangeWindows,
+                            let upper_predicate = upper_bound
+                                .map(|upper| format!(" AND {column_name} < {upper}"))
+                                .unwrap_or_default();
+                            window_limits.push(window_rows);
+                            // Parenthesized query expressions keep each
+                            // window's ORDER BY/LIMIT local while UNION ALL
+                            // makes every range read part of one statement and
+                            // therefore one InnoDB consistent-read snapshot.
+                            window_queries.push(format!(
+                                "(SELECT {projection}, {window} AS __dbwarp_blueprint_window FROM {qname} FORCE INDEX (PRIMARY) WHERE {column_name} >= {lower_bound}{upper_predicate} ORDER BY {order_columns} LIMIT {window_rows})"
                             ));
                         }
-                        if range_failed {
-                            audit.record_query_failure(
-                                "SELECT type-budgeted bounded projection plus original OCTET_LENGTH from four numeric primary-key ranges (compression sample)",
-                                elapsed_ms(range_started),
-                            );
+                        if !window_queries.is_empty() {
+                            let sql = window_queries.join(" UNION ALL ");
+                            match conn.query::<mysql_async::Row, _>(sql).await {
+                                Ok(sampled) => {
+                                    let window_counts = mysql_range_window_counts(
+                                        sampled.as_slice(),
+                                        window_limits.len(),
+                                    );
+                                    if window_counts.is_some() {
+                                        audit.record_query(
+                                            "one SELECT UNION ALL containing type-budgeted projections plus original OCTET_LENGTH from up to four non-overlapping numeric primary-key ranges (compression sample)",
+                                            elapsed_ms(range_started),
+                                            sampled.len() as u64,
+                                        );
+                                        if !sampled.is_empty() {
+                                            return Ok((
+                                                sampled,
+                                                "single-statement up-to-four-window numeric primary-key range sample (MySQL; type-budgeted projection; original octet lengths observed separately; non-final windows have exclusive upper bounds)",
+                                                "numeric_primary_key_range_windows+single_statement_snapshot+no_native_tablesample+type_budgeted_projection+non_overlapping_upper_bounds",
+                                                format::BlueprintSampleLayout::PrimaryKeyRangeWindows,
+                                                // MIN/MAX came from a prior statement. Even if
+                                                // every window is underfilled, concurrent changes
+                                                // outside those remembered bounds mean this is not
+                                                // proof that the visible table was read completely.
+                                                mysql_sample_layout_can_prove_complete_read(
+                                                    format::BlueprintSampleLayout::PrimaryKeyRangeWindows,
+                                                ),
+                                            ));
+                                        }
+                                    } else {
+                                        audit.record_query_failure(
+                                            "one SELECT UNION ALL containing type-budgeted projections plus original OCTET_LENGTH from up to four non-overlapping numeric primary-key ranges (compression sample; invalid internal window ordinal)",
+                                            elapsed_ms(range_started),
+                                        );
+                                    }
+                                }
+                                Err(_) => audit.record_query_failure(
+                                    "one SELECT UNION ALL containing type-budgeted projections plus original OCTET_LENGTH from up to four non-overlapping numeric primary-key ranges (compression sample)",
+                                    elapsed_ms(range_started),
+                                ),
+                            }
                         }
                     }
                 }
@@ -627,12 +728,52 @@ async fn query_mysql_compression_sample(
         elapsed_ms(started),
         rows.len() as u64,
     );
+    let complete_row_read = mysql_bounded_result_is_complete(rows.len(), bounded_rows);
     Ok((
         rows,
         "LIMIT N (MySQL; type-budgeted projection; original octet lengths observed separately)",
         "natural_pk_order_no_native_tablesample+type_budgeted_projection",
         format::BlueprintSampleLayout::Unknown,
+        complete_row_read,
     ))
+}
+
+/// Provenance of the rows a MySQL compression sample actually retained.
+#[derive(Debug, Clone, PartialEq)]
+struct MysqlRetainedSampleProvenance {
+    method: String,
+    bias_reason: String,
+    layout: format::BlueprintSampleLayout,
+    complete_row_read: bool,
+}
+
+/// When the adaptive byte-bounded retry runs, its rows replace the first
+/// query's, so every provenance field must come from the retry. The retry can
+/// fall back from primary-key range windows to `LIMIT` when its own range
+/// statement fails, and the serialized layout must describe the kept rows
+/// rather than the discarded first attempt.
+fn mysql_retained_sample_provenance(
+    first: MysqlRetainedSampleProvenance,
+    retry: Option<MysqlRetainedSampleProvenance>,
+) -> MysqlRetainedSampleProvenance {
+    match retry {
+        None => first,
+        Some(retry) => MysqlRetainedSampleProvenance {
+            method: format!(
+                "{}; adaptive byte-bounded retry from observed octet lengths",
+                retry.method
+            ),
+            bias_reason: format!("{}+adaptive_observed_octet_length_retry", retry.bias_reason),
+            layout: retry.layout,
+            complete_row_read: retry.complete_row_read,
+        },
+    }
+}
+
+fn mysql_sample_layout_can_prove_complete_read(
+    layout: format::BlueprintSampleLayout,
+) -> bool {
+    !matches!(layout, format::BlueprintSampleLayout::PrimaryKeyRangeWindows)
 }
 
 fn mysql_range_sample_thresholds(minimum: i128, maximum: i128, windows: u64) -> Vec<i128> {
@@ -643,6 +784,35 @@ fn mysql_range_sample_thresholds(minimum: i128, maximum: i128, windows: u64) -> 
             minimum.saturating_add(span.saturating_mul(i128::from(window)) / i128::from(windows))
         })
         .collect()
+}
+
+fn mysql_range_sample_windows(
+    minimum: i128,
+    maximum: i128,
+    windows: u64,
+) -> Vec<(i128, Option<i128>)> {
+    let mut thresholds = mysql_range_sample_thresholds(minimum, maximum, windows);
+    thresholds.dedup();
+    thresholds
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, lower)| (lower, thresholds.get(index + 1).copied()))
+        .collect()
+}
+
+fn mysql_range_window_counts(rows: &[mysql_async::Row], windows: usize) -> Option<Vec<u64>> {
+    let mut counts = vec![0_u64; windows];
+    for row in rows {
+        let ordinal_index = row.columns_ref().len().checked_sub(1)?;
+        let ordinal = row
+            .as_ref(ordinal_index)
+            .and_then(mysql_observed_octet_length)
+            .and_then(|ordinal| usize::try_from(ordinal).ok())?;
+        let count = counts.get_mut(ordinal)?;
+        *count = count.saturating_add(1);
+    }
+    Some(counts)
 }
 
 fn blueprint_length(value: u64, length_fidelity: LengthFidelity) -> u64 {

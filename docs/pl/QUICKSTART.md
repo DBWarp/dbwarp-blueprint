@@ -4,7 +4,7 @@
 
 [English](../QUICKSTART.md) | [Deutsch](../de/QUICKSTART.md) | [Français](../fr/QUICKSTART.md) | [Español](../es/QUICKSTART.md) | [Polski](QUICKSTART.md) | [日本語](../ja/QUICKSTART.md) | [简体中文](../zh/QUICKSTART.md)
 
-Ten przewodnik szybkiego startu jest przeznaczony dla inżyniera sprzedaży, DBA lub recenzenta bezpieczeństwa, który musi utworzyć możliwy do udostępnienia plik Blueprint DBWarp bez ujawniania danych klienta.
+Ten przewodnik szybkiego startu jest przeznaczony dla administratora baz danych (DBA) lub osoby odpowiedzialnej za weryfikację bezpieczeństwa, które muszą utworzyć plik DBWarp Blueprint, który można udostępnić, bez ujawniania danych.
 
 ## 1. Wybierz sposób uruchomienia narzędzia
 
@@ -38,10 +38,7 @@ ani `db_owner`.
 
 1. Określ dokładny silnik i jego wersję, bazę danych oraz zatwierdzony schemat
    lub schematy.
-2. Wybierz poziom przechwycenia: `basic` wyłącznie dla katalogów tabel,
-   `standard` dla ograniczonej próbki wierszy odpowiedniej do kopii
-   syntetycznej albo `enhanced`, aby dodatkowo analizować obiekty inne niż
-   tabele.
+2. Wybierz poziom zbierania danych: `basic` tylko dla katalogów tabel, `standard` aby dodać ograniczoną próbkę wierszy lub `enhanced` dla analizy obiektów innych niż tabele.
 3. Poproś DBA o skopiowanie odpowiedniego skryptu z
    `sql/grants/<engine>/`, edycję wszystkich oznaczonych wartości bazy,
    schematu, podmiotu, hasła i przełącznika roli oraz uruchomienie go w ramach
@@ -49,9 +46,7 @@ ani `db_owner`.
 4. Używaj utworzonego konta dedykowanego i w każdym poleceniu działającym na
    bazie przekaż ten sam zatwierdzony zakres, podając po jednej opcji
    `--schema NAME` dla każdego schematu.
-5. Po przechwyceniu i przeglądzie dowodów poproś DBA o sprawdzenie i
-   uruchomienie odpowiedniego skryptu silnika z `sql/revoke/`, aby usunąć
-   konto i uprawnienia.
+5. Po przejrzeniu zebranych danych poproś administratora bazy danych (DBA), aby sprawdził i uruchomił z katalogu `sql/revoke/` skrypt odwołujący uprawnienia, który odpowiada wybranemu silnikowi, w celu usunięcia konta i uprawnień.
 
 Skrypty celowo rozróżniają precyzyjnie ograniczone uprawnienia i wygodniejsze
 role wbudowane oraz wyjaśniają, kiedy rola jest szersza. Skrypty wykonywalne
@@ -101,7 +96,7 @@ Przebieg próbny sprawdza argumenty i wypisuje planowane działanie bez nawiązy
 
 Dla trybu prezentacji `--from-toml` przebieg próbny jest lokalną kontrolą wstępną i nie odczytuje bazy danych.
 
-W przypadku wielu źródeł klienta wykonaj zamiast tego przebieg próbny manifestu wsadowego:
+Dla wielu źródeł, zamiast tego, przeprowadź test bez faktycznego działania dla całego manifestu:
 
 ```bash
 ./dbwarp-blueprint \
@@ -132,7 +127,7 @@ Użyj tego trybu, gdy zasady zabraniają próbkowania wierszy albo gdy chcesz pr
 
 ## 6. Wybierz szczegółowość artefaktów innych niż tabele
 
-Domyślne `--artifact-detail summary` odczytuje katalogi obiektów innych niż tabele, ale nie definicje. Emituje ograniczone liczniki i klasy zewnętrznych wymagań. Użyj `--artifact-detail none`, jeśli zasady zabraniają odczytu tych katalogów.
+Domyślne `--artifact-detail summary` odczytuje katalogi obiektów innych niż tabele, ale nie definicje. Emituje ograniczone liczniki i klasy zewnętrznych wymagań. Użyj `--artifact-detail none`, jeśli zasady zabraniają odczytu tych katalogów. Sonda topologii ograniczona do zliczania nadal działa; zobacz [opis uprawnień](../../sql/grants/README.md#topology-evidence).
 
 Dla anonimowej topologii zależności użyj `graph`. Dla ograniczonych przedziałów cech języka i złożoności użyj `analyzed`. Oba wymagają wyraźnej zgody:
 
@@ -172,7 +167,7 @@ a następnie usuwa próbkowane wartości:
   --audit-log blueprint.audit.txt
 ```
 
-W miarę możliwości używaj poziomu 2. Zapewnia DBWarp lepsze oszacowania liczby bajtów przesyłanych siecią, kosztu ruchu wychodzącego oraz generowania syntetycznych danych tekstowych i binarnych.
+Używaj poziomu 2, jeśli to możliwe. Zapewnia on dokładniejsze oszacowania rozmiaru transferu i kosztów transferu danych.
 
 ## 8. Wygeneruj prezentację
 
@@ -222,16 +217,15 @@ Oczekiwane właściwości:
 - opcjonalne zagregowane pomiary kompresji, gęstości NULL,
   kardynalności/częstotliwości, długości i stylu, nigdy próbkowane wartości.
 
-## 10. Przekaż dane do DBWarp
+## 10. Udostępnij z DBWarp.
 
-Minimalny pakiet do przekazania:
+Minimum do udostępnienia:
 
 ```text
 blueprint.toml
 ```
 
-W przypadku przeglądu klienta obejmującego wiele źródeł utwórz i sprawdź
-spakowany pakiet, zamiast przekazywać katalog roboczy:
+Dla wielu źródeł, zamiast udostępniać katalog roboczy, należy utworzyć i sprawdzić spakowany zestaw danych.
 
 ```bash
 ./dbwarp-blueprint \
@@ -244,14 +238,10 @@ Metadane pakietu zachowują identyfikatory źródeł, tagi i identyfikatory grup
 zestawów danych wybrane w manifeście wsadowym. Używaj anonimowych wartości i
 sprawdź je przed przekazaniem.
 
-Skorzystaj z `docs/BATCH_AND_BUNDLES.md`, gdy klient ma wiele baz danych, wiele zestawów danych Parquet lub Avro albo chce zatwierdzić tylko wybrane źródła lub tabele do wygenerowania benchmarku.
-
-<a id="review-and-share"></a>
+Sprawdź [Pakiety zbiorów i blueprintów](BATCH_AND_BUNDLES.md), jeśli masz kilka baz danych lub kilka zestawów danych w formacie Parquet lub Avro, lub chcesz udostępnić tylko wybrane źródła lub tabele.
 
 ### Sprawdź i udostępnij
 
 Domyślnie udostępniaj tylko sprawdzony `blueprint.toml` lub spakowany pakiet. Prezentację można dołączyć wyłącznie po sprawdzeniu jej treści i oznaczenia poufności oraz odrębnym zatwierdzeniu zgodnie z polityką organizacji.
 
-Audyty, zapisy poleceń, notatki z przeglądu i niezatwierdzone prezentacje zachowaj lokalnie z kontrolą dostępu. Mogą zawierać punkty końcowe, uwierzytelnione podmioty, lokalne ścieżki, dane czasowe i identyfikatory manifestu. Dowody operacyjne wysyłaj tylko dla konkretnej potrzeby wsparcia, zatwierdzonym bezpiecznym kanałem.
-
-Narzędzie nie tworzy `command-used.redacted.txt`; to opcjonalny zapis operatora, nie standardowy element przekazania. Nigdy nie dołączaj plików haseł lub tokenów, kluczy anonimizacji, prywatnych kluczy CA, zrzutów danych klienta ani dzienników bazy danych.
+Zachowuj audyty, zapisy poleceń oraz niezatwierdzone prezentacje lokalnie i ogranicz dostęp do nich. Mogą one zawierać adresy końcowe, uwierzytelnione podmioty, lokalne ścieżki, dane dotyczące czasu oraz identyfikatory manifestów. Przekazuj je tylko w konkretnych przypadkach potrzeby serwisowej, za pośrednictwem zatwierdzonego, bezpiecznego kanału. Nigdy nie dołączaj plików z hasłami lub tokenami, kluczy anonimizacji, prywatnych kluczy CA, kopii zapasowych baz danych ani logów baz danych do współdzielonego Blueprint.

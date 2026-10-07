@@ -10,11 +10,8 @@ pub const DEFAULT_MAX_SAMPLE_BYTES: usize = 256 * 1024 * 1024;
 const RESERVOIR_CAPACITY: usize = 8_192;
 
 /// Ratio-variance measurement granularity. Chunking the sample at this size
-/// and ending each chunk on a row boundary keeps the public probe bounded and
+/// and ending each chunk on a row boundary keeps the probe bounded and
 /// exposes local variance rather than one whole-buffer average.
-///
-/// This is a Blueprint measurement policy, not a DBWarp framing or transport
-/// constant.
 pub const PROBE_WINDOW_BYTES: usize = 64 * 1024;
 
 /// Byte buffers grow in fixed steps rather than per row. Exact per-row
@@ -185,6 +182,21 @@ pub struct DecodedColumnStats {
     pub len_p95_sample_rows: u64,
 }
 
+impl DecodedColumnStats {
+    /// Keep the published null fraction in the same population domain as the
+    /// cardinality block. The fallback remains useful when the source row
+    /// domain was unavailable and no cardinality block could be emitted.
+    pub fn emitted_null_fraction(&self, cardinality: Option<&BlueprintCardinality>) -> f64 {
+        cardinality
+            .filter(|value| value.sample_rows > 0)
+            .map(|value| {
+                value.sample_rows.saturating_sub(value.non_null_rows) as f64
+                    / value.sample_rows as f64
+            })
+            .unwrap_or_else(|| quantize_fraction(self.null_fraction))
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct ColumnValueStats {
     rows: u64,
@@ -255,7 +267,10 @@ impl ColumnValueStats {
         sampled_with_bias: bool,
         bias_reason: &str,
     ) -> Option<BlueprintCardinality> {
-        if self.rows == 0 || self.fingerprints.is_empty() {
+        // A retained sample cannot be larger than the source population.
+        // Treat contradictory footer/container metadata as unavailable rather
+        // than squeezing observations into an impossible smaller domain.
+        if self.rows == 0 || source_rows < self.rows || self.fingerprints.is_empty() {
             return None;
         }
         let mut fingerprints = self.fingerprints.clone();
@@ -296,7 +311,13 @@ impl ColumnValueStats {
             collision_pairs,
             estimated_source_non_null,
         );
-        let (estimated, estimate_method) = if source_rows > 0 && source_rows <= self.rows {
+        // Reading every source row is not enough to call the column census
+        // complete: fingerprints are held in a bounded reservoir.  Preserve
+        // exact-read provenance only while every non-NULL value is retained.
+        let complete_value_read = self.fingerprints.len() as u64 == self.non_null_values;
+        let complete_row_read = source_rows > 0 && source_rows == self.rows;
+        let complete_source_read = complete_row_read && complete_value_read;
+        let (estimated, estimate_method) = if complete_source_read {
             (observed, "complete bounded sample")
         } else if sampled_with_bias && biased_near_unique_estimate.is_some() {
             (
@@ -323,24 +344,51 @@ impl ColumnValueStats {
             )
         };
         let top_frequency = frequencies.last().copied().unwrap_or(0);
-        let sample_rows = quantize_stat_count(self.rows);
-        let non_null_rows = quantize_stat_count(self.non_null_values).min(sample_rows);
-        let observed_distinct_count = quantize_stat_count(observed).min(non_null_rows);
+        let sample_rows = if complete_row_read {
+            self.rows
+        } else {
+            // Structured readers already publish the exact retained row
+            // population as length_sample_rows. Reuse that same fact here:
+            // clamping an upward privacy bucket to source_rows would falsely
+            // turn a 5,000-of-5,050 partial sample into 100% coverage.
+            self.rows.min(source_rows)
+        };
+        // Round the retained numerator directly so sparse presence is
+        // preserved. Retain the exact zero and all-non-NULL endpoints while
+        // keeping mixed counts on the privacy grid and below their declared
+        // population bound.
+        let non_null_rows = quantize_non_null_rows(self.rows, sample_rows, self.non_null_values);
+        let observed_distinct_count = quantize_stat_count_at_most(observed, non_null_rows);
+        let frequency_p50 =
+            quantize_stat_count_at_most(quantile(&frequencies, 0.50), non_null_rows);
+        let frequency_p95 =
+            quantize_stat_count_at_most(quantile(&frequencies, 0.95), non_null_rows);
+        let frequency_p99 =
+            quantize_stat_count_at_most(quantile(&frequencies, 0.99), non_null_rows);
+        let frequency_max = quantize_stat_count_at_most(top_frequency, non_null_rows);
         Some(BlueprintCardinality {
             measured: true,
+            complete_source_read,
             sample_rows,
             non_null_rows,
             observed_distinct_count,
-            estimated_distinct_count: quantize_stat_count(estimated)
-                .max(observed_distinct_count)
-                .min(source_rows.max(observed_distinct_count)),
+            estimated_distinct_count: if non_null_rows == 0 {
+                0
+            } else if estimated == observed {
+                // An observed lower bound has no independent population
+                // estimate. Keep the two serialised fields identical even when
+                // their surrounding populations use different bounds.
+                observed_distinct_count
+            } else {
+                quantize_stat_count_at_most(estimated, source_rows).max(observed_distinct_count)
+            },
             top_value_fraction: quantize_fraction(
                 top_frequency as f64 / retained_non_null.max(1) as f64,
             ),
-            frequency_p50: quantile(&frequencies, 0.50),
-            frequency_p95: quantile(&frequencies, 0.95),
-            frequency_p99: quantile(&frequencies, 0.99),
-            frequency_max: top_frequency,
+            frequency_p50,
+            frequency_p95,
+            frequency_p99,
+            frequency_max,
             sample_method: format!("{sample_method}; {estimate_method}"),
             sample_layout: Default::default(),
             sampled_with_bias,
@@ -355,7 +403,7 @@ impl ColumnValueStats {
 
 /// Estimate a large value domain from a biased sample only when the sample is
 /// demonstrably near-unique. This avoids the discontinuity where one repeated
-/// value used to collapse a many-million-row source domain to the sample size.
+/// value would collapse a many-million-row source domain to the sample size.
 ///
 /// Natural-order samples are not random, so this deliberately errs toward the
 /// source non-NULL population. Zero or one collision pair is insufficient
@@ -957,7 +1005,30 @@ fn quantile(sorted: &[u64], percentile: f64) -> u64 {
     let rank = ((sorted.len() as f64 * percentile).ceil() as usize)
         .saturating_sub(1)
         .min(sorted.len() - 1);
-    quantize_stat_count(sorted[rank])
+    sorted[rank]
+}
+
+fn quantize_non_null_rows(
+    retained_sample_rows: u64,
+    emitted_sample_rows: u64,
+    retained_non_null_rows: u64,
+) -> u64 {
+    if retained_sample_rows == 0 || emitted_sample_rows == 0 || retained_non_null_rows == 0 {
+        return 0;
+    }
+    if retained_non_null_rows >= retained_sample_rows {
+        return emitted_sample_rows;
+    }
+    let scaled = ((retained_non_null_rows as u128)
+        .saturating_mul(emitted_sample_rows as u128)
+        .saturating_add((retained_sample_rows / 2) as u128)
+        / retained_sample_rows as u128)
+        .min(u64::MAX as u128) as u64;
+    let mixed_upper_bound = emitted_sample_rows.saturating_sub(1);
+    if mixed_upper_bound == 0 {
+        return 1;
+    }
+    quantize_stat_count_at_most(scaled.clamp(1, mixed_upper_bound), mixed_upper_bound)
 }
 
 pub fn quantize_stat_count(value: u64) -> u64 {
@@ -967,6 +1038,17 @@ pub fn quantize_stat_count(value: u64) -> u64 {
     let magnitude = 1_u64 << (63 - value.leading_zeros());
     let bucket = (magnitude / 16).max(1);
     crate::round_to_bucket(value, bucket)
+}
+
+fn quantize_stat_count_at_most(value: u64, upper_bound: u64) -> u64 {
+    let bounded = value.min(upper_bound);
+    let rounded = quantize_stat_count(bounded);
+    if rounded <= upper_bound {
+        return rounded;
+    }
+    let magnitude = 1_u64 << (63 - bounded.leading_zeros());
+    let bucket = (magnitude / 16).max(1);
+    (bounded / bucket) * bucket
 }
 
 pub fn quantize_fraction(value: f64) -> f64 {
@@ -1192,13 +1274,199 @@ mod tests {
             .clone()
             .unwrap();
         assert!(cardinality.measured);
-        assert_eq!(cardinality.sample_rows, 992);
+        // Structured readers already disclose this retained population in
+        // the table-level compression block, so cardinality must reuse the
+        // same 1,000-row fact rather than publish a conflicting privacy bucket.
+        assert_eq!(cardinality.sample_rows, 1_000);
         assert_eq!(cardinality.observed_distinct_count, 11);
         assert!(cardinality.top_value_fraction >= 0.39);
         assert!(cardinality.frequency_max >= 390);
         let encoded = toml::to_string(&cardinality).unwrap();
         assert!(!encoded.contains("hot"));
         assert!(!encoded.contains("tail"));
+    }
+
+    #[test]
+    fn complete_structured_sample_uses_exact_rows_without_exceeding_its_population() {
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for _ in 0..35_u64 {
+            acc.push_row(&[OwnedCell::new(TypeTag::TextUtf8, b"active".to_vec())])
+                .unwrap();
+        }
+
+        let cardinality = acc.column_cardinalities(35, "decoded-full-scan", false, "")[0]
+            .clone()
+            .expect("complete structured cardinality");
+        assert!(cardinality.complete_source_read);
+        assert_eq!(cardinality.sample_rows, 35);
+        assert!(cardinality.non_null_rows <= 35);
+        assert!(cardinality.frequency_max <= cardinality.non_null_rows);
+        assert!(cardinality.estimated_distinct_count <= 35);
+    }
+
+    #[test]
+    fn reservoir_truncation_cannot_claim_a_complete_structured_census() {
+        let source_rows = RESERVOIR_CAPACITY as u64 + 1_809;
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for row in 0..source_rows {
+            acc.push_row(&[OwnedCell::new(
+                TypeTag::NumberText,
+                row.to_string().into_bytes(),
+            )])
+            .unwrap();
+        }
+
+        let cardinality = acc.column_cardinalities(source_rows, "decoded-full-scan", false, "")[0]
+            .clone()
+            .expect("reservoir cardinality");
+        assert!(!cardinality.complete_source_read);
+        assert_eq!(cardinality.sample_rows, source_rows);
+        assert!(cardinality.non_null_rows <= source_rows);
+        assert!(cardinality.estimated_distinct_count <= source_rows);
+        assert!(cardinality.observed_distinct_count < source_rows);
+        assert!(!cardinality
+            .sample_method
+            .contains("complete bounded sample"));
+    }
+
+    #[test]
+    fn incomplete_structured_sample_cannot_exceed_exact_source_population() {
+        let source_rows = 5_050_u64;
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for row in 0..5_000_u64 {
+            acc.push_row(&[OwnedCell::new(
+                TypeTag::NumberText,
+                row.to_string().into_bytes(),
+            )])
+            .unwrap();
+        }
+
+        let cardinality = acc.column_cardinalities(source_rows, "decoded-prefix", true, "first-n")
+            [0]
+        .clone()
+        .expect("incomplete structured cardinality");
+        assert!(!cardinality.complete_source_read);
+        assert_eq!(cardinality.sample_rows, 5_000);
+        assert!(cardinality.non_null_rows <= source_rows);
+        assert!(cardinality.observed_distinct_count <= source_rows);
+        assert!(cardinality.estimated_distinct_count <= source_rows);
+    }
+
+    #[test]
+    fn structured_cardinality_rejects_a_source_population_below_retained_rows() {
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for row in 0..40_u64 {
+            acc.push_row(&[OwnedCell::new(
+                TypeTag::NumberText,
+                row.to_string().into_bytes(),
+            )])
+            .unwrap();
+        }
+
+        assert!(acc.column_cardinalities(39, "contradictory-footer", false, "")[0].is_none());
+    }
+
+    #[test]
+    fn incomplete_structured_not_null_sample_keeps_its_exact_retained_numerator() {
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for row in 0..1_000_u64 {
+            acc.push_row(&[OwnedCell::new(
+                TypeTag::NumberText,
+                row.to_string().into_bytes(),
+            )])
+            .unwrap();
+        }
+
+        let cardinality = acc.column_cardinalities(20_000, "decoded-prefix", true, "first-n")[0]
+            .clone()
+            .expect("incomplete structured cardinality");
+        assert_eq!(cardinality.sample_rows, 1_000);
+        assert_eq!(cardinality.non_null_rows, 1_000);
+    }
+
+    #[test]
+    fn complete_structured_null_count_matches_the_emitted_fraction() {
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for _ in 0..65_u64 {
+            acc.push_row(&[OwnedCell::new(TypeTag::TextUtf8, b"active".to_vec())])
+                .unwrap();
+        }
+
+        let cardinality = acc.column_cardinalities(65, "decoded-full-scan", false, "")[0]
+            .clone()
+            .expect("complete structured cardinality");
+        assert!(cardinality.complete_source_read);
+        assert_eq!(cardinality.sample_rows, 65);
+        assert_eq!(cardinality.non_null_rows, 65);
+    }
+
+    #[test]
+    fn sparse_structured_presence_never_quantizes_to_absence() {
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for row in 0..1_000_u64 {
+            let cell = if row < 2 {
+                OwnedCell::new(TypeTag::NumberText, row.to_string().into_bytes())
+            } else {
+                OwnedCell::null()
+            };
+            acc.push_row(&[cell]).unwrap();
+        }
+
+        let cardinality = acc.column_cardinalities(1_000, "decoded-full-scan", false, "")[0]
+            .clone()
+            .expect("sparse structured cardinality");
+        assert_eq!(cardinality.sample_rows, 1_000);
+        assert_eq!(cardinality.non_null_rows, 2);
+        assert_eq!(cardinality.observed_distinct_count, 2);
+        assert_eq!(cardinality.estimated_distinct_count, 2);
+        assert_eq!(cardinality.frequency_max, 1);
+        assert_eq!(cardinality.top_value_fraction, 0.5);
+        assert_eq!(
+            acc.column_statistics()[0].emitted_null_fraction(Some(&cardinality)),
+            0.998
+        );
+    }
+
+    #[test]
+    fn structured_null_fraction_tracks_rounded_non_null_population() {
+        let mut acc = CompressionSampleAccumulator::new(1);
+        for row in 0..100_u64 {
+            let cell = if row == 0 {
+                OwnedCell::null()
+            } else {
+                OwnedCell::new(TypeTag::NumberText, row.to_string().into_bytes())
+            };
+            acc.push_row(&[cell]).unwrap();
+        }
+
+        let cardinality = acc.column_cardinalities(100, "decoded-full-scan", false, "")[0]
+            .clone()
+            .expect("dense structured cardinality");
+        assert_eq!(cardinality.non_null_rows, 96);
+        assert_eq!(
+            acc.column_statistics()[0].emitted_null_fraction(Some(&cardinality)),
+            0.04
+        );
+    }
+
+    #[test]
+    fn structured_fraction_without_cardinality_stays_on_the_privacy_grid() {
+        let statistics = DecodedColumnStats {
+            sample_rows: 10_000,
+            non_null_values: 9_993,
+            null_fraction: 0.0007,
+            ..Default::default()
+        };
+        assert_eq!(statistics.emitted_null_fraction(None), 0.0);
+    }
+
+    #[test]
+    fn mixed_structured_non_null_counts_keep_presence_and_nullable_endpoints() {
+        assert_eq!(quantize_non_null_rows(2_000, 2_000, 5), 5);
+        assert_eq!(quantize_non_null_rows(10_000, 10_000, 26), 26);
+        assert_eq!(quantize_non_null_rows(1_000, 1_000, 999), 992);
+        assert_eq!(quantize_non_null_rows(1_000, 1_000, 1_000), 1_000);
+        assert_eq!(quantize_non_null_rows(1_000, 1_000, 0), 0);
     }
 
     #[test]

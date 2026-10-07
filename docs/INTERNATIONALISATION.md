@@ -87,7 +87,7 @@ keys.
 All catalogs are compiled into the binary. At startup the program verifies
 that every advertised non-English locale exactly covers:
 
-- the current live Clap help tree;
+- every help entry;
 - every stable DBP code and all three diagnostic fields;
 - every stable prompt, progress, warning, and deck key;
 - every required placeholder and protected operational token.

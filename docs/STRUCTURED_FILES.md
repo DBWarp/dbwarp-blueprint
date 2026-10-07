@@ -19,7 +19,7 @@ This is an offline mode:
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
@@ -47,7 +47,7 @@ transport compression, and are never emitted as `ratio_zstd_3`.
 
 ```bash
 dbwarp-blueprint \
-  --from-avro /data/customer-sample.avro \
+  --from-avro /data/events.avro \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
@@ -57,12 +57,11 @@ therefore walks the container once to count records, derive logical
 `table_bytes`, and observe per-column `len_avg`, `len_p95`, and `null_fraction`.
 The writer schema supplies the logical type metadata. `storage_bytes` and
 `ratio_storage` describe the Avro container, not a DBWarp transfer estimate.
-This is suitable for estimator and synthetic-fixture planning.
 
 ## Logical Type Fidelity
 
-Structured-file capture preserves bounded logical metadata needed by the
-estimator: decimal precision/scale, date and time families, timestamp precision
+Structured-file capture preserves bounded logical metadata needed for
+sizing: decimal precision/scale, date and time families, timestamp precision
 and UTC/local semantics, UUIDs, fixed-size binary width, UTF-8 strings, and raw
 bytes. Null-only fields remain `type = "null"` rather than becoming synthetic
 text.
@@ -70,8 +69,8 @@ text.
 Nested Parquet leaves and Avro arrays, maps, records, or multi-type unions cannot
 be represented as one exact SQL scalar. The Blueprint records a normalized `json`
 type plus `source_semantics` such as `"repeated-leaf"`, `"nested-json"`, or
-`"multi-type-union"`. Downstream generators must identify those values as
-representative JSON pressure, not claim an exact nested-schema round trip.
+`"multi-type-union"`. These columns are sized as JSON; the
+nested schema is not reproduced exactly.
 
 Source file stems, Parquet paths, Avro field names, and batch `logical_table`
 labels are not written as Blueprint identifiers. A multi-file dataset emits
@@ -85,7 +84,7 @@ Structured file mode supports optional decoded compression sampling:
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --measure-compression --yes \
   --sample-rows 5000 \
   --out blueprint.toml \
@@ -104,19 +103,17 @@ When enabled, `dbwarp-blueprint`:
 - records `sample_encoding = "blueprint-compression-probe-v2"` in the generated TOML;
 - keeps sampled bytes in memory only and never writes row values to disk.
 
-`--measure-compression` requires `--yes` because it reads decoded customer
+`--measure-compression` requires `--yes` because it reads decoded data
 values. It persists aggregate compression, null-density,
 cardinality/frequency, length, and style measurements, never sampled values.
 
-The current sampler uses a deterministic first-N sample. That is reproducible and cheap, but it can be biased if a file is sorted or clustered. For high-stakes estimates, prefer a representative file or generate multiple Blueprint files from different shards. A future version may add row-group/block-stratified sampling.
+The current sampler uses a deterministic first-N sample. That is reproducible and cheap, but it can be biased if a file is sorted or clustered. For high-stakes estimates, prefer a representative file or generate multiple Blueprint files from different shards.
 
 ## Scope
 
 Structured-file Blueprint mode is useful for:
 
 - sizing a Parquet/Avro import before a DBWarp run;
-- generating a representative synthetic fixture without copying source names
-  or row values;
-- planning Parquet/Avro -> DBWarp columnar -> target database flows.
+- planning a Parquet/Avro to database transfer.
 
 It is not a replacement for live database Blueprint capture when the real source is a supported database, meaning PostgreSQL, MySQL, or SQL Server. A database catalog has index, key, FK, statistics-freshness, and engine-layout details that are not present in generic file metadata.

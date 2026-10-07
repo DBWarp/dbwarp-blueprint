@@ -33,4 +33,4 @@ Références principales :
 - [Présentation visuelle récapitulative](DECK.md)
 - [Téléchargement des binaires](BINARIES.md)
 
-La transmission des Blueprints et leur utilisation en aval sont régies par l'accord client et la documentation fournie avec le produit DBWarp en aval approuvé. Ce dépôt documente uniquement la capture, la revue et l'empaquetage des Blueprints.
+Ce dépôt documente uniquement la capture, la revue et l'empaquetage de Blueprint.

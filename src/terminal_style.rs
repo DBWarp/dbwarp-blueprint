@@ -1,7 +1,7 @@
 //! Terminal presentation policy and the shared DBWarp colour palette.
 //!
-//! This module is deliberately presentation-only. Structured logs, JSON,
-//! evidence files, telemetry, and protocol payloads must never pass through it.
+//! This module is deliberately presentation-only. Blueprint, audit, and deck
+//! output never pass through it.
 
 use std::io::{self, IsTerminal, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -44,19 +44,12 @@ pub enum OutputStream {
     Stderr,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     Brand,
     Accent,
-    Muted,
-    Success,
     Warning,
     Error,
-    Postgres,
-    MySql,
-    SqlServer,
-    Compression,
     Wire,
 }
 
@@ -121,40 +114,26 @@ pub fn enabled(stream: OutputStream) -> bool {
 fn role_rgb(role: Role) -> (u8, u8, u8) {
     match role {
         Role::Brand | Role::Accent => palette::TEAL,
-        Role::Muted => palette::MUTED,
-        Role::Success => palette::GOOD,
         Role::Warning => palette::WARN,
         Role::Error => palette::BAD,
-        Role::Postgres => palette::PG,
-        Role::MySql => palette::MYSQL,
-        Role::SqlServer => palette::TDS,
-        Role::Compression => palette::COMPRESS,
         Role::Wire => palette::WIRE,
     }
 }
 
 fn role_ansi256(role: Role) -> u8 {
     match role {
-        Role::Brand | Role::Accent | Role::Compression => 43,
-        Role::Muted => 103,
-        Role::Success => 42,
-        Role::Warning | Role::MySql => 220,
+        Role::Brand | Role::Accent => 43,
+        Role::Warning => 220,
         Role::Error => 203,
-        Role::Postgres => 45,
-        Role::SqlServer => 141,
         Role::Wire => 87,
     }
 }
 
 fn role_ansi16(role: Role) -> AnsiColor {
     match role {
-        Role::Brand | Role::Accent | Role::Compression | Role::Wire => AnsiColor::BrightCyan,
-        Role::Muted => AnsiColor::BrightBlack,
-        Role::Success => AnsiColor::BrightGreen,
-        Role::Warning | Role::MySql => AnsiColor::BrightYellow,
+        Role::Brand | Role::Accent | Role::Wire => AnsiColor::BrightCyan,
+        Role::Warning => AnsiColor::BrightYellow,
         Role::Error => AnsiColor::BrightRed,
-        Role::Postgres => AnsiColor::BrightBlue,
-        Role::SqlServer => AnsiColor::BrightMagenta,
     }
 }
 
@@ -235,11 +214,7 @@ fn style_help_line(line: &str, capability: ColorCapability) -> String {
     }
 
     let first = trimmed.split_whitespace().next().unwrap_or_default();
-    let command = matches!(
-        first,
-        "bulk" | "archive" | "file" | "monitor" | "support-bundle" | "explain" | "locales" | "help"
-    );
-    if (indent_len > 0 && command) || first.starts_with("dbwarp") || first.starts_with("scripts/") {
+    if first.starts_with("dbwarp") {
         return format!(
             "{indent}{}{}{newline}",
             paint_with_capability(Role::Accent, first, capability, true),
@@ -276,7 +251,7 @@ fn is_dbwarp_message_code(code: &str) -> bool {
     let code = code.trim_matches(['[', ']']);
     let bytes = code.as_bytes();
     bytes.len() == 8
-        && matches!(&bytes[..3], b"DBW" | b"DBP" | b"DWE")
+        && &bytes[..3] == b"DBP"
         && bytes[3..7].iter().all(u8::is_ascii_digit)
         && matches!(bytes[7], b'E' | b'W' | b'I')
 }
@@ -434,8 +409,8 @@ mod tests {
         );
         assert_eq!(
             mode_from_args(&[
-                "dbwarp".into(),
-                "bulk".into(),
+                "dbwarp-blueprint".into(),
+                "--out".into(),
                 "--".into(),
                 "--color=always".into()
             ]),
@@ -445,7 +420,7 @@ mod tests {
 
     #[test]
     fn styled_help_preserves_every_plain_character() {
-        let plain = "dbwarp — proxy\n\nUsage: dbwarp [OPTIONS]\n\nOptions:\n  --listen <ADDR>  Listen address\n";
+        let plain = "dbwarp-blueprint: sanitized Blueprint metadata\n\nUsage: dbwarp-blueprint [OPTIONS]\n\nOptions:\n  --out <PATH>  Blueprint output path\n";
         let styled = render_help_with_capability(plain, ColorCapability::TrueColor);
         assert!(styled.contains("\u{1b}["));
         assert_eq!(strip_ansi(&styled), plain);
@@ -453,7 +428,7 @@ mod tests {
 
     #[test]
     fn diagnostic_severity_is_styled_without_changing_text() {
-        let plain = "[DBW1001E] transfer failed";
+        let plain = "[DBP1001E] capture failed";
         let styled = render_diagnostic_with_capability(plain, ColorCapability::Ansi16);
         assert!(styled.contains("\u{1b}["));
         assert_eq!(strip_ansi(&styled), plain);
@@ -461,18 +436,19 @@ mod tests {
 
     #[test]
     fn indented_status_codes_keep_their_alignment() {
-        let plain = "  DBW1002W warning";
+        let plain = "  DBP1404W warning";
         let styled = render_status_with_capability(plain, ColorCapability::Ansi16);
         assert_eq!(strip_ansi(&styled), plain);
     }
 
     #[test]
-    fn product_family_message_codes_are_styled() {
-        for code in ["DBW1001E", "DBP1001E", "DWE1001E"] {
-            let plain = format!("{code} operation failed");
-            let styled = render_status_with_capability(&plain, ColorCapability::TrueColor);
-            assert!(styled.contains("\u{1b}["), "{code} was not styled");
-            assert_eq!(strip_ansi(&styled), plain);
+    fn blueprint_message_codes_are_styled() {
+        let plain = "DBP1001E operation failed";
+        let styled = render_status_with_capability(plain, ColorCapability::TrueColor);
+        assert!(styled.contains("\u{1b}["));
+        assert_eq!(strip_ansi(&styled), plain);
+        for code in ["ABC1001E", "XYZ1001E"] {
+            assert!(!is_dbwarp_message_code(code));
         }
     }
 }

@@ -32,7 +32,7 @@ pub fn classify(buf: &[u8]) -> &'static str {
         && trimmed.iter().all(|b| {
             matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'+' | b'/' | b'=')
         })
-        // base64 strings have a wide alphabet — exclude all-hex strings (already caught above).
+        // base64 strings have a wide alphabet: exclude all-hex strings (already caught above).
         && has_alpha_mix(trimmed)
     {
         return "base64";
@@ -69,7 +69,7 @@ pub fn classify(buf: &[u8]) -> &'static str {
 
     // JSON: starts with { or [, contains ":" with reasonable structure.
     if trimmed_text.starts_with('{') || trimmed_text.starts_with('[') {
-        // very light heuristic — count balanced quotes and presence of ":"
+        // very light heuristic: count balanced quotes and presence of ":"
         if looks_like_json(trimmed_text) {
             return "json";
         }

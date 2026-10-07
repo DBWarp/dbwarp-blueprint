@@ -20,7 +20,7 @@ blueprint of your database: table sizes, row counts, type families, index and fo
 
 Identifiers are replaced with keyed anonymous labels, and no row values are written to the
 Blueprint. A fresh process-local key prevents offline dictionary checks by default;
-`--anonymization-key-file` lets the customer preserve labels across approved comparison runs.
+`--anonymization-key-file` lets you preserve labels across approved comparison runs.
 Read [`SECURITY.md`](SECURITY.md) before sharing any output: it sets out exactly what each mode
 discloses, and which options widen that.
 
@@ -47,11 +47,14 @@ can show you.
 **Documentation language:** English is authoritative. See
 [`MACHINE_TRANSLATIONS.md`](MACHINE_TRANSLATIONS.md) for translation limitations.
 
-`dbwarp-blueprint` is the customer-side Blueprint collector for DBWarp. Run it inside the customer's own environment to produce a bounded, anonymized, reviewable `blueprint.toml` file that DBWarp can use for migration sizing, synthetic fixture generation, and pre-flight planning without receiving database access, dumps, schema names, or row data.
+Run `dbwarp-blueprint` inside your own environment to produce a bounded,
+anonymized, reviewable `blueprint.toml` file that DBWarp can use for migration
+sizing and planning without receiving database access, dumps, schema names, or
+row data.
 
 It connects to PostgreSQL, MySQL, or SQL Server, reads catalog metadata, optionally measures local compression from a bounded row sample, and writes plain-text TOML. It can also derive a Blueprint from local Parquet or Avro files in offline mode when the input is already a structured data file rather than a live database. You can open the output, review every line, and decide whether to share it.
 
-Optionally, `--deck blueprint.pptx` also writes a PowerPoint summary of the same anonymized Blueprint. The deck can be generated during a live database run, or later from a reviewed TOML file with `--from-toml blueprint.toml --deck blueprint.pptx`. The deck generator is built into the Rust binary and makes no network connection.
+Optionally, `--deck blueprint.pptx` also writes a PowerPoint summary of the same anonymized Blueprint. The deck can be written during a live database run, or later from a reviewed TOML file with `--from-toml blueprint.toml --deck blueprint.pptx`. The deck writer is built into the Rust binary and makes no network connection.
 
 ## What It Is For
 
@@ -66,10 +69,9 @@ DBWarp needs enough structural information to estimate and plan a transfer:
 - bounded, name-free non-table artifact counts and external deployment
   prerequisites;
 - optional table and column compression summaries from a small local sample;
-- optional customer-side database RTT evidence.
+- optional round-trip-time measurement from the collector to your database.
 
-Those facts are enough to estimate transfer size, choose a starting DBWarp bulk
-plan, and generate a representative synthetic benchmark fixture. Source names
+Those facts are enough to estimate transfer size and plan a transfer. Source names
 and row values are omitted, but distinctive structure and statistics can still
 fingerprint a workload; anonymization is risk reduction, not a claim of
 irreversibility.
@@ -100,7 +102,7 @@ application-initiated network connection.
 
 | Path | Best for | Link |
 |---|---|---|
-| Download a binary | quick trial, sales engineering call, isolated test host | [`binaries/README.md`](binaries/README.md) |
+| Download a binary | quick trial, isolated test host | [`binaries/README.md`](binaries/README.md) |
 | Build from a small source clone | security review, production policy, reproducibility check | [`BUILD.md`](BUILD.md) |
 | Build from a vendored source bundle | strict offline dependency audit | GitHub Releases |
 | Review and run the SQL fallback | DBA policy refuses a third-party binary | [`sql/blueprint.pg.sql`](sql/blueprint.pg.sql), [`sql/blueprint.mysql.sql`](sql/blueprint.mysql.sql), [`sql/blueprint.sqlserver.sql`](sql/blueprint.sqlserver.sql), and [`blueprint_format.py`](blueprint_format.py) |
@@ -114,11 +116,15 @@ JSON document containing real schema, table, column, and index names; MySQL
 sensitive schema material, keep it inside the source environment, normalize it
 locally with `blueprint_format.py`, and share only the reviewed TOML output.
 
-The fallback has no `--schema` selector: PostgreSQL covers all non-system
-schemas in the connected database, while MySQL and SQL Server cover all user
-tables in the selected database. Do not use it when only a subset is approved.
-Its TOML contains table/column/index/FK structure and approximate local sizing,
-but no row sampling, RTT evidence, non-table artifact inventory, or live
+The fallback has no `--schema` selector: PostgreSQL covers ordinary tables in
+all non-system schemas of the connected database, while MySQL and SQL Server
+cover ordinary local user tables in the selected database. Do not use it when
+only a subset is approved.
+Its TOML contains the ordinary-table subset of table/column/index/FK structure
+and approximate local sizing, but does not inventory every v7 table kind. It
+marks all structure families incomplete and excludes MySQL FEDERATED and SQL
+Server external tables rather than mislabelling their remote data as local. It
+also has no row sampling, RTT evidence, non-table artifact inventory, or live
 topology probes; topology and dataset completeness are explicitly `unknown`.
 
 The trust-first path is to build from source. The normal repository stays small and uses `Cargo.lock` to pin dependency versions. For stricter offline audits, each release also publishes a vendored source bundle containing every dependency source file. Release binaries are provided for convenience with SHA256 checksums.
@@ -149,22 +155,21 @@ TOML remain canonical English tokens. This keeps automation and support
 procedures identical in every language. See
 [`docs/INTERNATIONALISATION.md`](docs/INTERNATIONALISATION.md).
 
-Before connecting to a database, inspect the checked-in examples under
+Before connecting to a database, inspect the examples under
 [`samples/`](samples/). They are ordinary Blueprint TOML and require no setup
 to review. After obtaining a binary, an offline first run can render one as a
 deck without any database or network access:
 
-Start with the small schema-v6 examples described in
-[`samples/README.md`](samples/README.md): PostgreSQL catalog-only, MySQL sampled,
-and SQL Server sampled with analyzed artifacts. These are hand-authored
-synthetic illustrations, not customer captures or qualification results.
-The larger schema-v1 examples remain compatibility fixtures. Use
-[`FORMAT.md`](FORMAT.md) to review the complete output surface before approving
-a customer capture; no example covers every optional field.
-
 ```bash
 ./dbwarp-blueprint --from-toml samples/sqlserver-v6-analyzed.toml --deck sample.pptx
 ```
+
+Start with the small Blueprint examples described in
+[`samples/README.md`](samples/README.md): PostgreSQL catalog-only, MySQL sampled,
+and SQL Server sampled with analyzed artifacts. These are hand-authored examples,
+not real captures. The larger schema-v1 examples show the older format, which is
+still readable. Use [`FORMAT.md`](FORMAT.md) to review the complete output surface
+before approving a capture; no example covers every optional field.
 
 Dry-run first. It prints the plan without connecting:
 
@@ -194,13 +199,11 @@ Recommended production-style run with TLS, audit log, and compression measuremen
 With `--measure-compression --yes`, the output includes table-level
 zstd ratios and per-column compression projections. The per-column
 blocks are computed from the same bounded sample as the table-level
-ratio; they are intended for DBWarp fixture estimation and do not
+ratio; they refine the transfer estimate and do not
 write sampled values to disk. A materially dominant binary sample with
 recognized standard compressed-container signatures receives only the coarse
 `style = "precompressed"` label; no file type, signature, or sampled value is
-serialized. Generated twins turn that label into neutral deterministic
-compressed-container fixtures instead of claiming the customer's original
-content type. Schema v3 and newer also emit bounded, name-free
+serialized. Schema v3 and newer also emit bounded, name-free
 per-column cardinality/skew aggregates and inferred index-prefix/relationship
 summaries. Temporary per-value hashes are bounded in memory and discarded;
 sampled values and per-value hashes never appear in the Blueprint TOML, while
@@ -234,7 +237,8 @@ The default `balanced` policy preserves declared character/byte capacities and
 index-prefix lengths exactly. Sampled average/p95 value lengths use
 relative-error buckets (about 3.2% maximum error, with values up to 32 bytes
 preserved exactly). This keeps a normally 9-character `VARCHAR(3000)` key near
-9 characters in generated data while retaining valid source DDL/index limits:
+9 characters, so sizing reflects real value widths while retaining valid
+source DDL/index limits:
 
 ```bash
 ./dbwarp-blueprint \
@@ -258,26 +262,21 @@ Use exact sampled statistics only when policy permits the additional precision:
   --audit-log mysql-appdb-exact.audit.txt
 ```
 
-Use `--length-fidelity strict` to retain the older coarse privacy bucketing
-for declared, observed, and prefix lengths. Strict mode intentionally sacrifices
-fixture/index fidelity and is not customer-benchmark-ready. The legacy
-`--preserve-exact-lengths --yes` spelling remains a compatibility alias for
+Use `--length-fidelity strict` to apply coarse privacy bucketing for declared,
+observed, and prefix lengths. Strict mode reduces the precision of the resulting
+estimate. The `--preserve-exact-lengths --yes` spelling remains an alias for
 `--length-fidelity exact --yes`.
 
 New Blueprints record separate `declared_length_fidelity`,
-`index_length_fidelity`, and `observed_length_fidelity` fields. The legacy
-`length_metadata` field remains for conservative compatibility with older
-consumers. PostgreSQL character capacities are exact catalog values;
+`index_length_fidelity`, and `observed_length_fidelity` fields. The
+`length_metadata` field is also written so tools reading the earlier format
+keep working. PostgreSQL character capacities are exact catalog values;
 encoding-dependent byte ceilings and index-prefix lengths remain unavailable.
 
-For a customer-representative generated benchmark, `--measure-compression` is
-not optional: it supplies observed average/p95 value lengths so a declared
-multi-kilobyte key whose real values are only a few characters is not generated
-at its capacity. The default sampling wall budget is 300 seconds. Increase
-`--max-wall-secs` for very large schemas. Downstream planning tools should reject
-the Blueprint if any nonempty variable-width indexed column remains unsampled.
-Smoke or compatibility generation then requires an explicit downstream override
-and must be marked nonrepresentative.
+For the most accurate estimate, run with `--measure-compression`: it records
+observed average and p95 value lengths, so a column declared far wider than its
+real values is not over-estimated. The default sampling wall budget is 300
+seconds; increase `--max-wall-secs` for very large schemas.
 
 Then review the files:
 
@@ -286,7 +285,7 @@ less blueprint.toml
 less audit.txt
 ```
 
-Follow the [handoff policy](docs/QUICKSTART.md#review-and-share) before sending
+Follow the [review-and-share steps](docs/QUICKSTART.md#review-and-share) before sending
 any artifact. Share only approved Blueprint content and, if separately reviewed
 and approved, a deck; keep operational evidence local by default.
 
@@ -311,7 +310,7 @@ If the source is already a local structured file, generate Blueprint TOML withou
 Parquet mode reads footer and row-group metadata. Avro object containers do not have an equivalent footer row count, so Avro mode walks the container to count records and uses the writer schema for column shape. Neither mode connects to a database or reads credential flags.
 
 If your policy permits decoded sampling, file mode can also measure bounded
-local compressibility for downstream planning:
+local compressibility for transfer planning:
 
 ```bash
 ./dbwarp-blueprint \
@@ -329,7 +328,7 @@ sampled values.
 
 ## Batch And Bundle Mode
 
-For multiple databases, multiple tables/datasets, or a customer estate review,
+For multiple databases, multiple tables/datasets, or a review of a whole estate,
 use a batch manifest and write a bundle directory:
 
 ```bash
@@ -421,22 +420,22 @@ If policy permits only table/column/index/FK catalogs, omit
   --yes
 ```
 
-This catalog-only mode reads table metadata and statistics but no row values or
-non-table object catalogs. DBWarp can still estimate from table size, row
-counts, type families, and index/FK shape, but compression and
-synthetic-fixture realism are weaker because text/binary entropy must be
+This catalog-only mode reads table metadata, statistics, and a count-only
+topology probe, but no row values or non-table object inventories. DBWarp can still estimate from table size, row
+counts, type families, and index/FK shape, but compression estimates are weaker
+because text/binary entropy must be
 inferred. Without `--artifact-detail none`, the default summary also reads
 non-table object catalogs, but not definitions.
 
 ## Output Preview
 
 ```toml
-# dbwarp-blueprint v6
+# dbwarp-blueprint v7
 # Anonymous database Blueprint. Source object names and row values are excluded.
 # Review under your organization's data-classification policy before sharing.
 # https://github.com/DBWarp/dbwarp-blueprint
 
-schema_version = 6
+schema_version = 7
 generated_at = "2026-04-26T00:00:00Z"
 engine = "postgresql"
 engine_version = "16.2"
@@ -447,10 +446,72 @@ index_length_fidelity = "not-captured"
 observed_length_fidelity = "not-sampled"
 
 [totals]
-table_count = 28
+table_count = 1
 row_count = 12500000
-table_bytes = 4200000000
-index_bytes = 1100000000
+table_bytes = 4194304000
+index_bytes = 1048576000
+
+[database_topology]
+contract = "dbwarp-blueprint-topology/v2"
+deployment = "unknown"
+local_role = "unknown"
+visibility = "unknown"
+member_count = 0
+member_count_scope = "unknown"
+identifiers_redacted = true
+
+[dataset_scope]
+contract = "dbwarp-blueprint-dataset-scope/v1"
+layout = "unknown"
+table_inventory_completeness = "unknown"
+row_count_completeness = "unknown"
+size_completeness = "unknown"
+row_count_method = "postgres-planner-estimate"
+size_method = "postgres-local-relation-size"
+limitations = ["topology-unobserved", "topology-visibility-unknown"]
+
+[structure_scope]
+contract = "dbwarp-blueprint-structure-scope/v1"
+visibility = "unknown"
+table_inventory_completeness = "unknown"
+column_inventory_completeness = "unknown"
+index_inventory_completeness = "unknown"
+relationship_inventory_completeness = "unknown"
+limitations = ["metadata-visibility-unknown"]
+
+[source_environment]
+contract = "dbwarp-blueprint-source-environment/v1"
+evidence_origin = "database-endpoint"
+hosting_model = "unknown"
+infrastructure_location = "unknown"
+capacity_scope = "connected-instance"
+capacity_visibility = "partial"
+cpu_capacity_band = "unknown"
+cpu_capacity_basis = "unknown"
+memory_capacity_band = "under-2-gib"
+memory_capacity_basis = "database-buffer-cache"
+collector_machine_excluded = true
+catalogs_read = ["pg-capacity-settings"]
+
+[statistics_evidence]
+contract = "dbwarp-blueprint-statistics-evidence/v1"
+visibility = "unknown"
+table_count = 1
+counts_by_statistics_state = { unknown = 1 }
+counts_by_row_count_quality = { unknown = 1 }
+counts_by_size_quality = { unknown = 1 }
+limitations = ["statistics-provenance-unclassified"]
+
+[artifact_inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "none"
+scope = "all-visible-schemas"
+visibility = "unknown"
+inventory_complete = false
+dependencies_complete = false
+requirements_complete = false
+analysis_complete = false
+families_not_inventoried = ["non_table_objects"]
 
 [tables.table-001]
 rows = 12500000
@@ -458,11 +519,31 @@ table_bytes = 4194304000
 index_bytes = 1048576000
 schema = "schema-A"
 has_clustered_index = false
+object_kind = "ordinary-table"
+storage_organization = "unknown"
+partitioning = "none"
+segment_state = "unknown"
+
+[tables.table-001.statistics]
+row_count_method = "postgres-planner-estimate"
+row_count_quality = "unknown"
+statistics_state = "unknown"
+refresh_age_band = "unknown"
+modification_ratio_band = "unknown"
+sample_fraction_band = "unknown"
+statistics_scope = "unknown"
+size_method = "postgres-local-relation-size"
+size_quality = "unknown"
+size_scope = "unknown"
+size_accounting = "unknown"
+size_visibility = "unknown"
 
 [tables.table-001.cols.col-1]
 ordinal = 1
 type = "bigint"
 nullable = false
+numeric_model = "integer"
+numeric_precision_radix = "decimal"
 
 [tables.table-001.idxs.idx-1]
 type = "btree"
@@ -503,7 +584,7 @@ The deck adapts to schema size: per-table detail for small schemas, characteriza
 
 Start here:
 
-- [`docs/QUICKSTART.md`](docs/QUICKSTART.md): first safe run and first handoff package.
+- [`docs/QUICKSTART.md`](docs/QUICKSTART.md): first safe run and what to share.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md): practical recipes for PostgreSQL, MySQL, SQL Server, TLS, deck, and no-sampling workflows.
 - [`docs/DBA_REVIEW_GUIDE.md`](docs/DBA_REVIEW_GUIDE.md): what a DBA/security reviewer needs to know before running the tool.
 - [`sql/grants/README.md`](sql/grants/README.md): version-aware least-privilege grant scripts and post-capture account removal.

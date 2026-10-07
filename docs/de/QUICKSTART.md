@@ -4,7 +4,7 @@
 
 **Sprachen:** [English](../QUICKSTART.md) | **Deutsch** | [Français](../fr/QUICKSTART.md) | [Español](../es/QUICKSTART.md) | [Polski](../pl/QUICKSTART.md) | [日本語](../ja/QUICKSTART.md) | [中文](../zh/QUICKSTART.md)
 
-Dieser Schnellstart richtet sich an Sales Engineers, DBAs und Sicherheitsprüfer, die eine weitergabefähige DBWarp-Blueprint-Datei erstellen müssen, ohne Kundendaten offenzulegen.
+Diese Schnellstartanleitung richtet sich an einen Datenbankadministrator oder einen Sicherheitsexperten, der eine gemeinsam nutzbare DBWarp Blueprint-Datei erstellen muss, ohne dabei Daten preiszugeben.
 
 ## 1. Ausführungsweg auswählen
 
@@ -34,10 +34,7 @@ Sie nicht mit einem Anwendungseigentümer-, Administrator-, Superuser-,
 
 1. Bestimmen Sie die genaue Engine-Version, Datenbank und die genehmigten
    Schemas.
-2. Wählen Sie die Erfassungsstufe: `basic` nur für Tabellenkataloge,
-   `standard` für eine begrenzte, für synthetische Kopien geeignete
-   Zeilenstichprobe oder `enhanced` zusätzlich für die Analyse von
-   Nicht-Tabellenobjekten.
+2. Wählen Sie die Erfassungsebene: `basic` nur für Tabellenkataloge, `standard` zum Hinzufügen einer begrenzten Zeilenstichprobe oder `enhanced` für die Analyse von Nicht-Tabellen-Objekten.
 3. Lassen Sie den DBA das passende Skript unter `sql/grants/<engine>/`
    kopieren, alle markierten Werte für Datenbank, Schema, Principal, Passwort
    und Rollenumschalter bearbeiten und es im normalen Änderungsverfahren
@@ -45,9 +42,7 @@ Sie nicht mit einem Anwendungseigentümer-, Administrator-, Superuser-,
 4. Verwenden Sie das dafür erstellte dedizierte Konto und übergeben Sie bei
    jedem Live-Befehl denselben genehmigten Umfang mit einer Option
    `--schema NAME` pro Schema.
-5. Nach Erfassung und Prüfung der Nachweise lässt der DBA das passende
-   Engine-Skript unter `sql/revoke/` prüfen und ausführen, um Konto und Rechte
-   zu entfernen.
+5. Nachdem die Erfassung überprüft wurde, soll der Datenbankadministrator das entsprechende Skript unter `sql/revoke/` überprüfen und ausführen, um das Konto und die Berechtigungen zu entfernen.
 
 Die Skripte unterscheiden bewusst zwischen exakt begrenzten Grants und
 bequemen integrierten Rollen und erklären, wo eine Rolle weiter reicht. Die
@@ -98,7 +93,7 @@ Ein Probelauf validiert die Argumente und zeigt die geplante Aktion an, ohne ein
 
 Im Präsentationsmodus `--from-toml` ist der Probelauf eine lokale Vorabprüfung und liest die Datenbank nicht.
 
-Führen Sie bei mehreren Kundenquellen stattdessen einen Probelauf mit dem Batch-Manifest durch:
+Für mehrere Quellen sollten Sie stattdessen das Batch-Manifest im Testmodus ausführen:
 
 ```bash
 ./dbwarp-blueprint \
@@ -129,7 +124,7 @@ Verwenden Sie diesen Modus, wenn eine Richtlinie Zeilenstichproben verbietet ode
 
 ## 6. Details zu Nicht-Tabellenartefakten auswählen
 
-Die Voreinstellung `--artifact-detail summary` liest Kataloge für Nicht-Tabellenobjekte, aber keine Objektdefinitionen. Sie gibt begrenzte Anzahlen und Klassen externer Voraussetzungen aus. Verwenden Sie `--artifact-detail none`, wenn eine Richtlinie diese Kataloge verbietet.
+Die Voreinstellung `--artifact-detail summary` liest Kataloge für Nicht-Tabellenobjekte, aber keine Objektdefinitionen. Sie gibt begrenzte Anzahlen und Klassen externer Voraussetzungen aus. Verwenden Sie `--artifact-detail none`, wenn eine Richtlinie diese Kataloge verbietet. Die reine Zählprüfung der Topologie wird dennoch ausgeführt; siehe [Berechtigungsreferenz](../../sql/grants/README.md#topology-evidence).
 
 Für anonyme Abhängigkeitstopologie verwenden Sie `graph`; für begrenzte Sprachmerkmal- und Komplexitätsbänder `analyzed`. Beide erfordern ausdrückliche Zustimmung:
 
@@ -169,7 +164,7 @@ und verwirft die Stichprobenwerte:
   --audit-log blueprint.audit.txt
 ```
 
-Verwenden Sie Tier 2, wann immer möglich. Dadurch kann DBWarp Übertragungsbytes, Egress-Kosten und die Erzeugung synthetischer Text-/Binärdaten besser schätzen.
+Verwenden Sie nach Möglichkeit Stufe 2. Sie liefert genauere Schätzungen für die Datenübertragungsgröße und die ausgehenden Kosten.
 
 ## 8. Präsentation erzeugen
 
@@ -219,15 +214,15 @@ Erwartete Eigenschaften:
 - optionale aggregierte Messwerte für Komprimierung, NULL-Dichte,
   Kardinalität/Häufigkeit, Länge und Stil, niemals Stichprobenwerte.
 
-## 10. Übergabe an DBWarp
+## 10. Teilen Sie es mit DBWarp.
 
-Minimale Übergabe:
+Minimum zum Teilen:
 
 ```text
 blueprint.toml
 ```
 
-Erstellen und prüfen Sie für eine Kundenprüfung mit mehreren Quellen ein gepacktes Bundle, statt das Arbeitsverzeichnis zu übergeben:
+Für mehrere Quellen sollten Sie ein zusammengefasstes Bundle erstellen und prüfen, anstatt das Arbeitsverzeichnis zu teilen:
 
 ```bash
 ./dbwarp-blueprint \
@@ -238,14 +233,10 @@ less customer-blueprint-bundle.packed.toml
 
 Die Bundle-Metadaten enthalten die im Batch-Manifest gewählten Quell-IDs, Tags und Datensatzgruppen-IDs. Verwenden Sie anonyme Werte und prüfen Sie sie vor der Übertragung.
 
-Verwenden Sie `docs/BATCH_AND_BUNDLES.md`, wenn der Kunde mehrere Datenbanken, mehrere Parquet- oder Avro-Datensätze besitzt oder nur ausgewählte Quellen/Tabellen für die Benchmark-Erzeugung freigeben möchte.
-
-<a id="review-and-share"></a>
+Siehe [Batch-Sammlung und Blueprint-Pakete](BATCH_AND_BUNDLES.md), wenn Sie mehrere Datenbanken oder mehrere Parquet- oder Avro-Datensätze haben, oder wenn Sie nur ausgewählte Quellen oder Tabellen freigeben möchten.
 
 ### Prüfen und teilen
 
 Teilen Sie standardmäßig nur die geprüfte `blueprint.toml` oder das gepackte Bundle. Eine Präsentation darf nur nach gesonderter Prüfung ihres Inhalts und ihrer Vertraulichkeitskennzeichnung sowie ausdrücklicher Freigabe gemäß Ihrer Organisationsrichtlinie beigefügt werden.
 
-Bewahren Sie Audits, Befehlsaufzeichnungen, Prüfnotizen und nicht freigegebene Präsentationen lokal mit Zugriffsschutz auf. Diese können Endpunkte, authentifizierte Identitäten, lokale Pfade, Zeitangaben und Manifest-IDs enthalten. Senden Sie Betriebsnachweise nur für einen konkreten Supportbedarf über einen genehmigten sicheren Kanal.
-
-Das Werkzeug erstellt `command-used.redacted.txt` nicht; dies ist eine optionale Aufzeichnung des Operators, kein regulärer Bestandteil der Übergabe. Legen Sie niemals Passwort- oder Tokendateien, Anonymisierungsschlüssel, private CA-Schlüssel, Kundendumps oder Datenbankprotokolle bei.
+Bewahren Sie Protokolle, Befehlsaufzeichnungen und nicht genehmigte Präsentationen lokal und mit eingeschränktem Zugriff auf. Sie können Endpunkte, authentifizierte Benutzer, lokale Pfade, Zeitdaten und Manifest-Identifikatoren enthalten. Senden Sie diese nur für einen bestimmten Support-Zweck über einen genehmigten, sicheren Kanal. Fügen Sie niemals Passwortdateien, Token-Dateien, Anonymisierungs-Schlüssel, CA-Private-Schlüssel, Datenbank-Dumps oder Datenbank-Protokolle mit einem freigegebenen Blueprint hinzu.

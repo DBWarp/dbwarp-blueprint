@@ -11,11 +11,13 @@
 
 ## 网络出口
 
-实时 `--connect` 模式会与指定端点建立一个数据库驱动程序会话。批处理模式依次
+PostgreSQL、MySQL 和 SQL Server 的实时 `--connect` 模式会与指定端点建立一个数据库驱动程序会话。批处理模式依次
 处理来源，并为每个数据库来源建立一个会话。DNS 解析可能使用已配置的解析器，
 集成式 Kerberos/SSPI 身份验证可能联系 KDC 或域控制器。离线 TOML、Parquet、
 Avro 和捆绑包操作不会建立由应用程序发起的网络连接，但网络文件系统上的路径
 仍受主机存储堆栈影响。
+
+需要明确确认的 Oracle 预览只会启动通过 `--oracle-sqlplus` 明确指定的 SQL*Plus 可执行文件（如果可用，则包括一次有界的 `-V` 探测），并将其用于目录会话。子进程会收到一个空的私有目录作为 `TNS_ADMIN`；凭据写入标准输入，绝不放入进程参数。环境会在启动前清空。只转发现有的 `PATH`、`SystemRoot`、`WINDIR`、`ORACLE_HOME`、`LD_LIBRARY_PATH`、`DYLD_LIBRARY_PATH`、`LIBPATH` 和 `SHLIB_PATH`；采集器会另行设置固定的区域设置、时区和私有 `TNS_ADMIN` 值。
 
 二进制文件中不存在遥测、许可证检查、版本更新、云 API 调用或上传路径。
 
@@ -29,7 +31,7 @@ Avro 和捆绑包操作不会建立由应用程序发起的网络连接，但网
 |---|---|---|
 | `--user-file PATH` | 如果提供 | 仅用户名。删除末尾空白；空文件会导致错误。 |
 | `--password-file PATH` | 如果提供 | 读取一次。DBWarp 所有的 `Secret` 缓冲区会在销毁时归零；驱动程序可能按 SECURITY.md 所述保留自己的副本。在 Unix 上，如果组或其他用户可读，则拒绝。 |
-| `--anonymization-key-file PATH` | 如果提供 | 由客户保管的 32 字节或 64 个十六进制字符的 HMAC 密钥。在 Unix 上，如果组或其他用户可读，则拒绝。密钥绝不会输出。 |
+| `--anonymization-key-file PATH` | 如果提供 | 您持有的 32 字节或 64 个十六进制字符的 HMAC 密钥。在 Unix 上，如果组或其他用户可读，则拒绝。密钥绝不会输出。 |
 | `--azure-token-file PATH` | 如果提供 | SQL Server Entra ID 令牌。读取一次；DBWarp 所有的 `Secret` 缓冲区会在销毁时归零。在 Unix 上，如果组或其他用户可读，则拒绝。 |
 | `--tls-ca PATH` | 如果提供 | 连接时读取的受信任 CA PEM。PostgreSQL/MySQL 接受捆绑包；SQL Server 只接受一个证书。提供的文件会替换引擎的默认根证书。 |
 | `--tls-cert PATH` | 如果提供 | PostgreSQL/MySQL 客户端 TLS 证书（PEM），连接时读取。SQL Server 会以 `DBP1015E` 拒绝。 |
@@ -40,7 +42,7 @@ Avro 和捆绑包操作不会建立由应用程序发起的网络连接，但网
 | `--batch-manifest PATH` | 如果提供 | 清单以及它引用的每个本地输入、凭据、令牌和 TLS 路径。 |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | 如果提供 | 捆绑包 TOML，以及列出、提取或打包所需的相对路径 Blueprint 文件。 |
 | 控制终端/控制台（类 Unix 系统上的 `/dev/tty`） | 如果未提供密码来源 | 关闭回显的提示。 |
-| （仅构建时）`rust-toolchain.toml`、`Cargo.toml`、`Cargo.lock`、vendored 发布中的 `.dbwarp-source-revision`、`vendor/mysql_async`、`vendor-crates/*` | 仅运行 `./build.sh` 时 | 工具链、源出处和标准 Cargo 构建输入 |
+| （仅构建时）`rust-toolchain.toml`、`Cargo.toml`、`Cargo.lock`、vendored 发布中的 `.dbwarp-source-revision`、`vendor/*`、`vendor-crates/*` | 仅运行 `./build.sh` 时 | 工具链、源出处和标准 Cargo 构建输入 |
 
 应用程序没有显式路径读取：
 - `~/.pgpass`、`~/.my.cnf`、`~/.aws/credentials`、`~/.azure/credentials`
@@ -153,6 +155,7 @@ artifact_inventory:
   external_prerequisites: 3
   inventory_complete: false
   dependencies_complete: false
+  requirements_complete: false
   analysis_complete: false
 
 database_operations_observed:
@@ -233,7 +236,7 @@ MySQL 运行会输出一个特定于模式的 `length policy balanced|strict|exa
 
 **信任断言的条件输出。** 只有在实际读取过凭据的运行中，才会输出 "credential entered through the Secret wrapper..." 行。在获取凭据前就中止的失败路径（URI 解析错误、拒绝 URI 内嵌密码、试运行等）有意不输出此行，因为没有对从未获取的凭据作出断言。可通过该行是否存在以及 `auth.password_source` 来判断给定运行是否执行了凭据处理。
 
-**运维成功和失败路径都会输出审计**，包括启动后的命令行解析错误。帮助/版本退出以及加载内置本地化契约之前的失败不会生成完整审计。之后的失败仍会写入 stderr，并在指定时写入 `--audit-log PATH`，形式为 `outcome: error: <stage>`。失败结果行示例：
+**审计信息会在操作成功和失败时发出，**包括启动后命令行解析失败。 Help/version 退出以及在嵌入式本地化模块加载之前发生的失败不会生成完整的审计信息。 如果工具在执行过程中失败（例如，身份验证被拒绝，网络错误），审计日志仍然会输出到标准错误流（以及如果指定了 `--audit-log PATH`），并且会包含 `outcome: error: <stage>` 信息，这样您始终可以记录在失败之前尝试的内容。 示例失败情况的输出行：
 
 ```
 outcome:             error: parsing --connect URI (value redacted to avoid logging embedded credentials)
@@ -247,16 +250,14 @@ outcome:             error: parsing --connect URI (value redacted to avoid loggi
 
 对象采集独立于 Tier 2 行采样：
 
-- `--artifact-detail none` 跳过对象目录和定义。
+- `--artifact-detail none` 会跳过对象清单目录和定义；仅计数的拓扑探测仍会运行。
 - `summary` 读取已建模对象目录，但不读取定义文本。
 - `graph` 还会读取依赖目录，但不读取定义文本。
 - `analyzed` 还会把可用的 SQL/过程定义读入有界进程内存以进行词法分析。
 
 审计会记录所请求的详细级别、可见性、对象/依赖/外部前提计数以及全部完整性标志。每个对象目录操作都会出现在 `database_operations_observed` 中。可选目录读取失败会发出 `DBP1410W`，记录在 `warnings` 中，并阻止不准确的完整性声明。
 
-在 analyzed 模式中，定义由清零所有者保存并擦除，最后缩减为有界区间和封闭特征标记。定义文本、源对象名称、外部端点、制品主体、凭据、密钥/证书材料、包/库名称和二进制文件绝不会写入 Blueprint 或审计日志。唯一保留的确切主体名称是上述明确 `auth` 审计块中的三个 SQL Server 会话身份；它们绝不会写入 Blueprint、演示文稿或发布制品。graph 和 analyzed 模式需要 `--yes`，因为匿名拓扑仍可能识别应用程序。
-
-审计使用以下信任声明之一来区分隐私姿态：
+在分析模式下，定义会被封装在一个零化所有者中，进行清理，并被简化为有限范围的段落和封闭的特征标记。定义文本、源对象名称、外部端点、工件主体、凭据、密钥/证书材料、软件包/库名称以及二进制文件，绝不会写入到 Blueprint 或审计日志中。唯一保留的精确主体名称是显式 `auth` 审计块中的三个 SQL Server 会话身份；它们绝不会写入到 Blueprint、演示文稿或捆绑包文件中。图形模式和分析模式需要 `--yes`，因为即使是匿名拓扑也可能识别出应用程序。
 
 - summary：仅有界计数，不含对象身份或定义；
 - graph：匿名依赖图，不含定义；
@@ -322,10 +323,7 @@ PostgreSQL 还会设置会话 `statement_timeout`；MySQL 对只读 `SELECT` 设
    Tier 1 和 Tier 2 复用同一个 MySQL 连接。
    完整说明请参阅 SECURITY.md 中的**驱动程序持有的凭据副本**。
 3. **从源代码构建**：`./build.sh`。使用带依赖源代码归档时，请运行
-   `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`。发布 CI 会在同一 runner 上独立重新构建，
-   在两次构建之间清空并复用同一个 Cargo 目标目录，同时单独保留第一次生成的可执行文件，
-   并拒绝任何字节差异。只有源修订版本、目标、功能、
-   固定 Rust 工具链、链接器和构建标志均相同时，本地比较才有意义。
+运行 `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`。 每个版本都会构建两次，如果字节不匹配，则该版本会失败。 仅当使用相同的源版本、目标、功能、固定的 Rust 工具链、链接器和构建选项时，本地比较才有意义。
 4. **与发布版本比较**：在匹配的源代码检出或源代码树中运行
    `./verify.sh /path/to/extracted/dbwarp-blueprint`。所需目标、功能、工具链、链接器、
    源日期纪元和构建标志请参阅 BUILD.md 中的**重现发布二进制文件**。
@@ -336,6 +334,4 @@ PostgreSQL 还会设置会话 `statement_timeout`；MySQL 对只读 `SELECT` 设
    会话及预期的 DNS 流量。对于集成式身份验证，还应计入预期的 KDC/域控制器流量。
    在批处理模式中，核对每个数据库来源对应一个数据库会话。
 
-如果其中任何一项与本文档不符，请通过 SECURITY.md 中指定的渠道报告差异，并且只
-提供重现问题所需的最小安全跟踪信息。请勿在公开问题中包含凭据、客户标识符或敏感的
-驱动程序输出。
+如果任何内容与此处记录的内容不符，请通过 SECURITY.md 中的渠道报告差异，并提供重现问题的最小、最安全的追溯信息。请勿在公开问题中包含凭据、身份信息或敏感的驱动程序输出。

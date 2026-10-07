@@ -1,10 +1,15 @@
 # Reviewable Blueprint examples
 
 These small schema-v6 files are **hand-authored synthetic illustrations**, not
-customer captures, performance results or evidence that a particular deployment
-has been qualified. Numbers and inventory entries are invented to explain the
+real captures, performance results or evidence that a particular deployment
+is supported. Numbers and inventory entries are invented to explain the
 contract. Normal captures vary with permissions, selected schemas, database
 state and sampling options. Omitted optional fields are not proof of absence.
+
+Because they are hand-authored schema-v6 illustrations, these files do not
+carry the fixed `dbwarp-blueprint v7` header that the
+[DBA review guide](../docs/DBA_REVIEW_GUIDE.md) asks reviewers to check. Apply
+that header check to real captures, not to these samples.
 
 | Example | What to inspect |
 |---|---|
@@ -37,6 +42,6 @@ and [the DBA guide](../docs/DBA_REVIEW_GUIDE.md) for the complete output surface
 precision rules, permissions and consent; these examples are not exhaustive.
 
 The larger `saas-medium.toml`, `ecommerce-large.toml` and `erp-enterprise.toml`
-files remain **legacy schema-v1 compatibility fixtures**. They can still be
+files are **older schema-v1 examples** and are also synthetic. They can still be
 rendered, but omit much of today's disclosure surface and must not be used as
 the sole basis for approving a current capture.

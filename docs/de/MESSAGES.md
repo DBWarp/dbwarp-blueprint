@@ -4,14 +4,7 @@
 
 **Sprachen:** [English](../MESSAGES.md) | **Deutsch** | [Français](../fr/MESSAGES.md) | [Español](../es/MESSAGES.md) | [Polski](../pl/MESSAGES.md) | [日本語](../ja/MESSAGES.md) | [中文](../zh/MESSAGES.md)
 
-`dbwarp-blueprint` verwendet stabile Bezeichner für Bedienermeldungen bei DBWarp-eigenen Validierungs- und Arbeitsablauffehlern. Das Format ist von IBM-artigen Bedienermeldungen inspiriert: ein Subsystempräfix, eine numerische Kennung und ein Schweregradsuffix. Die IBM-CICS-Dokumentation beschreibt eine Programmkennung zusammen mit einer vierstelligen Meldungsnummer und einem Schweregradbuchstaben; IBM MQ verwendet ähnlich Komponenten-/Präfixfelder, eine numerische Kennung und einen abschließenden Meldungstypcode. Microsofts Richtlinien für Fehlermeldungen bekräftigen die praktische Regel, dass ein Fehler das Problem beschreiben und eine vom Benutzer ausführbare Maßnahme angeben sollte.
-
-Referenzen:
-
-- IBM-CICS-Meldungsformat: https://www.ibm.com/docs/en/cics-pa/5.3.0?topic=messages-message-format
-- Aufbau der IBM-CICS-Meldungsinformationen: https://www.ibm.com/docs/en/cics-ts/6.x?topic=messages-format-cics-message-information
-- IBM-MQ-for-z/OS-Meldungsformat: https://www.ibm.com/docs/SSFKSJ_9.2.0/com.ibm.mq.ref.doc/q050270_.htm
-- Microsoft-Richtlinien für Fehlermeldungen: https://learn.microsoft.com/en-us/windows/win32/uxguide/mess-error
+`dbwarp-blueprint` verwendet stabile Operator-Nachrichten-IDs für DBWarp-eigene Validierungs- und Workflow-Fehler. Jede Nachricht hat ein Subsystem-Präfix, eine numerische ID und ein Schweregrad-Suffix und beschreibt das Problem sowie eine korrigierende Maßnahme.
 
 ## Format
 
@@ -25,7 +18,7 @@ Felder:
 - `nnnn` ist eine stabile vierstellige Meldungsnummer.
 - `S` ist der Schweregrad: `E` Fehler, `W` Warnung, `I` Information.
 
-Der Code ist stabil und sprachneutral. Seine Zusammenfassung, Ursache und Korrekturmaßnahme werden lokalisiert, wenn `--lang` oder das Prozessgebietsschema eine unterstützte Sprache auswählt. Dynamische Details zu Betriebssystem, Datenbanktreiber, Pfad und Ursachenkette bleiben unverändert, damit Supporttechniker nach dem ursprünglichen Fehler suchen können. Meldungstext darf keine Geheimnisse oder unbereinigten Verbindungs-URIs enthalten.
+Der Code ist stabil und sprachneutral. Seine Zusammenfassung, Ursache und die vorgeschlagene Maßnahme werden lokalisiert, wenn `--lang` oder die Prozesssprache eine unterstützte Sprache auswählt. Dynamische Details des Betriebssystems, des Datenbanktreibers, des Pfads und der Kausalkette bleiben unverändert, damit der ursprüngliche Fehler gefunden werden kann. Der Text der Meldung darf keine Geheimnisse oder unbearbeiteten Verbindungs-URIs enthalten.
 
 ## Bereiche
 
@@ -54,8 +47,8 @@ Der Code ist stabil und sprachneutral. Seine Zusammenfassung, Ursache und Korrek
 | `DBP1004E` | Azure-Token-Option mit einer anderen Engine als SQL Server verwendet. |
 | `DBP1005E` | Der Authentifizierungsmodus ist für die ausgewählte Engine nicht verfügbar. |
 | `DBP1006E` | Komprimierungsstichprobe für strukturierte Dateien ohne explizites `--yes` angefordert. |
-| `DBP1007E` | Expliziter Längentreuemodus für eine Engine angefordert, die diesen Vertrag noch nicht bereitstellt. |
-| `DBP1008E` | Legacy-Alias für exakte Länge steht in Konflikt mit strenger Längentreue. |
+| `DBP1007E` | Es wurde ein expliziter Modus für die Längenprüfung angefordert, der von der verwendeten Engine nicht unterstützt wird. |
+| `DBP1008E` | `--preserve-exact-lengths` steht im Konflikt mit der strikten Einhaltung der Länge. |
 | `DBP1009E` | Exakte Treue der Stichprobenlänge ohne explizites `--yes` angefordert. |
 | `DBP1010E` | Eingebetteter Lokalisierungskatalog ist unvollständig oder inkonsistent. |
 | `DBP1011E` | Befehlszeilenargumente sind ungültig. |
@@ -109,10 +102,20 @@ Der Code ist stabil und sprachneutral. Seine Zusammenfassung, Ursache und Korrek
 | `DBP1419E` | Die Live-Erfassung hat `--max-wall-secs` überschritten; der Client trennte die Verbindung und meldet die Engine-spezifische Servergrenze. |
 | `DBP1420E` | Mindestens ein angefordertes `--schema` war nicht sichtbar; daher wurde keine Blueprint mit mehrdeutigem Umfang geschrieben. |
 | `DBP1421W` | SQL-Server-Sitzungsidentitäten waren nicht verfügbar; die Erfassung wurde ohne Identitätsaussage fortgesetzt. |
+| `DBP1422W` | Die Bewertung der Artefaktkomplexität ist fehlgeschlagen; das Inventar blieb erhalten und die betroffenen aggregierten Dimensionen sind unbekannt. |
+| `DBP1423W` | Ein Strukturkatalog für Indizes oder Beziehungen war nicht verfügbar; zentrale Tabellen und Spalten blieben mit ausdrücklich unvollständiger Abdeckung erhalten. |
+| `DBP1424W` | Die vollständige Sichtbarkeit des SQL-Server-Katalogs für Sicherheitsrichtlinien konnte nicht nachgewiesen werden; für jede betroffene Tabelle wurde die Tier-2-Stichprobe übersprungen. |
+| `DBP1425W` | SQL Server meldete einen aktiven Zeilensicherheitsfilter; die Tier-2-Stichprobe wurde bewusst übersprungen, statt eine gefilterte Teilmenge zu messen. |
+| `DBP1426E` | Die grundlegende Erfassung von Oracle ist während der Konfiguration, beim Start von SQL*Plus, bei der Auflösung des Besitzers, der Erfassung oder der Zuordnung fehlgeschlagen. |
+| `DBP1427W` | Die Herkunft der Oracle-SQL*Plus-Clientversion konnte nicht vollständig bestätigt werden; die Erfassung wurde mit einer ausdrücklichen Einschränkung fortgesetzt. |
+| `DBP1428W` | Oracle Basic wurde gestoppt, bevor jede der geplanten Katalogabfragen abgeschlossen war; die bereits gelesenen Tabellen, Spalten, Zeilen und Größen wurden beibehalten, und das Blueprint wurde als unvollständig markiert. |
+| `DBP1429W` | Oracle Basic behielt die grundlegenden Daten zu Tabellen, Spalten, Zeilen und Größe bei, während eine oder mehrere zusätzliche Katalogabfragen nicht verfügbar waren. |
+| `DBP1430W` | Oracle Basic hat sein Blueprint veröffentlicht, konnte aber die optionale Offline-Stream-Datei nicht schreiben. |
 | `DBP1501E` | Erfassungsgrenze für strukturierte Dateien ist fehlgeschlagen. |
 | `DBP1502E` | Blueprint- oder Bundle-Ausgabe ist fehlgeschlagen. |
 | `DBP1503E` | Erzeugung der PowerPoint-Präsentation ist fehlgeschlagen. |
 | `DBP1504W` | Auditprotokoll konnte nicht geschrieben werden. |
+| `DBP1505E` | Der Oracle Basic Offline-Stream ist bei der Validierung von Dateiberechtigungen, Größenbeschränkungen, Prüfsummen, Abfragesätzen oder der Katalogstruktur fehlgeschlagen. |
 | `DBP1601E` | Erfassung der Anmeldedaten ist fehlgeschlagen. |
 | `DBP1602E` | TLS-Konfiguration ist fehlgeschlagen. |
 | `DBP1603E` | Erfassung des Datenbankbenutzernamens ist fehlgeschlagen. |
@@ -124,15 +127,13 @@ Der Code ist stabil und sprachneutral. Seine Zusammenfassung, Ursache und Korrek
 | `DBP1702E` | Zustimmungsantwort konnte nicht aus der Standardeingabe gelesen werden. |
 | `DBP1801E` | Asynchrone Laufzeit konnte nicht initialisiert werden. |
 
-Jede angegebene Sprache muss für jeden aktuellen DBP-Code Zusammenfassung, Ursache und Maßnahme enthalten. Die Binärdatei validiert dies beim Start und schlägt mit `DBP1010E` fehl, statt stillschweigend auf Englisch zurückzufallen.
-
-Vorhersehbare Fehler an Entscheidungsgrenzen werden durch eine adversariale CLI-Matrix geprüft. Eine bekannte Bedingung muss ihren spezifischen Code als ersten Bedienercode ausgeben und darf nicht auf `DBP0001E` zurückfallen. Der Renderer durchsucht außerdem die vollständige Fehlerkette, sodass ein nicht codierter Implementierungskontext eine codierte innere Ursache nicht verbergen kann.
+Jede unterstützte Sprache enthält jede DBWarp-Zusammenfassung, Ursache und Maßnahme. Das Programm prüft dies beim Start und schlägt mit `DBP1010E` fehl, anstatt stillschweigend auf Englisch umzuschalten.
 
 Nicht schwerwiegende Warnungen bei Datenbankstichproben werden mit ihrem stabilen Warncode ausgegeben und im Lauf-Audit aufgezeichnet. Dadurch wird eine vollständige Tier-2-Erfassung von einer erfolgreichen Erfassung mit nur teilweise erhobenen Stichproben unterschieden, ohne den Fehler einer optionalen Prüfung zu einem vollständigen Erfassungsfehler zu machen.
 
 ## Support-Prüfliste
 
-Wenn ein Kunde einen Fehler meldet, fordern Sie Folgendes an:
+Wenn Sie Unterstützung für einen Fehler anfordern, stellen Sie Folgendes bereit:
 
 - die vollständige Terminalausgabe einschließlich des `DBP`-Codes;
 - das Auditprotokoll, falls `--audit-log` verwendet wurde;

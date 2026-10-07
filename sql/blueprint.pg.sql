@@ -1,4 +1,4 @@
--- blueprint.pg.sql — pure-SQL alternative to the dbwarp-blueprint binary.
+-- blueprint.pg.sql: pure-SQL alternative to the dbwarp-blueprint binary.
 --
 -- Run as:
 --   psql -h <host> -U <user> -d <database> -A -t -X -v ON_ERROR_STOP=1 \
@@ -26,12 +26,12 @@
 --   - Row content
 --   - Trigger / rule / RLS / function bodies
 --   - A schema subset: the query covers every non-system schema in the
---     connected database. Use the Rust collector when only selected schemas
+--     connected database. Use the dbwarp-blueprint binary when only selected schemas
 --     are approved.
 --
--- Real names ARE present in this output — anonymization is performed by
--- blueprint_format.py at the next step. The customer can review this JSON
--- before running the normalizer if they want to verify which tables /
+-- Real names ARE present in this output: anonymization is performed by
+-- blueprint_format.py at the next step. You can review this JSON
+-- before running the normalizer if you want to verify which tables /
 -- columns it covered.
 SELECT json_build_object(
   'schema_version', 2,

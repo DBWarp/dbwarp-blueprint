@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Adversarial tests for the release-archive trust boundary."""
+"""Tests for the release-archive trust boundary."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def fixture_files() -> dict[str, tuple[bytes, int]]:
         "source_ref": "refs/tags/v1.4.0",
         "rust_toolchain": "1.94.0",
         "target": "x86_64-unknown-linux-gnu",
-        "features": [],
+        "features": ["integrated-auth-gssapi"],
         "cargo_lock": "locked",
         "source_date_epoch": 1_788_131_408,
         "native_dependency_compiler": "gcc 15.2.0",
@@ -163,6 +163,14 @@ def source_fixture_files() -> dict[str, tuple[bytes, int]]:
             "licenses/mysql_async/LICENSE-APACHE",
             "licenses/mysql_async/LICENSE-MIT",
             "licenses/mysql_async/MODIFICATIONS.md",
+            "licenses/libgssapi-sys/LICENSE-MIT",
+            "licenses/libgssapi-sys/MODIFICATIONS.md",
+            "licenses/tiberius/LICENSE-APACHE.txt",
+            "licenses/tiberius/LICENSE-MIT.txt",
+            "licenses/tiberius/MODIFICATIONS.md",
+            "licenses/winauth/LICENSE-APACHE",
+            "licenses/winauth/LICENSE-MIT",
+            "licenses/winauth/MODIFICATIONS.md",
         }
     }
     files.update(
@@ -189,6 +197,14 @@ def source_fixture_files() -> dict[str, tuple[bytes, int]]:
             "vendor/mysql_async/LICENSE-APACHE": (b"license\n", 0o644),
             "vendor/mysql_async/LICENSE-MIT": (b"license\n", 0o644),
             "vendor/mysql_async/MODIFICATIONS.md": (b"modifications\n", 0o644),
+            "vendor/libgssapi-sys/LICENSE-MIT": (b"license\n", 0o644),
+            "vendor/libgssapi-sys/MODIFICATIONS.md": (b"modifications\n", 0o644),
+            "vendor/tiberius/LICENSE-APACHE.txt": (b"license\n", 0o644),
+            "vendor/tiberius/LICENSE-MIT.txt": (b"license\n", 0o644),
+            "vendor/tiberius/MODIFICATIONS.md": (b"modifications\n", 0o644),
+            "vendor/winauth/LICENSE-APACHE": (b"license\n", 0o644),
+            "vendor/winauth/LICENSE-MIT": (b"license\n", 0o644),
+            "vendor/winauth/MODIFICATIONS.md": (b"modifications\n", 0o644),
             "vendor-crates/example/Cargo.toml": (b"[package]\n", 0o644),
         }
     )
@@ -231,11 +247,17 @@ class ReleaseArchiveTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls._temporary.cleanup()
 
-    def archive(self, label: str, files: dict[str, tuple[bytes, int]] | None = None) -> Path:
+    def archive(
+        self,
+        label: str,
+        files: dict[str, tuple[bytes, int]] | None = None,
+        *,
+        top: str = TOP,
+    ) -> Path:
         directory = self.root / label
         directory.mkdir()
-        path = directory / f"{TOP}.tar.gz"
-        write_tar(path, files or fixture_files())
+        path = directory / f"{top}.tar.gz"
+        write_tar(path, files or fixture_files(), top=top)
         return path
 
     def test_accepts_internally_consistent_binary_archive(self) -> None:
@@ -293,6 +315,17 @@ class ReleaseArchiveTests(unittest.TestCase):
                 )
                 self.assertIn(f"missing required archive member: {name}", failures)
 
+    def test_readme_logo_images_are_required(self) -> None:
+        for name in (".github/assets/dbwarp-logo-dark.png", ".github/assets/dbwarp-logo-light.png"):
+            with self.subTest(name=name):
+                self.assertIn(name, check_release_archive.COMMON_REQUIRED)
+                files = fixture_files()
+                del files[name]
+                failures = check_release_archive.validate_archive(
+                    self.archive(f"missing-{Path(name).name}", files), "binary", REVISION
+                )
+                self.assertIn(f"missing required archive member: {name}", failures)
+
     def test_rejects_wrong_workflow_revision(self) -> None:
         failures = check_release_archive.validate_archive(
             self.archive("revision"), "binary", "c" * 40
@@ -316,6 +349,40 @@ class ReleaseArchiveTests(unittest.TestCase):
             failures,
         )
 
+    def test_accepts_linux_release_with_lazy_integrated_auth_feature(self) -> None:
+        files = fixture_files()
+        top = "dbwarp-blueprint-linux-x86_64"
+        self.assertEqual(
+            check_release_archive.validate_archive(
+                self.archive("lazy-gssapi", files, top=top), "binary", REVISION
+            ),
+            [],
+        )
+
+    def test_rejects_linux_release_without_integrated_auth_feature(self) -> None:
+        files = fixture_files()
+        provenance = json.loads(files["PROVENANCE.json"][0])
+        provenance["features"] = []
+        files["PROVENANCE.json"] = (json_bytes(provenance), 0o644)
+        top = "dbwarp-blueprint-linux-x86_64"
+        failures = check_release_archive.validate_archive(
+            self.archive("missing-integrated-auth", files, top=top), "binary", REVISION
+        )
+        self.assertTrue(any("features are []" in failure for failure in failures), failures)
+
+    def test_rejects_linux_release_with_unexpected_feature_set(self) -> None:
+        files = fixture_files()
+        provenance = json.loads(files["PROVENANCE.json"][0])
+        provenance["features"] = []
+        files["PROVENANCE.json"] = (json_bytes(provenance), 0o644)
+        failures = check_release_archive.validate_archive(
+            self.archive("wrong-features", files), "binary", REVISION
+        )
+        self.assertTrue(
+            any("features are []" in failure for failure in failures),
+            failures,
+        )
+
     def test_rejects_non_executable_unix_binary(self) -> None:
         files = fixture_files()
         binary, _ = files["dbwarp-blueprint"]
@@ -329,12 +396,22 @@ class ReleaseArchiveTests(unittest.TestCase):
         files = fixture_files()
         del files["verify.sh"]
         del files["sql/grants/postgresql/standard.sql"]
+        del files["sql/grants/oracle-19c/minimum.sql"]
+        del files["sql/capture/oracle-19c/basic.sql"]
         failures = check_release_archive.validate_archive(
             self.archive("operator-files", files), "binary", REVISION
         )
         self.assertIn("missing required archive member: verify.sh", failures)
         self.assertIn(
             "missing required archive member: sql/grants/postgresql/standard.sql",
+            failures,
+        )
+        self.assertIn(
+            "missing required archive member: sql/grants/oracle-19c/minimum.sql",
+            failures,
+        )
+        self.assertIn(
+            "missing required archive member: sql/capture/oracle-19c/basic.sql",
             failures,
         )
 
@@ -364,11 +441,11 @@ class ReleaseArchiveTests(unittest.TestCase):
         for name in missing:
             self.assertIn(f"missing required archive member: {name}", failures)
 
-    def test_rejects_internal_or_unregistered_operator_documents(self) -> None:
+    def test_rejects_unlisted_operator_documents(self) -> None:
         files = fixture_files()
-        files["docs/SYNTHETIC_UNLISTED_DOCUMENT.md"] = (b"internal\n", 0o644)
+        files["docs/SYNTHETIC_UNLISTED_DOCUMENT.md"] = (b"unlisted\n", 0o644)
         files["docs/de/UNREGISTERED.md"] = (b"unregistered translation\n", 0o644)
-        files["sql/grants/INTERNAL-NOTES.md"] = (b"internal\n", 0o644)
+        files["sql/grants/UNLISTED-NOTES.md"] = (b"unlisted\n", 0o644)
         failures = check_release_archive.validate_archive(
             self.archive("operator-allowlist", files), "binary", REVISION
         )
@@ -377,7 +454,7 @@ class ReleaseArchiveTests(unittest.TestCase):
                 "unexpected file in closed operator-document/script subtree" in failure
                 and "docs/SYNTHETIC_UNLISTED_DOCUMENT.md" in failure
                 and "docs/de/UNREGISTERED.md" in failure
-                and "sql/grants/INTERNAL-NOTES.md" in failure
+                and "sql/grants/UNLISTED-NOTES.md" in failure
                 for failure in failures
             ),
             failures,

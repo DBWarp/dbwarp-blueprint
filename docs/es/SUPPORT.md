@@ -32,15 +32,8 @@ cada archivo adjunto antes de compartirlo.
 
 ## Configuraciones admitidas
 
-[STATUS.md](../../STATUS.md) describe las capacidades y la matriz de motores
-validados. [BUILD.md](BUILD.md) describe los requisitos de compilación específicos
-de plataforma y autenticación. Rust está fijado a la versión exacta de
-`rust-toolchain.toml`; el `rust-version` del paquete no promete que todas las
-cadenas de herramientas posteriores estén validadas.
+[STATUS.md](../../STATUS.md) describe las capacidades y las versiones de bases de datos admitidas. [BUILD.md](BUILD.md) describe los requisitos de compilación específicos de la plataforma y la autenticación. Rust está fijado a la versión exacta en `rust-toolchain.toml`; otras herramientas no necesariamente han sido probadas.
 
-Las instrucciones de permisos para servicios administrados no afirman que se
-hayan probado todos los servicios o configuraciones. Utilice los
-[requisitos de permisos](../../sql/grants/DATABASE_PERMISSIONS.md) correspondientes
-y valide la configuración exacta antes de utilizarla en producción.
+Las directrices de permisos para servicios gestionados no son una afirmación de que cada servicio o configuración haya sido probado. Utilice los [requisitos de permisos](../../sql/grants/DATABASE_PERMISSIONS.md) correspondientes y pruebe la configuración exacta antes de su uso en producción.
 
 Para los cambios entre versiones del recopilador, consulte [CHANGELOG.md](CHANGELOG.md).

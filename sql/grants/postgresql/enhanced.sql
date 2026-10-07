@@ -1,5 +1,5 @@
 -- =============================================================================
--- dbwarp-blueprint least-privilege grants — PostgreSQL 13-18
+-- dbwarp-blueprint least-privilege grants: PostgreSQL 13-18
 -- Tier: ENHANCED  (STANDARD + non-table artifact inventory, --artifact-detail analyzed)
 -- =============================================================================
 -- Authorizes this command:
@@ -18,8 +18,8 @@
 -- pg_tablespace, pg_type, pg_attrdef, pg_depend, pg_language) and every
 -- definition function it calls in analyzed mode (pg_get_viewdef,
 -- pg_get_functiondef, pg_get_triggerdef, pg_get_ruledef, pg_get_constraintdef,
--- pg_get_expr) is readable by PUBLIC. Verified live: a CONNECT-only role
--- already saw all of them; only rows and pg_stats needed the grants below.
+-- pg_get_expr) is readable by PUBLIC. A CONNECT-only role can read all of
+-- them; only row samples and pg_stats need the grants below.
 -- --artifact-detail summary/graph/analyzed all require --yes.
 --
 -- Adds to BASIC (same as STANDARD): USAGE on the in-scope schemas and SELECT, so
@@ -31,7 +31,7 @@
 -- Scope rule: make --schema match the edited schema list below. Omitting the
 -- selector retains the broader walk of every visible non-system schema. A
 -- selected table the account cannot read yields DBP1407W and fails the
--- synthetic-copy-ready acceptance gate.
+-- standard-tier acceptance criteria.
 --
 -- PRE-CAPTURE REQUIREMENTS (full engine/tier matrix: ../README.md): complete
 -- STANDARD preparation, keep DDL stable, and approve transient definition
@@ -44,9 +44,9 @@
 -- BYPASSRLS, pg_read_all_stats or pg_monitor privilege. Audit pre-existing role
 -- memberships and PUBLIC ACLs separately; PostgreSQL 13/14 defaults may allow
 -- PUBLIC to create in schema public. Row-level security still applies.
--- Note: "ON ALL TABLES IN SCHEMA" also covers views, materialized views and
--- foreign tables in those schemas (read-only; broader than the literal
--- ordinary-table minimum).
+-- Note: "ON ALL TABLES IN SCHEMA" also covers ordinary views and foreign
+-- tables that Blueprint does not sample (read-only; broader than the literal
+-- ordinary-table/leaf-partition/materialized-view minimum).
 --
 -- Protect any edited copy containing a password; do not commit or share it.
 -- Remove that copy after use according to your secure-disposal policy.
@@ -122,10 +122,10 @@ GRANT CONNECT ON DATABASE :"database" TO :"role";
 -- ---- verification (informational) ------------------------------------------
 \echo
 \echo '--- dbwarp-blueprint ENHANCED tier applied for role' :role 'on database' :database
-\echo '--- ordinary tables per schema and how many the role can SELECT:'
+\echo '--- sampled relations per schema and how many the role can SELECT:'
 SELECT n.nspname AS schema,
        count(*) AS tables,
        count(*) FILTER (WHERE has_table_privilege(:'role', c.oid, 'SELECT')) AS readable
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind = 'r' AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%'
+WHERE c.relkind IN ('r','m') AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%'
 GROUP BY 1 ORDER BY 1;

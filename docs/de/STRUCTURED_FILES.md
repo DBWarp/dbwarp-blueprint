@@ -23,7 +23,7 @@ Dies ist ein Offline-Modus:
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
@@ -53,34 +53,18 @@ als `ratio_zstd_3` ausgegeben.
 
 ```bash
 dbwarp-blueprint \
-  --from-avro /data/customer-sample.avro \
+  --from-avro /data/events.avro \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
 
-Avro-Objektcontainer stellen keine Zeilenanzahl aus einem Parquet-artigen Footer
-bereit. Der Avro-Modus durchläuft daher den Container einmal, um Datensätze zu
-zählen, logische `table_bytes` abzuleiten und `len_avg`, `len_p95` sowie
-`null_fraction` je Spalte zu beobachten. Das Writer-Schema liefert die
-Metadaten der logischen Typen. `storage_bytes` und `ratio_storage` beschreiben
-den Avro-Container, nicht eine DBWarp-Übertragungsschätzung. Dies eignet sich
-für die Estimator- und synthetische Testdatensatzplanung.
+Avro-Objektcontainer stellen keine Zeilenanzahl aus einem Parquet-artigen Footer bereit. Der Avro-Modus durchläuft daher den Container einmal, um Datensätze zu zählen, logische `table_bytes` abzuleiten und `len_avg`, `len_p95` sowie `null_fraction` je Spalte zu beobachten. Das Writer-Schema liefert die Metadaten der logischen Typen. `storage_bytes` und `ratio_storage` beschreiben den Avro-Container, nicht eine DBWarp-Übertragungsschätzung.
 
 ## Treue der logischen Typen
 
-Die Erfassung strukturierter Dateien bewahrt begrenzte logische Metadaten, die
-der Estimator benötigt: Dezimalpräzision und -skalierung, Datums- und
-Zeitfamilien, Zeitstempelpräzision und UTC/lokale Semantik, UUID, feste
-Binärbreite, UTF-8-Zeichenfolgen und Rohbytes. Reine NULL-Felder bleiben
-`type = "null"`, statt in synthetischen Text umgewandelt zu werden.
+Die strukturierte Dateierfassung speichert begrenzte logische Metadaten, die für die Dimensionierung erforderlich sind: Dezimalzahlen precision/scale, Datums- und Zeitformate, Zeitstempelgenauigkeit und UTC/local-Semantik, UUIDs, binäre Daten fester Größe, UTF-8-Strings und rohe Bytes. Felder, die nur Nullwerte enthalten, bleiben `type = "null"` anstatt in synthetischen Text umgewandelt zu werden.
 
-Verschachtelte Parquet-Blätter sowie Avro-Arrays, -Maps, -Datensätze oder
-Unions mit mehreren Typen lassen sich nicht als einzelner exakter SQL-Skalar
-darstellen. Der Blueprint speichert einen normalisierten Typ `json` und
-`source_semantics` wie `"repeated-leaf"`, `"nested-json"` oder
-`"multi-type-union"`. Nachgelagerte Generatoren müssen diese Werte als
-repräsentativen JSON-Lastdruck kennzeichnen und dürfen keine exakte
-Rundreise des verschachtelten Schemas behaupten.
+Verschachtelte Parquet-Elemente und Avro-Arrays, -Maps, -Records oder mehrtypige Unions können nicht als ein einzelner, exakter SQL-Skalar dargestellt werden. Das Blueprint speichert einen normalisierten `json`-Typ plus `source_semantics` wie z.B. `"repeated-leaf"`, `"nested-json"` oder `"multi-type-union"`. Diese Spalten werden als JSON formatiert; das verschachtelte Schema wird nicht exakt reproduziert.
 
 Dateistämme, Parquet-Pfade, Avro-Feldnamen und `logical_table`-Bezeichnungen aus
 einem Batch werden nicht als Blueprint-Bezeichner geschrieben. Ein
@@ -95,7 +79,7 @@ Der Modus für strukturierte Dateien unterstützt eine optionale dekodierte Komp
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --measure-compression --yes \
   --sample-rows 5000 \
   --out blueprint.toml \
@@ -114,20 +98,15 @@ Bei Aktivierung führt `dbwarp-blueprint` Folgendes aus:
 - schreibt `sample_encoding = "blueprint-compression-probe-v2"` in das erzeugte TOML;
 - hält beprobte Bytes ausschließlich im Arbeitsspeicher und schreibt niemals Zeilenwerte auf den Datenträger.
 
-`--measure-compression` erfordert `--yes`, weil dabei dekodierte Kundenwerte
-gelesen werden. Dauerhaft gespeichert werden aggregierte Komprimierungs-,
-NULL-Dichte-, Kardinalitäts-/Häufigkeits-, Längen- und Stilmessungen, niemals
-beprobte Werte.
+`--measure-compression` benötigt `--yes`, da es entschlüsselte Datenwerte liest. Es speichert aggregierte Kompressions-, Null-Dichte-, cardinality/frequency-Werte, Längen und Stile, niemals Stichprobenwerte.
 
-Der derzeitige Sampler verwendet eine deterministische First-N-Stichprobe. Sie ist reproduzierbar und kostengünstig, kann jedoch verzerrt sein, wenn eine Datei sortiert oder geclustert ist. Bevorzugen Sie für risikoreiche Schätzungen eine repräsentative Datei oder erzeugen Sie mehrere Blueprint-Dateien aus verschiedenen Shards. Eine zukünftige Version könnte eine nach Zeilengruppen/Blöcken geschichtete Stichprobennahme ergänzen.
+Der aktuelle Sampler verwendet eine deterministische Stichprobe der ersten N Elemente. Dies ist reproduzierbar und kostengünstig, kann aber verzerrt sein, wenn eine Datei sortiert oder gruppiert ist. Für wichtige Schätzungen ist es besser, eine repräsentative Datei zu verwenden oder mehrere Blueprint-Dateien aus verschiedenen Partitionen zu erstellen.
 
 ## Umfang
 
 Der Blueprint-Modus für strukturierte Dateien eignet sich für:
 
 - die Dimensionierung eines Parquet-/Avro-Imports vor einem DBWarp-Lauf;
-- die Erzeugung eines repräsentativen synthetischen Testdatensatzes, ohne
-  Quellnamen oder Zeilenwerte zu kopieren;
-- die Planung von Abläufen Parquet/Avro -> DBWarp columnar -> Zieldatenbank.
+- die Planung eines Parquet/Avro-Datenbanktransfers.
 
 Er ersetzt keine Blueprint-Erfassung aus einer Live-Datenbank, wenn die tatsächliche Quelle eine unterstützte Datenbank ist, also PostgreSQL, MySQL oder SQL Server. Ein Datenbankkatalog enthält Details zu Indizes, Schlüsseln, Fremdschlüsseln, Aktualität von Statistiken und Engine-Layout, die in generischen Dateimetadaten nicht vorhanden sind.

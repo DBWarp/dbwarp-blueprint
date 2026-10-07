@@ -22,7 +22,7 @@
 ```
 
 無人実行では、`DBWARP_BLUEPRINT_LANG=fr` または標準のプロセスロケールを設定します。
-明示的な `--lang` が常に優先されます。DBP コードと低レベルのプロバイダー詳細は
+明示的な `--lang` が常に優先されます。DBP コードと低レベルのドライバー詳細は
 正規の形式を維持するため、ローカライズされた失敗も検索してサポートと共有できます。
 
 ## レシピ: 内部 CA を使用する PostgreSQL
@@ -58,31 +58,11 @@
   --audit-log mysql-appdb.audit.txt
 ```
 
-性能を代表する合成再構築には、既定の balanced ポリシーを使用します。これは、
-正確な MySQL 宣言/インデックスメタデータと、細かく丸められたサンプル幅を使用します:
+上記のレシピでは、既定のバランスの取れたポリシーがすでに使用されています。具体的には、正確なMySQL declaration/index メタデータと、厳密に丸められたサンプルデータ幅が使用されています。
 
-```bash
-./dbwarp-blueprint \
-  --connect mysql://mysql-primary.internal:3306/appdb \
-  --user-file /etc/dbwarp/mysql-blueprint.user \
-  --password-file /etc/dbwarp/mysql-blueprint.pass \
-  --tls-mode verify-full \
-  --tls-ca /etc/pki/mysql-ca.pem \
-  --measure-compression --yes \
-  --out mysql-appdb.blueprint.toml \
-  --audit-log mysql-appdb.audit.txt
-```
+`declared_length_fidelity = "exact"`、`index_length_fidelity = "exact"`、および`observed_length_fidelity = "relative-rounded-v2"`を確認してください。 `--length-fidelity exact --yes`は、貴組織が正確なサンプルデータの長さの共有を承認した場合にのみ使用してください。 名前と値は引き続き除外されます。
 
-`declared_length_fidelity = "exact"`、
-`index_length_fidelity = "exact"`、および
-`observed_length_fidelity = "relative-rounded-v2"` を確認してください。
-顧客が正確なサンプル長統計の共有を承認した後に限り、
-`--length-fidelity exact --yes` を使用してください。名前と値は引き続き除外されます。
-
-数千のテーブルがある環境では、必要に応じて `--max-wall-secs` を既定の 300 秒より
-大きくしてください。fidelity マーカーはポリシーを証明しますが、後段の
-estimator は、フィクスチャをベンチマーク対応と判定する前に、空でない可変幅の
-すべてのインデックス列について observed average/p95 length を別途要求します。
+数千のテーブルを持つデータベースでは、必要に応じて`--max-wall-secs`を既定値である300秒よりも高く設定してください。フィデリティマーカーはポリシーを記述するものであり、サンプリングがすべてのテーブルに到達したことを示すものではありません。
 
 ## レシピ: SQL Server SQL 認証
 
@@ -110,10 +90,10 @@ SQL Server で証明書を検証する TLS モードは、`--tls-ca` を省略�
 ```bash
 install -d -m 700 "$HOME/.cache/dbwarp-blueprint"
 TOKEN_FILE="$HOME/.cache/dbwarp-blueprint/sql-token"
+install -m 600 /dev/null "$TOKEN_FILE"
 az account get-access-token \
   --resource https://database.windows.net/ \
   --query accessToken -o tsv > "$TOKEN_FILE"
-chmod 600 "$TOKEN_FILE"
 
 ./dbwarp-blueprint \
   --connect sqlserver://sql-primary.database.windows.net,1433/appdb \
@@ -121,11 +101,15 @@ chmod 600 "$TOKEN_FILE"
   --auth-mode entra-token \
   --azure-token-file "$TOKEN_FILE" \
   --tls-mode verify-full \
-  --tls-ca /etc/pki/sqlserver-ca.pem \
   --measure-compression --yes \
   --out mssql-entra.blueprint.toml \
   --audit-log mssql-entra.audit.txt
 ```
+
+Azure SQL はパブリック CA の証明書を提示するため、このレシピでは `--tls-ca` を
+設定せず、オペレーティングシステムのトラストストアを使用します。指定した
+`--tls-ca` ファイルは、そのストアを 1 つの証明書で置き換えます。
+[TLS](TLS.md)を参照してください。
 
 ## レシピ: カタログのみのセキュリティレビュー
 
@@ -141,7 +125,7 @@ chmod 600 "$TOKEN_FILE"
   --yes
 ```
 
-これは、最も手間の少ないレビューモードです。行サンプリングを回避しますが、後段の圧縮とエグレスの推定精度は低下します。
+これは最も負荷の少ないレビューモードです。行のサンプリングは行いませんが、圧縮率やデータ転送量の推定精度は低くなります。
 
 ## レシピ: 非テーブル移行の複雑度を評価する
 
@@ -171,7 +155,7 @@ chmod 600 "$TOKEN_FILE"
 ```
 
 
-`visibility`、3 つの完全性フラグ、`catalogs_unreadable`、`families_not_inventoried`、`counts_by_external_class` を確認してください。各外部クラスを明示的な移行タスクとして扱います。インベントリ済みオブジェクトは DBWarp が再作成または翻訳できる証明ではありません。移行機能マトリクスと比較してください。[`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md)を参照してください。
+`visibility` を確認し、すべての完全性フラグ、`catalogs_unreadable`、`families_not_inventoried`、および `counts_by_external_class` を確認してください。各外部クラスを、明示的な移行タスクとして扱ってください。インベントリに登録されたオブジェクトが、DBWarp がそれを再作成または変換できることの証明であるとはみなさないでください。DBWarp に、移行でサポートされているオブジェクトの種類を問い合わせてください。[`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md) を参照してください。
 
 ## レシピ: RTT プローブを無効にする
 
@@ -206,9 +190,9 @@ RTT プローブは行データを読み取りません。各クエリは定数�
 
 出力で多数のサンプルが biased または missing と記録された場合は、より大きな時間予算を設定し、リードレプリカから再実行してください。
 
-## レシピ: 1 顧客、複数データベース
+## レシピ：1つのパッケージに複数のデータベース。
 
-複数のデータベースについて 1 つのレビューパッケージを顧客が必要とする場合は、バッチマニフェストを使用します。
+複数のデータベースに対して、レビュー可能な1つのパッケージを使用したい場合は、バッチマニフェストを使用してください。
 
 `customer.batch.toml`:
 
@@ -264,9 +248,9 @@ tags = ["warehouse"]
 これにより、`bundle.toml`、ソースごとの子Blueprint 1 つ、およびソースごとの監査 1 つが書き込まれます。
 各子Blueprintは独立してレビューできます。
 
-## レシピ: 1 顧客、データベースとデータレイクファイルの混在
+## レシピ：混合データベースとデータレイクファイル。
 
-顧客がライブデータベースのほかに Parquet または Avro 抽出を持つ場合は、同じバッチ内で構造化ファイルのソースを使用します。
+ParquetまたはAvroの抽出データがある場合、ライブデータベースと一緒に構造化ファイル形式のソースを同じバッチで使用してください。
 
 ```toml
 [defaults]
@@ -285,7 +269,7 @@ tags = ["database"]
 [[source]]
 id = "orders_parquet"
 kind = "parquet"
-paths = ["/mnt/customer/orders/year=*/month=*/*.parquet"]
+paths = ["/data/orders/year=*/month=*/*.parquet"]
 dataset_mode = "partitioned_dataset"
 logical_table = "orders"
 tags = ["lake", "orders"]
@@ -293,12 +277,12 @@ tags = ["lake", "orders"]
 [[source]]
 id = "events_avro"
 kind = "avro"
-paths = ["/mnt/customer/events/*.avro"]
+paths = ["/data/events/*.avro"]
 dataset_mode = "one_table_per_file"
 tags = ["lake", "events"]
 ```
 
-`partitioned_dataset` は現在、`merge_same_schema` と同様にファイルを統合しますが、顧客の意図はバンドル内で確認できるよう保持されます。関連のないスキーマは別々のソースにしてください。
+`partitioned_dataset` は、`merge_same_schema` のようなファイルを結合し、宣言されたモードをバンドルに記録します。 関連性のないスキーマは、別のソースに保持してください。
 
 ## レシピ: バンドルから 1 つのソースまたはテーブルだけを抽出する
 
@@ -326,11 +310,11 @@ tags = ["lake", "events"]
   --out erp_pg_table_042.blueprint.toml
 ```
 
-顧客が環境の一部だけをベンチマーク用に承認する場合、または大規模なバンドルから小規模で対象を絞ったフィクスチャを生成する場合に使用してください。
+この機能は、バンドルの一部のみが共有される場合に利用します。
 
-## レシピ: 個別にレビュー済みのバンドルを引き渡し用にパックする
+## レシピ：レビュー済みのバンドルを共有用にパッケージ化する。
 
-作業用バンドルディレクトリには、子 Blueprint とアクセス制御された監査が含まれます。ディレクトリ全体を転送しないでください。マニフェストの値と子 Blueprint をレビューした後、単一ファイルの引き渡し用ファイルを作成します:
+作業用のバンドルディレクトリには、子Blueprintとアクセス制御された監査が含まれています。これを丸ごと転送しないでください。マニフェストの値と子Blueprintを確認した後、共有するための単一のファイルを作成してください。
 
 ```bash
 ./dbwarp-blueprint \
@@ -340,12 +324,12 @@ tags = ["lake", "events"]
 
 パックされたファイルには、オペレーターが指定したソース ID、タグ、データセットグループ ID、監査パスのメタデータが残ります。匿名の値を使用し、パック済み TOML を検査して、承認済みチャネルだけで転送してください。
 
-## レシピ: バッチ引き渡しパッケージ
+## レシピ：共有用のバッチパッケージ。
 
-[引き渡し方針](QUICKSTART.md#review-and-share)に従ってください。作業用マニフェスト、監査、コマンド記録、レビューメモはローカルに保管し、レビュー済みのパックされた Blueprint だけで別のディレクトリを作成してください。
+[review-and-share]に関する[ガイドライン](QUICKSTART.md#review-and-share)に従ってください。作業中のマニフェスト、監査ログ、およびコマンド記録はローカルに保持し、レビュー済みのパッケージ化されたBlueprintのみを、この別のディレクトリに作成してください。
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   customer-blueprint-bundle.packed.toml
 ```
 
@@ -361,7 +345,7 @@ customer-blueprint-handoff/
 
 ## レシピ: バイト単位で同一の再現性
 
-タイムスタンプを固定し、同じ保護された顧客管理の匿名化キーを再利用します:
+タイムスタンプを固定し、お手元で管理する同じ保護された匿名化キーを再利用します:
 
 ```bash
 ./dbwarp-blueprint \
@@ -374,25 +358,15 @@ customer-blueprint-handoff/
   --yes
 ```
 
-キーファイルは正確に 32 raw byte または 64 文字の 16 進数でなければならず、
-Unix ではグループやその他から読み取り可能にせず、引き渡しに含めてはいけません。
-このオプションがない場合、実行ごとに新しい OS random key が匿名ラベルの順序を
-意図的に変えます。`--generated-at` だけを固定しても不十分です。承認済みの
-フォレンジックスナップショットには完全なレシピを使用してください。同じレビュー済み
-Blueprint から 2 回生成したデッキは、タイムスタンプと言語が同じならバイト単位で
-同一のままです。
+キーファイルは、正確に32バイトの生データ、または64文字の16進数で構成されている必要があります。Unix環境では、group/world-readableであってはならず、決して共有してはなりません。このオプションを指定しない場合、新しいオペレーティングシステム乱数キーが、意図的に毎回匿名ラベルの順序を変更します。`--generated-at`のみを指定しても不十分です。承認されたフォレンジックのスナップショットには、完全な手順を使用してください。同じレビュー済みのBlueprintから2回生成されたデータは、タイムスタンプと言語が変更されない限り、バイト単位で完全に同一になります。
 
-## レシピ: DBWarp への引き渡しパッケージ
+## レシピ：DBWarpで共有するためのパッケージ。
 
-[引き渡し方針](QUICKSTART.md#review-and-share)に従ってください。
+[review-and-share]に関する[ガイドライン](QUICKSTART.md)を参照してください。 既定のパッケージには、承認されたBlueprintのみが含まれています。
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   blueprint.toml
 ```
 
-既定では、レビュー済みの `blueprint.toml` またはパック済みバンドルのみを共有してください。デッキ `blueprint.pptx` は、内容と機密区分を確認し、組織の方針に従って別途承認した場合に限り添付できます。
-
-監査、コマンド記録、レビューメモ、未承認のデッキは、アクセス制御されたローカル証拠として保管してください。これらにはエンドポイント、認証済みの主体、ローカルパス、時間情報、マニフェストの識別子が含まれる場合があります。運用証拠は、特定のサポート上の必要がある場合に限り、承認された安全な経路で送信してください。
-
-ツールは `command-used.redacted.txt` を作成しません。これはオペレーターが任意で作成する記録であり、標準の引き渡し成果物ではありません。パスワードやトークンのファイル、匿名化キー、CA 秘密鍵、顧客データのダンプ、データベースログは絶対に含めないでください。
+`blueprint.pptx` は、別途レビューと承認を行った後でのみ追加してください。監査ログ、コマンド記録、および credential/key に関連する資料は、共有ディレクトリに含めないでください。監査ログは、特定のサポートニーズがある場合に限り、承認された安全なチャネルを通じて送信してください。

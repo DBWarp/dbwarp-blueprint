@@ -1,5 +1,5 @@
 -- =============================================================================
--- DBWarp Blueprint collector-login removal — SQL Server 2022 / 2025
+-- DBWarp Blueprint collector-login removal: SQL Server 2022 / 2025
 -- =============================================================================
 -- Run in SQLCMD mode as a sysadmin. EDIT the login and database values below
 -- to match the grant scripts exactly. The script removes the dedicated users

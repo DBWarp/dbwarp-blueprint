@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# verify.sh — compare a shipped release binary's sha256 against the binary
+# verify.sh: compare a shipped release binary's sha256 against the binary
 # this repo produced. This compares bytes, not semantic equivalence or source
 # authenticity; reproducing release bytes requires the full release inputs.
 #
@@ -37,14 +37,14 @@ if [[ ! -f "$RELEASE_BIN" ]]; then
   exit 1
 fi
 if [[ ! -f "$SOURCE_BIN" ]]; then
-  echo "verify.sh: source build not found at $SOURCE_BIN — run ./build.sh first" >&2
+  echo "verify.sh: source build not found at $SOURCE_BIN: run ./build.sh first" >&2
   exit 1
 fi
 
 echo "verify.sh: This is a byte-identity check, not a functional-equivalence test."
 echo "verify.sh: DIFFER is expected unless the full release build inputs were"
 echo "verify.sh: reproduced. A normal ./build.sh alone does not establish that."
-echo "verify.sh: CI checks two builds on the same runner; it does not establish"
+echo "verify.sh: The release workflow builds twice on one machine; this does not establish"
 echo "verify.sh: cross-machine reproducibility. See BUILD.md: Reproducing a release binary."
 echo
 
@@ -59,12 +59,12 @@ echo "    sha256: $SOURCE_SHA"
 echo
 
 if [[ "$RELEASE_SHA" == "$SOURCE_SHA" ]]; then
-  echo "verify.sh: MATCH — the released binary is bit-identical to the binary"
+  echo "verify.sh: MATCH: the released binary is bit-identical to the binary"
   echo "verify.sh: built from this source."
   exit 0
 fi
 
-echo "verify.sh: DIFFER — sha256 differs between release and source build."
+echo "verify.sh: DIFFER: sha256 differs between release and source build."
 echo "verify.sh:"
 echo "verify.sh: Byte identity was not established. This result alone neither"
 echo "verify.sh: proves tampering nor establishes functional equivalence. Confirm the"

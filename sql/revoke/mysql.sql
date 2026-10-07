@@ -1,5 +1,5 @@
 -- =============================================================================
--- DBWarp Blueprint collector-account removal — MySQL 8.0 / 8.4 / 9.7
+-- DBWarp Blueprint collector-account removal: MySQL 8.0 / 8.4 / 9.7
 -- =============================================================================
 -- Run as an account with CREATE USER authority after the approved capture.
 -- EDIT each host pattern to match the corresponding grant script exactly.

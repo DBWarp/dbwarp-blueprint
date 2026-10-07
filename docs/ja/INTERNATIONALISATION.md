@@ -80,7 +80,7 @@ Blueprint のフィールドを変更しません。言語をまたいでバイ�
 すべてのカタログはバイナリにコンパイルされています。起動時に、プログラムは
 広告する英語以外のすべての locale が次を正確に網羅することを検証します:
 
-- 現在の live Clap help tree
+- すべてのヘルプ項目。
 - すべての安定した DBP code と、3 つすべての diagnostic field
 - すべての安定した prompt、progress、warning、deck key
 - すべての必須 placeholder と保護された operational token

@@ -35,7 +35,74 @@ struct Deck<'a> {
     total_indexes: u64,
     schemas: usize,
     compression: Option<CompressionSummary<'a>>,
+    artifact_inventory: Option<&'a ArtifactInventory>,
+    complexity: Option<&'a ArtifactComplexity>,
     fk: Option<(&'a str, &'a str, u32)>,
+}
+
+#[derive(Clone, Copy)]
+struct ArtifactGroupSummary {
+    label_key: &'static str,
+    definition_key: &'static str,
+    count: u64,
+}
+
+const ARTIFACT_GROUPS: [(&str, &str); 6] = [
+    (
+        "deck.artifacts.group.query_layers",
+        "deck.artifacts.group.query_layers.definition",
+    ),
+    (
+        "deck.artifacts.group.executable_logic",
+        "deck.artifacts.group.executable_logic.definition",
+    ),
+    (
+        "deck.artifacts.group.automatic_behaviour",
+        "deck.artifacts.group.automatic_behaviour.definition",
+    ),
+    (
+        "deck.artifacts.group.types_generators",
+        "deck.artifacts.group.types_generators.definition",
+    ),
+    (
+        "deck.artifacts.group.external_dependencies",
+        "deck.artifacts.group.external_dependencies.definition",
+    ),
+    (
+        "deck.artifacts.group.platform_configuration",
+        "deck.artifacts.group.platform_configuration.definition",
+    ),
+];
+
+fn artifact_group_index(kind: &str) -> usize {
+    match kind {
+        "view" | "materialized_view" | "synonym" => 0,
+        "function" | "procedure" | "package" | "aggregate" | "operator" | "java" => 1,
+        "trigger" | "event_trigger" | "rule" | "policy" | "default" => 2,
+        "type" | "domain" | "sequence" | "annotation" | "property_graph" => 3,
+        "foreign_server" | "external_table" | "database_link" | "library" | "directory"
+        | "assembly" | "queue" | "publication" | "subscription" => 4,
+        _ => 5,
+    }
+}
+
+fn artifact_group_summaries(inventory: &ArtifactInventory) -> Vec<ArtifactGroupSummary> {
+    let mut counts = [0_u64; ARTIFACT_GROUPS.len()];
+    for (kind, count) in &inventory.counts_by_kind {
+        let index = artifact_group_index(kind);
+        counts[index] = counts[index].saturating_add(*count);
+    }
+    ARTIFACT_GROUPS
+        .iter()
+        .zip(counts)
+        .map(
+            |((label_key, definition_key), count)| ArtifactGroupSummary {
+                label_key,
+                definition_key,
+                count,
+            },
+        )
+        .collect()
 }
 
 fn cols_in_order(t: &BlueprintTable) -> Vec<&crate::format::BlueprintColumn> {
@@ -171,6 +238,8 @@ fn analyze(blueprint: &BlueprintFile) -> Deck<'_> {
         };
 
     let fk = edges.first().map(|(f, t, c)| (*f, *t, *c));
+    let artifact_inventory = blueprint.artifact_inventory.as_ref();
+    let complexity = artifact_inventory.and_then(|inventory| inventory.complexity.as_ref());
 
     Deck {
         name: engine_name(&blueprint.engine),
@@ -190,6 +259,8 @@ fn analyze(blueprint: &BlueprintFile) -> Deck<'_> {
         total_indexes,
         schemas: schema_set.len(),
         compression,
+        artifact_inventory,
+        complexity,
         fk,
     }
 }

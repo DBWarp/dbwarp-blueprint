@@ -11,8 +11,13 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("dbwarp-blueprint-{name}-{nonce}"));
+    // A cross-compiled Windows test binary must not retain the Unix build
+    // host's CARGO_TARGET_TMPDIR as its runtime scratch directory.
+    #[cfg(windows)]
+    let test_root = std::env::temp_dir();
+    #[cfg(not(windows))]
+    let test_root = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    let dir = test_root.join(format!("dbwarp-blueprint-{name}-{nonce}"));
     fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -719,4 +724,337 @@ fn pg_partial_sampling_warning_cannot_accept_source_identifiers_or_driver_errors
     assert!(!warning.contains("qname"));
     assert!(!warning.contains("fallback_error"));
     assert!(!warning.contains("schema_name"));
+}
+
+#[test]
+fn sqlserver_row_security_visibility_warning_is_stable_and_identifier_safe() {
+    let source = include_str!("../src/engine_mssql.rs");
+    let warning = source
+        .split("fn warn_security_policy_visibility_unavailable(")
+        .nth(1)
+        .unwrap()
+        .split("fn mssql_row_scope_intrinsically_incomplete(")
+        .next()
+        .unwrap();
+    assert!(warning.contains("DBP1424W"));
+    assert!(warning.contains("table_id"));
+    assert!(!warning.contains("schema_name"));
+    assert!(!warning.contains("table_name"));
+    assert!(include_str!("../docs/MESSAGES.md").contains("`DBP1424W`"));
+}
+
+#[test]
+fn sqlserver_active_row_security_warning_is_stable_and_identifier_safe() {
+    let source = include_str!("../src/engine_mssql.rs");
+    let warning = source
+        .split("fn warn_active_security_filter(")
+        .nth(1)
+        .unwrap()
+        .split("fn mssql_row_scope_intrinsically_incomplete(")
+        .next()
+        .unwrap();
+    assert!(warning.contains("DBP1425W"));
+    assert!(warning.contains("table_id"));
+    assert!(!warning.contains("schema_name"));
+    assert!(!warning.contains("table_name"));
+    assert!(include_str!("../docs/MESSAGES.md").contains("`DBP1425W`"));
+}
+
+#[test]
+fn oracle_preview_requires_explicit_acknowledgement_before_local_inputs() {
+    assert_primary_code(
+        "Oracle preview acknowledgement",
+        vec![
+            "--connect".into(),
+            "oracle://db.example:1521/APPPDB".into(),
+            "--dry-run".into(),
+        ],
+        &[],
+        "DBP1426E",
+    );
+    assert_primary_code(
+        "Oracle offline preview acknowledgement",
+        vec![
+            "--from-oracle-basic".into(),
+            "must-not-be-opened.capture".into(),
+        ],
+        &[],
+        "DBP1426E",
+    );
+    assert_primary_code(
+        "Oracle DBA script preview acknowledgement",
+        vec![
+            "--oracle-basic-script-out".into(),
+            "must-not-be-written.sql".into(),
+            "--oracle-basic-script-family".into(),
+            "21c".into(),
+        ],
+        &[],
+        "DBP1426E",
+    );
+}
+
+#[test]
+fn oracle_dba_script_renderer_rejects_irrelevant_blueprint_controls() {
+    let dir = temp_dir("oracle-script-irrelevant-options");
+    let output_path = dir.join("must-not-be-written.sql");
+    let output = run(
+        &[
+            "--oracle-basic-script-out".into(),
+            output_path.display().to_string(),
+            "--oracle-basic-script-family".into(),
+            "21c".into(),
+            "--acknowledge-oracle-preview".into(),
+            "--generated-at".into(),
+            "2026-09-28T00:00:00Z".into(),
+        ],
+        &[],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(first_message_code(&stderr), Some("DBP1426E"));
+    assert!(stderr.contains("do not apply to Oracle DBA script rendering"));
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn oracle_live_preview_uses_plain_tcp_and_rejects_any_explicit_tls_mode() {
+    for mode in ["disable", "verify-full"] {
+        let output = run(
+            &[
+                "--connect".into(),
+                "oracle://db.example:1521/APPPDB".into(),
+                "--acknowledge-oracle-preview".into(),
+                "--tls-mode".into(),
+                mode.into(),
+                "--dry-run".into(),
+            ],
+            &[],
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(first_message_code(&stderr), Some("DBP1426E"));
+        assert!(stderr.contains("--tls-mode is not available"), "{stderr}");
+    }
+}
+
+#[test]
+fn oracle_dry_run_preflight_discloses_plain_transport_and_credential_scope() {
+    #[cfg(windows)]
+    let (sqlplus, network_dir) = (r"C:\not-opened\sqlplus.exe", r"C:\not-opened\network");
+    #[cfg(not(windows))]
+    let (sqlplus, network_dir) = ("/not-opened/sqlplus", "/not-opened/network");
+    let output = Command::new(bin())
+        .args([
+            "--connect",
+            "oracle://db.example:1521/APPPDB",
+            "--acknowledge-oracle-preview",
+            "--oracle-sqlplus",
+            sqlplus,
+            "--oracle-network-config-dir",
+            network_dir,
+            "--user",
+            "APP",
+            "--schema",
+            "APP",
+            "--dry-run",
+        ])
+        .env_remove("DBWARP_BLUEPRINT_LANG")
+        .env_remove("LC_ALL")
+        .env_remove("LC_MESSAGES")
+        .env("LANG", "C")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for expected in [
+        "oracle://db.example:1521/APPPDB",
+        "db.example:1521",
+        "APP",
+        "disable (plain TCP)",
+        "password",
+    ] {
+        assert!(stderr.contains(expected), "missing {expected:?}:\n{stderr}");
+    }
+}
+
+#[test]
+fn oracle_uri_userinfo_is_refused_without_disclosing_it() {
+    let canary = "oracle-user-canary";
+    let output = run(
+        &[
+            "--connect".into(),
+            format!("oracle://{canary}@db.example:1521/APPPDB"),
+            "--acknowledge-oracle-preview".into(),
+            "--dry-run".into(),
+        ],
+        &[],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(first_message_code(&stderr), Some("DBP1001E"));
+    assert!(!stderr.contains(canary), "stderr disclosed Oracle userinfo");
+}
+
+#[test]
+fn malformed_oracle_offline_stream_has_a_specific_identifier_safe_error() {
+    let dir = temp_dir("oracle-offline-malformed");
+    let stream = dir.join("capture.json");
+    let audit = dir.join("capture.audit.txt");
+    let canary = "native-owner-canary-must-not-escape";
+    fs::write(
+        &stream,
+        format!(
+            "{{\"contract\":\"dbwarp-blueprint-oracle-basic-capture/v1\",\"stream_version\":\"{canary}\"}}\n"
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stream, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let output = run(
+        &[
+            "--from-oracle-basic".into(),
+            stream.display().to_string(),
+            "--acknowledge-oracle-preview".into(),
+            "--audit-log".into(),
+            audit.display().to_string(),
+        ],
+        &[],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let audit_body = fs::read_to_string(audit).unwrap();
+    assert_eq!(first_message_code(&stderr), Some("DBP1505E"));
+    assert!(!stderr.contains("DBP1429W"));
+    assert!(!stderr.contains(canary));
+    assert!(!audit_body.contains(canary));
+    let operator_message = stderr
+        .split("=== dbwarp-blueprint audit ===")
+        .next()
+        .unwrap();
+    assert_eq!(operator_message.matches("DBP1505E").count(), 1, "{stderr}");
+}
+
+#[cfg(unix)]
+#[test]
+fn oracle_offline_stream_refuses_group_or_other_read_access() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = temp_dir("oracle-offline-permissions");
+    let stream = dir.join("capture.json");
+    fs::write(&stream, b"{}\n").unwrap();
+    fs::set_permissions(&stream, fs::Permissions::from_mode(0o644)).unwrap();
+    let output = run(
+        &[
+            "--from-oracle-basic".into(),
+            stream.display().to_string(),
+            "--acknowledge-oracle-preview".into(),
+        ],
+        &[],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(first_message_code(&stderr), Some("DBP1505E"));
+    assert!(stderr.contains("mode 0600"));
+}
+
+#[test]
+fn oracle_offline_stream_cannot_overwrite_its_own_input() {
+    let dir = temp_dir("oracle-offline-self-overwrite");
+    let stream = dir.join("capture.json");
+    fs::write(&stream, b"{}\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stream, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let output = run(
+        &[
+            "--from-oracle-basic".into(),
+            stream.display().to_string(),
+            "--acknowledge-oracle-preview".into(),
+            "--out".into(),
+            stream.display().to_string(),
+        ],
+        &[],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(first_message_code(&stderr), Some("DBP1505E"));
+    assert!(stderr.contains("must not share --out"));
+    assert_eq!(fs::read(&stream).unwrap(), b"{}\n");
+}
+
+#[test]
+fn oracle_preview_flags_are_not_silently_ignored_by_other_engines() {
+    let output = run(
+        &[
+            "--connect".into(),
+            "postgresql://localhost/example".into(),
+            "--acknowledge-oracle-preview".into(),
+            "--dry-run".into(),
+        ],
+        &[],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(first_message_code(&stderr), Some("DBP1011E"));
+    assert!(!stderr.contains("connection refused"));
+
+    let offline = run(
+        &[
+            "--from-toml".into(),
+            "must-not-be-opened.toml".into(),
+            "--deck".into(),
+            "must-not-be-written.pptx".into(),
+            "--acknowledge-oracle-preview".into(),
+        ],
+        &[],
+    );
+    let offline_stderr = String::from_utf8_lossy(&offline.stderr);
+    assert_eq!(first_message_code(&offline_stderr), Some("DBP1011E"));
+    assert!(!offline_stderr.contains("must-not-be-opened"));
+
+    let batch = run(
+        &[
+            "--batch-manifest".into(),
+            "must-not-be-opened.json".into(),
+            "--acknowledge-oracle-preview".into(),
+        ],
+        &[],
+    );
+    let batch_stderr = String::from_utf8_lossy(&batch.stderr);
+    assert_eq!(first_message_code(&batch_stderr), Some("DBP1011E"));
+    assert!(batch_stderr.contains("standalone-only"));
+    assert!(!batch_stderr.contains("rerun with --acknowledge-oracle-preview"));
+}
+
+#[test]
+fn oracle_optional_stream_failure_warning_is_stable_and_identifier_safe() {
+    let source = include_str!("../src/app_oracle.rs");
+    let live = source
+        .split("pub(super) fn run_oracle_live(")
+        .nth(1)
+        .unwrap()
+        .split("pub(super) fn run_oracle_offline(")
+        .next()
+        .unwrap();
+    let publication = live
+        .find("publish_oracle_blueprint(cli, audit, blueprint)?")
+        .expect("live Oracle path must publish its Blueprint");
+    let stream = live
+        .find("write_oracle_basic_stream(")
+        .expect("live Oracle path must attempt the optional stream");
+    assert!(publication < stream);
+    let warning = source
+        .split("fn record_optional_oracle_stream(")
+        .nth(1)
+        .unwrap()
+        .split("#[cfg(unix)]")
+        .next()
+        .unwrap();
+    assert!(warning.contains("DBP1430W"));
+    assert!(warning.contains("redacted_oracle_stream_write_failure(&error)"));
+    assert!(!warning.contains("error.to_string()"));
+    assert!(include_str!("../docs/MESSAGES.md").contains("`DBP1430W`"));
 }

@@ -1,5 +1,5 @@
 -- =============================================================================
--- dbwarp-blueprint least-privilege grants — SQL Server 2022 / 2025 (16.x, 17.x)
+-- dbwarp-blueprint least-privilege grants: SQL Server 2022 / 2025 (16.x, 17.x)
 -- Tier: BASIC
 -- =============================================================================
 -- Authorizes this command:
@@ -8,11 +8,21 @@
 --       --password-file /etc/dbwarp/db.pass --artifact-detail none \
 --       --out blueprint.toml --audit-log blueprint.audit.txt
 --
--- BASIC = catalog walk only; no customer row can be read.
--- Reads: SERVERPROPERTY, sys.tables, sys.dm_db_partition_stats, sys.columns,
--- sys.types, sys.indexes, sys.index_columns, sys.foreign_keys,
--- sys.foreign_key_columns. (Verified: full table/column/index/FK metadata and
--- partition stats visible; SELECT TOP 5 on a table denied.)
+-- BASIC = catalog walk only; this script grants no table-row access.
+-- Other role memberships can still give the account more; audit them
+-- separately.
+-- Reads: SERVERPROPERTY, sys.tables, sys.external_tables,
+-- sys.dm_db_partition_stats, sys.partition_schemes, sys.check_constraints,
+-- sys.columns, sys.types, sys.indexes, sys.index_columns, sys.foreign_keys,
+-- sys.foreign_key_columns. Basic does not request the capacity DMV; capacity
+-- is recorded as not requested.
+-- Every capture also reads SERVERPROPERTY('IsHadrEnabled'); only when HADR is
+-- enabled does it count rows in sys.dm_hadr_database_replica_states and
+-- sys.dm_hadr_availability_replica_states. Those views need VIEW SERVER STATE
+-- or VIEW SERVER PERFORMANCE STATE, which this script does not grant, so
+-- availability-group topology is normally recorded as unknown.
+-- (Full table, column, index and FK metadata and partition statistics are
+-- visible; SELECT on a table is denied.)
 --
 -- PRE-CAPTURE REQUIREMENTS (full engine/tier matrix: ../README.md): keep DDL
 -- and partition maintenance stable; record the selected schema and expected
@@ -22,6 +32,7 @@
 -- an unresolved selector fails with DBP1420E.
 --
 -- NOT granted: SELECT on any object, db_datareader, VIEW SERVER STATE,
+-- VIEW SERVER PERFORMANCE STATE,
 -- VIEW ANY DEFINITION, CONTROL, IMPERSONATE, ALTER, sysadmin, db_owner.
 -- Common to every tier:
 --   VIEW DEFINITION  makes the database's object metadata visible. Catalog

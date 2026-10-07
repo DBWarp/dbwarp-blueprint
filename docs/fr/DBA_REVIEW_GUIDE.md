@@ -26,7 +26,7 @@ Propriétés recommandées :
 - accès en lecture limité à la base de données évaluée ;
 - mot de passe ou jeton fourni par fichier ou invite, et non intégré à l'URI.
 
-Les autorisations exactes varient selon le moteur et la politique du client. Si le compte ne peut pas lire certaines vues du catalogue ou échantillonner certaines tables, l'outil doit échouer clairement ou produire un Blueprint réduit ; conservez le journal d'audit.
+Les permissions exactes varient en fonction du moteur et de votre politique. Si le compte ne peut pas lire certaines vues du catalogue ou échantillonner certaines tables, l'outil échoue clairement ou génère un Blueprint réduit ; conservez le journal d'audit.
 
 Utilisez les scripts tenant compte des versions et les réserves décrites dans
 [`../../sql/grants/README.md`](../../sql/grants/README.md). Après la capture
@@ -47,20 +47,47 @@ Il lit :
 - les familles de types des colonnes, leur nullabilité et, lorsqu'elles sont disponibles, les statistiques de longueur arrondies ;
 - le type d'index, son unicité et les ordinaux anonymisés des colonnes ;
 - la structure du graphe des clés étrangères lorsqu'elle est disponible ;
+- les bandes approximatives de capacité de la source renvoyées, dans la mesure du possible, par le point de terminaison de la base ;
 - des comptages bornés d'objets hors tables et de prérequis externes provenant
   des catalogues d'objets avec la valeur par défaut
   `--artifact-detail summary` (aucune définition) ;
-- une sonde RTT facultative côté client, sauf si `--no-rtt-probe` est défini.
+- sonde RTT facultative, sauf si `--no-rtt-probe` est activé.
 
 Il ne lit pas les valeurs des lignes.
 
+## Environnement source
+
+Le bloc `[source_environment]` du schéma v7 est dérivé uniquement des valeurs
+renvoyées par la connexion à la base sélectionnée. Le collecteur n’inspecte
+jamais son propre hôte et ne présente pas ce poste de travail comme le serveur
+de base de données.
+
+PostgreSQL et MySQL exposent un paramètre de tampon de base de données en dessous des droits minimaux habituels, de sorte que la mémoire constitue une preuve partielle, avec pour base `database-buffer-cache`, et l'utilisation du processeur reste inconnue.
+
+SQL Server requiert uniquement une capacité d'environnement source avec `--artifact-detail graph` ou `analyzed`, les modes de niveau supérieur. Les modes de base et standard n'effectuent pas de requête de capacité du système d'exploitation et enregistrent les plages de capacité comme `not-requested`.
+
+Le script amélioré accorde les `VIEW SERVER STATE` (2019) ou `VIEW SERVER PERFORMANCE STATE` (2022/2025) requis à l'échelle du serveur, dans un lot distinct que l'administrateur de base de données peut supprimer. Si une capture améliorée ne peut pas lire la DMV, la capture continue et enregistre le catalogue comme étant illisible, plutôt que d'utiliser des valeurs locales ou d'inventer des capacités.
+
+Ce chemin de capture ne contacte aucune API de cloud, Kubernetes, hyperviseur
+ou système d’exploitation.
+
 ## Inventaire des artefacts hors tables
 
-Depuis le schéma v4, les Blueprints inventorient les objets hors tables indépendamment de l'échantillonnage des lignes. Par défaut, `--artifact-detail summary` lit les catalogues d'objets mais pas les définitions, et n'émet que des comptages bornés et des classes de prérequis externes.
+Les blueprints inventorient les objets non tabulaires indépendamment de l'échantillonnage des lignes. Par défaut, `--artifact-detail summary` lit les catalogues d'objets mais pas les définitions, et ne génère que des décomptes limités et des classes de prérequis externes.
 
 `--artifact-detail graph --yes` ajoute des identifiants d'objets anonymes et des arêtes de dépendance. `--artifact-detail analyzed --yes` lit aussi transitoirement les définitions disponibles et n'émet que des bandes lexicales bornées de caractéristiques et de complexité. Le texte des définitions, les noms d'objets source, les points de terminaison, les chaînes de fournisseur, les principaux, les secrets, les clés, les certificats, les noms de paquets et les binaires ne sont jamais sérialisés.
 
-Les privilèges de catalogue conditionnent les affirmations d'absence. Examinez `visibility`, `inventory_complete`, `dependencies_complete`, `catalogs_unreadable` et `families_not_inventoried` ; un compte nul n'est pas une preuve si ces champs signalent une lacune. `DBP1410W` indique qu'un catalogue d'artefacts facultatif n'a pas pu être lu.
+Les privilèges de catalogue conditionnent les affirmations d’absence. Examinez
+`visibility`, `inventory_complete`, `dependencies_complete`,
+`requirements_complete`, `catalogs_unreadable` et `families_not_inventoried` ;
+un compte nul ou une liste d’exigences vide n’est pas une preuve si ces champs
+signalent une lacune. Aux niveaux graph/analyzed, examinez aussi le
+`requirement_status` de chaque objet : seul `complete` transforme une liste
+vide en preuve de zéro exigence pour cet objet. `partial` conserve les faits
+connus sans revendiquer une couverture exhaustive ; `unavailable` signifie
+qu’aucune couverture exploitable n’a été établie. Dans les deux cas,
+l’évaluation du couplage dérivée des exigences de cet objet reste inconnue.
+`DBP1410W` indique qu’un catalogue d’artefacts facultatif n’a pas pu être lu.
 
 Une topologie de dépendances anonyme peut néanmoins identifier une application. N'approuvez `graph` ou `analyzed` que si ce risque est acceptable. Consultez [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
 
@@ -72,11 +99,7 @@ Le Tier 2 n'est activé que par la paire explicite :
 --measure-compression --yes
 ```
 
-Le Tier 2 lit en outre en mémoire du processus des échantillons de lignes de
-taille limitée. Les octets échantillonnés sont encodés dans un tampon interne
-de trames de lignes et servent à dériver des mesures agrégées de compression,
-de densité NULL, de cardinalité/fréquence, de longueur et de style, avant la
-suppression des valeurs et des empreintes temporaires.
+Le niveau 2 lit également des échantillons de lignes limités en mémoire du processus. Les octets échantillonnés sont encodés dans un tampon en mémoire et utilisés pour dériver des mesures d'agrégation, de densité de valeurs nulles, cardinality/frequency, de longueur et de style, avant que les valeurs et les empreintes digitales temporaires ne soient supprimées.
 
 Les octets échantillonnés ne sont :
 
@@ -86,7 +109,7 @@ Les octets échantillonnés ne sont :
 - ni envoyés sur un réseau autre que celui de la connexion à la base de données ;
 - ni conservés après la synthèse de l'échantillon.
 
-Le Tier 2 est utile, car les performances de DBWarp et le coût de sortie réseau dépendent des octets compressés, et non des octets bruts des tables.
+Le niveau 2 est précieux car le temps de transfert et le coût de sortie dépendent des octets compressés, et non des octets bruts de la table.
 
 ## Sonde RTT
 
@@ -140,7 +163,7 @@ survient, ce répertoire est supprimé ou le bundle précédent est restauré.
 
 Avant de partager `blueprint.toml`, vérifiez que :
 
-- l'en-tête est l'en-tête fixe `dbwarp-blueprint v6` ;
+- l'en-tête est l'en-tête fixe `dbwarp-blueprint v7` ;
 - les identifiants de table ressemblent à `table-001` ;
 - les identifiants de colonne ressemblent à `col-1` ;
 - les identifiants de schéma ressemblent à `schema-A` ;
@@ -156,20 +179,9 @@ Avant de partager `blueprint.toml`, vérifiez que :
   échantillonnées.
 - les champs de complétude des artefacts déclarent la visibilité filtrée, les catalogues illisibles et les familles connues non modélisées.
 
-La sortie MySQL équilibrée par défaut contient les capacités déclarées et les
-longueurs de préfixe d'index exactes, ainsi que les échantillons moyen/p95
-arrondis de manière relative. Vérifiez explicitement les trois marqueurs de
-fidélité. Si `--length-fidelity exact --yes` a été utilisé, approuvez également
-les statistiques échantillonnées exactes. Les valeurs de ligne et les noms
-réels d'objets doivent toujours être absents. Des marqueurs de fidélité absents
-indiquent des métadonnées historiques/inconnues et ne doivent pas être
-considérés comme prêts pour un benchmark.
+La sortie équilibrée par défaut MySQL contient les capacités déclarées exactes et les longueurs de préfixe d'index, ainsi que des échantillons moyens/p95 relativement arrondis. Examinez attentivement les trois indicateurs de fidélité. Si `--length-fidelity exact --yes` a été utilisé, approuvez également les statistiques échantillonnées exactes. Les valeurs des lignes et les noms réels des objets doivent toujours être absents. Un Blueprint sans indicateurs de fidélité a été produit par une version plus ancienne ; il faut le recréer.
 
-Le marqueur n'affirme pas que l'échantillonnage a couvert chaque table. Une
-transmission destinée à un benchmark doit également indiquer zéro colonne
-indexée non vide de largeur variable non échantillonnée dans le manifeste de
-l'estimateur ; augmentez `--max-wall-secs` et recommencez la capture si cette
-condition échoue.
+Le marqueur n'indique pas que l'échantillonnage a couvert toutes les tables. Si `DBP1406W` est signalé, augmentez `--max-wall-secs` et réessayez.
 
 ## Sécurité opérationnelle
 

@@ -1,5 +1,5 @@
 # DBWarp Blueprint schema-v6 illustrative sampled example.
-# Hand-authored synthetic metadata and aggregates, not measured qualification.
+# Hand-authored synthetic metadata and aggregates, not a real measurement.
 # Sample values and their temporary fingerprints are not included.
 
 schema_version = 6

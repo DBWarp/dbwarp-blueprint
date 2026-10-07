@@ -46,6 +46,15 @@ struct SlideB {
     shapes: Vec<String>,
     bg: Option<&'static str>,
     id: u32,
+    notes: Vec<NoteParagraph>,
+}
+
+fn east_asian_typeface(locale: Locale) -> &'static str {
+    match locale {
+        Locale::Ja => "Yu Gothic",
+        Locale::Zh => "Microsoft YaHei",
+        _ => "",
+    }
 }
 
 impl SlideB {
@@ -54,6 +63,7 @@ impl SlideB {
             shapes: Vec::new(),
             bg,
             id: 1,
+            notes: Vec::new(),
         }
     }
 
@@ -135,20 +145,28 @@ impl SlideB {
             };
             let mut runs = String::new();
             for rn in &pa.runs {
+                let locale = crate::i18n::active_locale();
                 let spc = if rn.spc != 0 {
                     format!(" spc=\"{}\"", rn.spc)
                 } else {
                     String::new()
                 };
+                let east_asian_typeface = east_asian_typeface(locale);
+                let east_asian_font = if east_asian_typeface.is_empty() {
+                    String::new()
+                } else {
+                    format!("<a:ea typeface=\"{}\"/>", east_asian_typeface)
+                };
                 runs.push_str(&format!(
-                    "<a:r><a:rPr lang=\"{}\" sz=\"{}\" b=\"{}\" i=\"{}\"{}><a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill><a:latin typeface=\"{}\"/></a:rPr><a:t>{}</a:t></a:r>",
-                    crate::i18n::active_locale().bcp47(),
+                    "<a:r><a:rPr lang=\"{}\" sz=\"{}\" b=\"{}\" i=\"{}\"{}><a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill><a:latin typeface=\"{}\"/>{}</a:rPr><a:t>{}</a:t></a:r>",
+                    locale.bcp47(),
                     rn.sz,
                     if rn.b { 1 } else { 0 },
                     if rn.i { 1 } else { 0 },
                     spc,
                     rn.color,
                     rn.face,
+                    east_asian_font,
                     esc(&rn.t)
                 ));
             }

@@ -1,4 +1,4 @@
-# Build artifacts (NOT vendor — that's intentionally committed for audit).
+# Build artifacts (NOT vendor; that is intentionally committed for audit).
 /target/
 /target-*/
 /build/
@@ -11,14 +11,9 @@ __pycache__/
 .vscode/
 *.swp
 
-CODEX_*.md
-
 # Test scratch.
 /tmp/
-/artifact-publish/
 /test-output/
-
-# Keep release/ if/when populated with checked-in releases (none today).
 
 # Generated decks (regenerate with `dbwarp-blueprint --deck` or `--from-toml ... --deck`).
 *.pptx

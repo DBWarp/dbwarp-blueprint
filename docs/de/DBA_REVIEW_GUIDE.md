@@ -26,7 +26,7 @@ Empfohlene Eigenschaften:
 - Lesezugriff ist auf die zu prüfende Datenbank begrenzt;
 - Passwort oder Token wird per Datei oder Eingabeaufforderung bereitgestellt und nicht in die URI eingebettet.
 
-Die genauen Berechtigungen unterscheiden sich je nach Engine und Kundenrichtlinie. Wenn das Konto einige Katalogansichten nicht lesen oder aus einigen Tabellen keine Stichprobe nehmen kann, sollte das Werkzeug mit einer klaren Meldung fehlschlagen oder einen reduzierten Blueprint ausgeben; bewahren Sie das Auditprotokoll auf.
+Die genauen Berechtigungen variieren je nach Datenbank-Engine und Ihrer Richtlinie. Wenn das Konto einige Katalogansichten nicht lesen oder einige Tabellen nicht abfragen kann, schlägt das Tool deutlich fehl oder erzeugt eine reduzierte Blueprint; behalten Sie das Audit-Protokoll.
 
 Verwenden Sie die versionsabhängigen Skripte und Hinweise in
 [`../../sql/grants/README.md`](../../sql/grants/README.md). Entfernen Sie das
@@ -47,20 +47,47 @@ Es liest:
 - Spaltentypfamilien, NULL-Zulässigkeit und gerundete Längenstatistiken, soweit verfügbar;
 - Indextyp, Eindeutigkeit und anonymisierte Spaltenordnungsnummern;
 - Struktur des Fremdschlüsselgraphen, soweit verfügbar;
+- bestmögliche grobe Quellkapazitätsbänder, die der Datenbankendpunkt zurückgibt;
 - begrenzte Anzahlen von Nicht-Tabellenobjekten und externen Voraussetzungen
   aus Objektkatalogen unter der Voreinstellung `--artifact-detail summary`
   (keine Definitionen);
-- optionale kundenseitige RTT-Prüfung, sofern `--no-rtt-probe` nicht gesetzt ist.
+- optionaler RTT-Test, es sei denn, `--no-rtt-probe` ist aktiviert.
 
 Es liest keine Zeilenwerte.
 
+## Quellumgebung
+
+Der schema-v7-Block `[source_environment]` wird ausschließlich aus Werten
+abgeleitet, die über die ausgewählte Datenbankverbindung zurückgegeben werden.
+Der Collector untersucht niemals seinen eigenen Host oder stellt diese
+Arbeitsstation als Datenbankserver dar.
+
+PostgreSQL und MySQL legen eine Datenbank-Puffer-Einstellung offen, die unterhalb der normalen Mindestberechtigungen liegt, sodass der Speicher nur teilweise ein Beweis ist, basierend auf `database-buffer-cache`, und die CPU-Auslastung bleibt unbekannt.
+
+SQL Server fordert nur die Ressourcen der Quellumgebung mit `--artifact-detail graph` oder `analyzed`, den erweiterten Modi, an. Die Basis- und Standardmodi führen keine Abfrage der Betriebssystemressourcen durch und protokollieren die Ressourcenbereiche als `not-requested`.
+
+Das verbesserte Skript gewährt die erforderliche serverweite `VIEW SERVER STATE` (2019) oder `VIEW SERVER PERFORMANCE STATE` (2022/2025) in einem separaten Batch, den ein Datenbankadministrator entfernen kann. Wenn eine verbesserte Erfassung die DMV nicht lesen kann, wird die Erfassung fortgesetzt und der Katalog als nicht lesbar protokolliert, anstatt lokale Maschinenwerte zu verwenden oder Kapazitäten zu erfinden.
+
+Dieser Erfassungspfad kontaktiert keine Cloud-, Kubernetes-, Hypervisor- oder
+Betriebssystem-API.
+
 ## Inventar der Nicht-Tabellenartefakte
 
-Seit Schema v4 inventarisieren Blueprints Nicht-Tabellenobjekte unabhängig von Zeilenstichproben. Die Voreinstellung `--artifact-detail summary` liest Objektkataloge, aber keine Definitionen, und gibt nur begrenzte Anzahlen sowie Klassen externer Voraussetzungen aus.
+Blueprints inventarisieren nicht-tabellarische Objekte unabhängig von der Zeilenabfrage. Der Standardmodus `--artifact-detail summary` liest Objektkataloge, aber nicht Definitionen, und gibt nur begrenzte Zählungen und externe Abhängigkeitsklassen aus.
 
 `--artifact-detail graph --yes` fügt anonyme Objekt-IDs und Abhängigkeitskanten hinzu. `--artifact-detail analyzed --yes` liest verfügbare Definitionen außerdem vorübergehend und gibt nur begrenzte lexikalische Merkmals- und Komplexitätsbänder aus. Definitionstext, Quellobjektnamen, Endpunkte, Providerzeichenfolgen, Principals, Geheimnisse, Schlüssel, Zertifikate, Paketnamen und Binärdateien werden niemals serialisiert.
 
-Katalogrechte beeinflussen Aussagen über Abwesenheit. Prüfen Sie `visibility`, `inventory_complete`, `dependencies_complete`, `catalogs_unreadable` und `families_not_inventoried`; interpretieren Sie eine Nullanzahl bei offengelegter Lücke nicht als Beweis. `DBP1410W` kennzeichnet einen optionalen Artefaktkatalog, der nicht gelesen werden konnte.
+Katalogrechte beeinflussen Aussagen über Abwesenheit. Prüfen Sie `visibility`,
+`inventory_complete`, `dependencies_complete`, `requirements_complete`,
+`catalogs_unreadable` und `families_not_inventoried`; interpretieren Sie eine
+Nullanzahl oder eine leere Anforderungsliste bei offengelegter Lücke nicht als
+Beweis. Prüfen Sie bei der Detailstufe graph/analyzed außerdem den
+`requirement_status` jedes Objekts: Nur `complete` macht eine leere Liste zum
+Beleg für null Anforderungen an dieses Objekt. `partial` erhält bekannte Fakten,
+ohne vollständige Abdeckung zu behaupten; `unavailable` bedeutet, dass keine
+nutzbare Abdeckung festgestellt wurde. In beiden Fällen bleibt die aus den
+Anforderungen abgeleitete Kopplungsbewertung des Objekts unbekannt. `DBP1410W`
+kennzeichnet einen optionalen Artefaktkatalog, der nicht gelesen werden konnte.
 
 Anonyme Abhängigkeitstopologie kann eine Anwendung dennoch identifizieren. Genehmigen Sie `graph` oder `analyzed` nur, wenn dieses Risiko akzeptabel ist. Siehe [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
 
@@ -72,11 +99,7 @@ Tier 2 wird ausschließlich durch das explizite Paar aktiviert:
 --measure-compression --yes
 ```
 
-Tier 2 liest zusätzlich begrenzte Zeilenstichproben in den Prozessspeicher. Die
-Stichprobenbytes werden in einen internen Row-Frame-Puffer codiert und zur
-Ableitung aggregierter Komprimierungs-, NULL-Dichte-,
-Kardinalitäts-/Häufigkeits-, Längen- und Stilmessungen verwendet, bevor Werte
-und temporäre Fingerprints verworfen werden.
+Stufe 2 liest zusätzlich begrenzte Zeilenmuster in den Arbeitsspeicher. Die abgetasteten Bytes werden in einen In-Memory-Puffer codiert und verwendet, um aggregierte Kompressions-, Null-Dichte-, cardinality/frequency-Werte, Längen- und Stilmessungen abzuleiten, bevor die Werte und temporären Fingerabdrücke verworfen werden.
 
 Die Stichprobenbytes werden:
 
@@ -86,7 +109,7 @@ Die Stichprobenbytes werden:
 - außer über die Datenbankverbindung über kein Netzwerk gesendet;
 - nach der Zusammenfassung der Stichprobe nicht aufbewahrt.
 
-Tier 2 ist wertvoll, weil DBWarp-Leistung und Egress-Kosten von komprimierten Bytes und nicht von rohen Tabellenbytes abhängen.
+Stufe 2 ist wertvoll, weil die Übertragungszeit und die Ausgabekosten von den komprimierten Bytes und nicht von den rohen Tabellengrößen abhängen.
 
 ## RTT-Prüfung
 
@@ -139,7 +162,7 @@ dieses Verzeichnis entfernt oder das vorherige Bundle wiederhergestellt.
 
 Prüfen Sie vor der Weitergabe von `blueprint.toml`:
 
-- der Header ist der feste Header `dbwarp-blueprint v6`;
+- der Header ist der feste Header `dbwarp-blueprint v7`;
 - Tabellen-IDs sehen wie `table-001` aus;
 - Spalten-IDs sehen wie `col-1` aus;
 - Schema-IDs sehen wie `schema-A` aus;
@@ -153,9 +176,9 @@ Prüfen Sie vor der Weitergabe von `blueprint.toml`:
   und Stichprobenherkunftsmetadaten, niemals beprobte Werte.
 - Artefakt-Vollständigkeitsfelder gefilterte Sichtbarkeit, unlesbare Kataloge und bekannte unmodellierte Familien offenlegen.
 
-Die standardmäßige, ausgewogene MySQL-Ausgabe enthält exakte deklarierte Kapazitäten und Indexpräfixlängen sowie relativ gerundete Durchschnitts-/p95-Stichproben. Prüfen Sie die drei Treuemarkierungen ausdrücklich. Wenn `--length-fidelity exact --yes` verwendet wurde, genehmigen Sie auch die exakten Stichprobenstatistiken. Zeilenwerte und echte Objektnamen müssen weiterhin fehlen. Fehlende Treuemarkierungen bedeuten Legacy-/unbekannte Daten und dürfen nicht als benchmarkfähige Metadaten behandelt werden.
+Die standardmäßige, ausgewogene MySQL-Ausgabe enthält die exakt deklarierten Kapazitäten und Indexpräfixlängen sowie relativ gerundete Durchschnitts- und p95-Werte. Überprüfen Sie die drei Genauigkeitsmarker explizit. Wenn `--length-fidelity exact --yes` verwendet wurde, genehmigen Sie auch die exakten Stichprobenstatistiken. Zeilenwerte und echte Objektnamen müssen weiterhin fehlen. Eine Blueprint-Datei ohne Genauigkeitsmarker wurde von einer älteren Version erstellt; erfassen Sie diese erneut.
 
-Die Markierung behauptet nicht, dass die Stichprobe jede Tabelle erfasst hat. Eine Benchmark-Übergabe muss im Estimator-Manifest außerdem null nichtleere, variabel breite indizierte Spalten ohne Stichprobe ausweisen; erhöhen Sie `--max-wall-secs` und erfassen Sie den Blueprint erneut, wenn diese Prüfung fehlschlägt.
+Der Marker besagt nicht, dass die Stichproben alle Tabellen abgedeckt haben. Wenn `DBP1406W` gemeldet wird, erhöhen Sie `--max-wall-secs` und führen Sie die Stichproben erneut durch.
 
 ## Betriebssicherheit
 

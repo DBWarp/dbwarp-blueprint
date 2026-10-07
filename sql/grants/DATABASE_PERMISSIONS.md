@@ -1,35 +1,33 @@
 # DBWarp Blueprint database permissions
 
-> **Scope:** PostgreSQL 13–18, MySQL 8.0/8.4/9.7, and SQL Server
-> 2019/2022/2025. Requirements below follow the implemented collector queries.
-> Self-managed engine results do not establish managed-service qualification;
+> **Scope:** PostgreSQL 13–18, MySQL 8.0/8.4/9.7, SQL Server
+> 2019/2022/2025. Requirements below follow the implemented collector
+> queries.
+> Results on a self-managed engine do not carry over to a managed service;
 > validate the exact service, version, and authentication path before production use.
 
-This document defines the minimum access required by the current
-`dbwarp-blueprint` binary. It covers only the three implemented database
-engines: PostgreSQL, MySQL, and SQL Server.
+This document defines the minimum access required by the supported
+`dbwarp-blueprint` collectors.
 
-**Ready-to-run grant scripts exist for every profile and engine.** They are
-checked into this repository under `sql/grants/` (the folder that also holds
-this document). Choose the engine/version family and approved tier:
+Ready-to-run scripts for every implemented profile of the three supported
+collectors are in `sql/grants/` (the folder that also holds this
+document):
 
-| Engine | Catalog-only (`basic`) | Synthetic-copy-ready (`standard`) | Enhanced | Apply with |
+| Engine | Catalog-only (`basic`) | Standard (`standard`) | Enhanced | Apply with |
 |---|---|---|---|---|
 | PostgreSQL 13-18 | `sql/grants/postgresql/basic.sql` | `sql/grants/postgresql/standard.sql` | `sql/grants/postgresql/enhanced.sql` | `psql -d TARGET_DB -f FILE` |
 | MySQL 8.0 / 8.4 / 9.7 | `sql/grants/mysql/basic.sql` | `sql/grants/mysql/standard.sql` | `sql/grants/mysql/enhanced.sql` | `mysql -u root -p < FILE` |
 | SQL Server 2019 | `sql/grants/sqlserver-2019/basic.sql` | `sql/grants/sqlserver-2019/standard.sql` | `sql/grants/sqlserver-2019/enhanced.sql` | `sqlcmd -S HOST -E -i FILE` |
 | SQL Server 2022 / 2025 | `sql/grants/sqlserver-2022/basic.sql` | `sql/grants/sqlserver-2022/standard.sql` | `sql/grants/sqlserver-2022/enhanced.sql` | `sqlcmd -S HOST -E -i FILE` |
 
-Each script is a single-step, idempotent file: the DBA edits the marked
-principal/password/scope lines at the top, runs it once, and gets a
-verification query at the end. The scripts create per-tier principals
-(`dbwarp_blueprint_basic`, `dbwarp_blueprint_standard`,
-`dbwarp_blueprint_enhanced`) so all three tiers can coexist on one test
-server. `sql/grants/README.md` explains the tier/CLI mapping and scope caveats.
+`sql/grants/README.md` explains the tier/CLI mapping and scope caveats.
+The separate [`ORACLE_PREVIEW.md`](ORACLE_PREVIEW.md) covers the Oracle Basic
+preview's `minimum.sql` and `basic.sql` profiles. That preview is not part of
+the supported-engine scope in this document.
 
 The profile names used below map to the scripts as **catalog-only =
-`basic`**, **synthetic-copy-ready = `standard`**, and **enhanced =
-`enhanced`** (the `--artifact-detail summary/graph/analyzed` contract). The
+`basic`**, **standard = `standard` (sampled)**, and **enhanced = `enhanced`**
+(the `--artifact-detail summary/graph/analyzed` contract). The
 SQL fragments in Section 3 explain and justify each grant; the scripts are the
 artefact to apply. The examples use the generic `dbwarp_blueprint` name for
 whichever single tier is approved in production.
@@ -47,7 +45,7 @@ The document has two audiences:
 | **2. Detailed review** | Confirm command, version, visibility, and query boundaries | DBA, security reviewer |
 | **3. Database runbooks** | Apply exact SQL grants or approved convenience roles | DBA |
 | **4. Managed-service IAM** | Apply external IAM, token, connector, and secret boundaries | Cloud security, IAM, DBA |
-| **5. Control gates** | Prove completeness and reject over-broad access | DBA, security, product owner |
+| **5. Checks** | Prove completeness and reject over-broad access | DBA, security, application owner |
 | **6. Evidence** | Trace requirements to code and vendor documentation | Reviewer, auditor |
 
 ## 1. Executive review
@@ -58,13 +56,13 @@ The document has two audiences:
 > capture profile and apply them with the corresponding script from
 > `sql/grants/` (`basic.sql`, `standard.sql`, or `enhanced.sql` per engine). Permit a documented built-in role only when its additional
 > read scope is acceptable. Keep cloud provisioning and administrative roles
-> off the collector identity. The managed MySQL token client path is now
-> implemented with verified-TLS enforcement, but no provider/service/version
-> row should be approved until its live qualification evidence exists.
+> off the collector identity. The managed MySQL token client path enforces
+> verified TLS; approve it only for an exact managed service, engine version,
+> and authentication path backed by accepted live evidence.
 
 The reviewer is being asked to approve five decisions:
 
-1. Choose **catalog-only** (`basic`), **synthetic-copy-ready** (`standard`),
+1. Choose **catalog-only** (`basic`), **standard** (`standard`, sampled),
    or **enhanced** access for each source.
 2. Use the exact object grants as the baseline policy.
 3. Accept a broader built-in or reusable role only where its caveat is
@@ -77,36 +75,38 @@ The reviewer is being asked to approve five decisions:
 
 | Profile | Business purpose | Source-row access | Approval position |
 |---|---|---:|---|
-| **Catalog-only** | Inventory, coarse sizing, and initial DBA review | No customer-row reads | Lower exposure, but weaker synthetic fidelity |
-| **Synthetic-copy-ready** | Representative synthetic generation and benchmark preparation | Bounded `SELECT` samples from every in-scope table | Approve only when sampled source-row access and the acceptance gates are acceptable |
+| **Catalog-only** | Inventory, coarse sizing, and initial DBA review | No table-row reads | Lower exposure, but less precise sizing |
+| **Standard (`standard`)** | Compression and sizing measurement from bounded row samples | Bounded `SELECT` samples from every in-scope table | Approve only when sampled source-row access and the acceptance criteria are acceptable |
 | **Enhanced** | Migration-discovery inventory of non-table objects, anonymous dependency graph, and definition-derived feature bands | Bounded samples plus transient reads of object definitions | Approve only when definition reads and anonymous topology are acceptable; on MySQL it requires the DDL-capable `TRIGGER` and `EVENT` privileges |
 
-The synthetic-copy-ready profile is the minimum profile that provides enough
-information for a representative synthetic copy. Catalog-only output may be
-useful for estimation, but it must not be represented as equivalent.
+Standard is the minimum profile for measured sizing. Catalog-only output is an
+estimate and must not be presented as equivalent.
 
 ### 1.3 Database-platform summary
 
-| Platform | Catalog-only minimum | Synthetic-copy-ready addition | Low-maintenance option | Principal caveat |
+| Platform | Catalog-only minimum | Standard addition | Low-maintenance option | Principal caveat |
 |---|---|---|---|---|
-| **PostgreSQL 13-18** | Login role, `CONNECT` to the target database, and intact standard catalog ACLs | `USAGE` on selected schemas and `SELECT` on every selected ordinary table | Schema-wide grants; `pg_read_all_data` on 14+ only | PostgreSQL 13 is a legacy/EOL target; `pg_read_all_data` is cluster-wide and includes future tables, views, and sequences |
-| **MySQL 8.0, 8.4, and 9.7** | `REFERENCES` on every in-scope base table | Use `SELECT` instead of `REFERENCES` on every in-scope base table | Reusable schema-scoped role set as the account's default role | Use `--schema` to match the approved database grants; a global `*.*` grant remains too broad and an unscoped run walks all visible non-system schemas |
-| **SQL Server 2019** | Database user with `CONNECT`, `VIEW DEFINITION`, and `VIEW DATABASE STATE` | `SELECT` on every selected user table | Schema `SELECT` or per-database `db_datareader` | `db_datareader` includes all current and future tables and views in the database |
-| **SQL Server 2022/2025** | Database user with `CONNECT`, `VIEW DEFINITION`, and `VIEW DATABASE PERFORMANCE STATE` | `SELECT` on every selected user table | Schema `SELECT` or per-database `db_datareader` | `VIEW SECURITY DEFINITION` is not a substitute for `VIEW DEFINITION`: it exposes security metadata, not the required table inventory. Only the DMV permission differs from 2019 |
+| **PostgreSQL 13-18** | Login role, `CONNECT` to the target database, and intact standard catalog ACLs | `USAGE` on selected schemas and `SELECT` on every sampled ordinary table/materialized view | Schema-wide grants; `pg_read_all_data` on 14+ only | PostgreSQL 13 is end-of-life; `pg_read_all_data` is cluster-wide and includes future tables, views, and sequences |
+| **MySQL 8.0, 8.4, and 9.7** | `REFERENCES` on every in-scope base table | Replace `REFERENCES` with `SELECT` only for sampled local base tables; retain metadata-only `REFERENCES` for FEDERATED tables | Reusable schema-scoped role set as the account's default role | A schema-wide `SELECT` role is simpler but can read FEDERATED data in another client even though Blueprint never follows it; a global `*.*` grant remains too broad |
+| **SQL Server 2019** | Database user with `CONNECT`, `VIEW DEFINITION`, and `VIEW DATABASE STATE` | `SELECT` on every selected local user table | Schema `SELECT` or per-database `db_datareader` | Both shortcuts also authorize objects Blueprint does not sample; `db_datareader` includes all current and future tables and views in the database |
+| **SQL Server 2022/2025** | Database user with `CONNECT`, `VIEW DEFINITION`, and `VIEW DATABASE PERFORMANCE STATE` | `SELECT` on every selected local user table | Schema `SELECT` or per-database `db_datareader` | The shortcut scope caveat is the same as 2019. `VIEW SECURITY DEFINITION` is not a substitute for `VIEW DEFINITION`; only the DMV permission differs from 2019 |
 
-Enhanced additions on top of synthetic-copy-ready:
+Enhanced additions on top of standard:
 
 | Platform | Enhanced addition |
 |---|---|
 | **PostgreSQL** | None; every artifact catalog and definition function is `PUBLIC`-readable |
-| **MySQL** | `SHOW VIEW`, `TRIGGER`, `EVENT` on the in-scope schemas; global `SHOW_ROUTINE` (8.0.20+); `SELECT` on `performance_schema.user_defined_functions` |
-| **SQL Server** | `SELECT` on `sys.sql_expression_dependencies`; a user in `msdb` with `SELECT` on `dbo.sysjobs` |
+| **MySQL** | `SHOW VIEW`, `TRIGGER`, `EVENT` on the in-scope schemas; global `SHOW_ROUTINE` (8.0.20+); `SELECT` on `performance_schema.user_defined_functions`; count-only use of `SELECT` on `mysql.component` |
+| **SQL Server** | `SELECT` on `sys.sql_expression_dependencies`; a user in `msdb` with `SELECT` on `dbo.sysjobs`; and, in a separate removable batch, server-level `VIEW SERVER STATE` (2019) or `VIEW SERVER PERFORMANCE STATE` (2022/2025) |
 
-None of the catalog-only or synthetic-copy-ready profiles requires write
+None of the catalog-only or standard profiles requires write
 access, DDL, ownership, impersonation, server administration, RLS bypass,
 unmasking, or decryption-key access. The one exception is the MySQL enhanced
 profile: `TRIGGER` and `EVENT` are DDL-capable, and MySQL offers no read-only
-way to expose those catalogs.
+way to expose those catalogs. Separately, the SQL Server enhanced script
+grants one server-level state permission that no capture requires. It reads
+coarse CPU and memory bands and availability-group topology, and it sits in
+its own batch so a DBA can remove it.
 
 ### 1.4 Cloud-managed platform summary
 
@@ -116,29 +116,29 @@ runtime cloud permission set is empty.
 
 | Cloud platform | Native database credential | Token or connector minimum | Current review position |
 |---|---|---|---|
-| **AWS RDS/Aurora** | No AWS IAM required at runtime | PostgreSQL/MySQL IAM authentication: exact `rds-db:connect` on one database-user ARN | PostgreSQL and MySQL token paths are implemented and require `cloud-token` plus `verify-full`; qualify each service/version live. RDS SQL Server has no IAM database-authentication path. |
-| **Azure managed databases** | No Azure RBAC required at runtime | Entra token: no Azure resource role; create/map the Entra database principal and grant database permissions | PostgreSQL/MySQL use `cloud-token`; Azure SQL uses `entra-token`. Qualify each service/version live. |
-| **Google Cloud SQL** | No Google Cloud IAM required for a direct native-password connection | Direct PostgreSQL/MySQL IAM login: `cloudsql.instances.login`; Auth Proxy/connector: `roles/cloudsql.client` | Direct PostgreSQL/MySQL token paths are implemented with `cloud-token`; proxy/automatic-IAM paths remain separate live qualification rows. SQL Server still needs a database credential. |
+| **AWS RDS/Aurora** | No AWS IAM required at runtime | PostgreSQL/MySQL IAM authentication: exact `rds-db:connect` on one database-user ARN | PostgreSQL and MySQL token paths require `cloud-token` plus `verify-full`; validate the exact service/version before production use. RDS SQL Server has no IAM database-authentication path. |
+| **Azure managed databases** | No Azure RBAC required at runtime | Entra token: no Azure resource role; create/map the Entra database principal and grant database permissions | PostgreSQL/MySQL use `cloud-token`; Azure SQL uses `entra-token`. Validate the exact service/version before production use. |
+| **Google Cloud SQL** | No Google Cloud IAM required for a direct native-password connection | Direct PostgreSQL/MySQL IAM login: `cloudsql.instances.login`; Auth Proxy/connector: `roles/cloudsql.client` | Direct PostgreSQL/MySQL token paths use `cloud-token`; proxy/automatic-IAM paths require their own deployment validation. SQL Server still needs a database credential. |
 
 Secret-store access is optional and belongs to the external credential
 wrapper, not to the database principal. Network and service provisioning
-belong to the customer's existing cloud/IaC operators.
+belong to your existing cloud/IaC operators.
 
 ### 1.5 Trust boundaries and material caveats
 
 | Issue | Executive significance |
 |---|---|
-| **Exact grants are command-dependent** | The catalog-only and synthetic-copy-ready contracts are exact only with `--artifact-detail none`; the CLI default (`summary`) and `graph`/`analyzed` fall under the enhanced contract. Unattended runs at every tier need `--yes`, otherwise the pre-flight prompt ends the run with `DBP1701E`. |
+| **Exact grants are command-dependent** | The catalog-only and standard contracts are exact only with `--artifact-detail none`; the CLI default (`summary`) and `graph`/`analyzed` fall under the enhanced contract. Unattended runs at every tier need `--yes`, otherwise the pre-flight prompt ends the run with `DBP1701E`. |
 | **Successful exit is not completeness proof** | Every engine can hide metadata or rows through privilege filtering or row-security controls. Captured counts must be reconciled. |
 | **Schema scope is explicit** | Pass repeatable `--schema NAME` and align it with the approved SQL grants. An unresolved or privilege-hidden schema fails closed with `DBP1420E`; omitting the option intentionally restores the broader all-visible walk. |
-| **Managed token implementation is not live qualification** | PostgreSQL/MySQL `cloud-token` requires exactly one external token source and `verify-full`; MySQL enables `mysql_clear_password` only in that mode. Each provider/service/version path still needs live proof. |
+| **Managed token behavior is deployment-specific** | PostgreSQL/MySQL `cloud-token` requires exactly one external token source and `verify-full`; MySQL enables `mysql_clear_password` only in that mode. Validate each exact provider, service, and version path before production use. |
 | **Convenience roles trade maintenance for scope** | `pg_read_all_data`, schema-wide MySQL roles, `db_datareader`, and some cloud built-ins remain read-oriented but authorize more than the literal command minimum. |
-| **Version compatibility is not support** | Every engine version, managed-service variant, TLS mode, and authentication path needs its own live qualification evidence. |
+| **Capacity evidence is best effort** | PostgreSQL and MySQL expose only a database buffer setting under the minimum grants. SQL Server CPU/memory remains unknown at the basic and standard tiers. The enhanced script grants the server-state permission that reads it, in a separate batch a DBA can remove. The collector machine is never used as source-server evidence. |
+| **Version compatibility is not support** | Validate every engine version, managed-service variant, TLS mode, and authentication path independently before production use. |
 
 ### 1.6 Executive approval record
 
-- [ ] The approved profile is recorded as catalog-only or
-  synthetic-copy-ready.
+- [ ] The approved profile is recorded as catalog-only or standard.
 - [ ] The source databases, schemas, and tables in scope are recorded.
 - [ ] Any convenience role and its additional current/future object scope are
   accepted explicitly.
@@ -148,8 +148,8 @@ belong to the customer's existing cloud/IaC operators.
   collector identity.
 - [ ] Row-security, masking, encryption, and replica-filtering behavior are
   accepted or the run is directed to an approved scrubbed source.
-- [ ] The exact engine/service/version combination has passed the required
-  qualification gate.
+- [ ] The exact engine/service/version combination has been validated in your
+  environment.
 
 ## 2. Detailed DBA and security review
 
@@ -167,7 +167,7 @@ For catalog-only capture, omit `--measure-compression` and run with:
 --artifact-detail none
 ```
 
-For synthetic-copy-ready capture, run with:
+For a standard capture, run with:
 
 ```text
 --artifact-detail none --measure-compression --yes
@@ -198,11 +198,9 @@ pre-flight prompt is shown at every tier, and a closed stdin ends the run with
 `DBP1701E`.
 
 The default RTT probe is five constant `SELECT 1` statements. It needs no
-table privilege and reads no customer rows, so `--no-rtt-probe` is a policy
+table privilege and reads no table rows, so `--no-rtt-probe` is a policy
 choice rather than a least-privilege requirement. Non-table artifact capture
-is a separate migration-discovery concern; the current synthetic generation
-core consumes tables, columns, primary/unique index structure, foreign keys, row
-counts, and sampled statistics, not the non-table artifact inventory.
+is a separate migration-discovery concern.
 
 The CLI default is `--artifact-detail summary`, not `none`. A default run
 therefore attempts additional non-table catalog queries. Those queries are
@@ -216,15 +214,14 @@ acceptance.
 
 ### 2.2 Engine and version boundary
 
-The qualified self-managed matrix is PostgreSQL 13-18, MySQL 8.0/8.4/9.7, and
-SQL Server 2019/2022/2025. The rows below distinguish implementation details
-from that qualified product claim.
+The supported self-managed versions are PostgreSQL 13-18, MySQL 8.0/8.4/9.7,
+and SQL Server 2019/2022/2025. The rows below note version-specific behaviour.
 
 | Engine | Version-aware boundary in the current implementation | Review position |
 |---|---|---|
-| PostgreSQL | The collector uses catalog fields present throughout the qualified matrix. | PostgreSQL 13 through 18 are qualified. PostgreSQL 13 is retained as a legacy migration-path target after upstream support ended in November 2025. Parsing compatibility outside this matrix is not a support claim. |
-| MySQL | Functional-index metadata is detected at runtime by checking whether `information_schema.STATISTICS.EXPRESSION` exists. | Qualify MySQL 8.0, 8.4, and each intended newer release line independently. MySQL 5.7 is end-of-life and is not proposed as a support target. |
-| SQL Server | `sys.dm_db_partition_stats` changed to the granular 2022 permission family. | Use the SQL Server 2019 grant set for 15.x; use the SQL Server 2022+ set for 16.x and 17.x (SQL Server 2025). Qualify 2019, 2022, and 2025 separately; do not infer support for older releases from the legacy permission syntax. |
+| PostgreSQL | The collector uses catalogue fields present in all supported versions. | PostgreSQL 13 through 18 are supported. PostgreSQL 13 is kept for migrations off an end-of-life release. Other versions are not supported. |
+| MySQL | Functional-index metadata is detected at runtime by checking whether `information_schema.STATISTICS.EXPRESSION` exists. | Validate each release line you use. MySQL 5.7 is end-of-life and is not supported. |
+| SQL Server | `sys.dm_db_partition_stats` changed to the granular 2022 permission family. | Use the SQL Server 2019 grant set for 15.x; use the SQL Server 2022+ set for 16.x and 17.x (SQL Server 2025). Validate each version you use; older releases are not supported. |
 
 Record the exact engine version from every accepted run. A compatible query is
 not enough to prove driver, TLS, type, catalog, or sampling fidelity on that
@@ -236,12 +233,12 @@ The grant scope must match the collector's actual catalog scope.
 
 | Engine | Current catalog scope |
 |---|---|
-| PostgreSQL | Every ordinary table (`relkind = 'r'`) in the selected schemas of the connected database. With no selector, every visible non-system schema is retained for compatibility. |
-| MySQL | Every base table in the selected schemas. With no selector, every non-system schema visible to the account is retained, not only the database named in the URI. |
-| SQL Server | Every visible non-system table in the selected schemas of the connected database. With no selector, every visible user schema is retained. |
+| PostgreSQL | Ordinary tables, partition roots and leaves, materialized views, and foreign tables in the selected schemas of the connected database. With no selector, every visible non-system schema is retained for compatibility. Foreign-table data is never followed or counted in totals. |
+| MySQL | Every base table, including FEDERATED metadata, in the selected schemas. With no selector, every non-system schema visible to the account is retained, not only the database named in the URI. FEDERATED data is never followed or counted in totals. |
+| SQL Server | Every visible non-system ordinary or external table in the selected schemas of the connected database. With no selector, every visible user schema is retained. External data is never followed or counted in totals. |
 
 The selected schema list must match the scope edited into the grant script. A
-synthetic-copy-ready account needs `SELECT` on every selected table. Otherwise
+standard account needs `SELECT` on every selected table. Otherwise
 the tool may complete with `DBP1407W` sampling warnings and a partially
 representative Blueprint. Select every approved schema needed for a
 cross-schema foreign key or dependency; an edge to an unselected schema is
@@ -263,17 +260,18 @@ the capture and record the exact database, selected schemas, expected
 table/index/foreign-key counts, engine version, and source role (primary or
 replica) for every tier.
 
-| Engine/version | Catalog-only (`basic`) | Synthetic-copy-ready (`standard`) | Enhanced |
+| Engine/version | Catalog-only (`basic`) | Standard (`standard`) | Enhanced |
 |---|---|---|---|
 | **PostgreSQL 13-18** | Verify auto-analyze ran after the last material load, or have the owner/DBA run `ANALYZE schema.table`. `pg_class.reltuples` remains approximate and `pg_stats` widths are unavailable without table reads. On PostgreSQL 13, use an owner/DBA; do not invent a `MAINTAIN` grant that the release does not provide. | Add the standard grants; confirm RLS exposes exactly the approved population; begin with `--sample-rows 1000 --max-wall-secs 300` and raise both for a higher-detail request. Do not grant `BYPASSRLS` or maintenance authority to the collector. | Complete standard preparation and approve transient definition reads plus database-wide artifact families. No additional PostgreSQL grant is needed. |
-| **MySQL 8.0, 8.4, and 9.7** | Treat InnoDB `TABLE_ROWS` as a rough estimate. After material loads, an existing DBA may run `ANALYZE TABLE schema.table` only with an approved read-lock/write window. The command requires `SELECT` and `INSERT`; neither `INSERT` nor maintenance execution belongs to the collector. Blueprint leaves `stats_freshness` empty because the least-privilege catalog path exposes no defensible analysis timestamp; `INFORMATION_SCHEMA.TABLES.UPDATE_TIME` describes source-data modification and is not used as `ANALYZE TABLE` evidence. | Add the standard grants and assess bias from first-row order, replica lag, masking, or tenant filtering. Sampling reuses the catalog session. Begin with `--sample-rows 1000 --max-wall-secs 300`; do not create histograms solely for Blueprint because the collector does not read them. | Complete standard preparation and explicitly approve DDL-capable `TRIGGER`/`EVENT`, global `SHOW_ROUTINE`, and the global UDF census. Do not grant global `ALL` merely to obtain a `full` visibility label. |
-| **SQL Server 2019** | Keep partition maintenance stable and verify the intended primary/replica. Do not run `UPDATE STATISTICS` solely for Blueprint: row/page evidence comes from `sys.dm_db_partition_stats`, not optimizer histograms, and `UPDATE STATISTICS` requires broader `ALTER` authority. | Add the standard grants; confirm RLS, masking, Always Encrypted, `DENY`, replica filtering, and physical/clustered first-row ordering produce the approved population. Begin with `--sample-rows 1000 --max-wall-secs 300`; do not add `UNMASK`, key access, or RLS bypass. | Complete standard preparation and approve module-definition reads, `sys.sql_expression_dependencies`, and the `msdb` Agent-job census. |
+| **MySQL 8.0, 8.4, and 9.7** | Treat InnoDB `TABLE_ROWS` as a rough estimate. After material loads, an existing DBA may run `ANALYZE TABLE schema.table` only with an approved read-lock/write window. The command requires `SELECT` and `INSERT`; neither `INSERT` nor maintenance execution belongs to the collector. Blueprint records `tables.<id>.statistics.statistics_state = "unknown"` because the least-privilege catalog path exposes no defensible analysis timestamp; `INFORMATION_SCHEMA.TABLES.UPDATE_TIME` describes source-data modification and is not used as `ANALYZE TABLE` evidence. | Add the standard grants and assess bias from numeric-primary-key range distribution, fallback first-row order, replica lag, masking, or tenant filtering. Sampling reuses the catalog session. Begin with `--sample-rows 1000 --max-wall-secs 300`; do not create histograms solely for Blueprint because the collector does not read MySQL histogram objects. | Complete standard preparation and explicitly approve DDL-capable `TRIGGER`/`EVENT`, global `SHOW_ROUTINE`, the global UDF census, and the count-only `mysql.component` read. Do not grant global `ALL` merely to obtain a `full` visibility label. |
+| **SQL Server 2019** | Keep partition maintenance stable and verify the intended primary/replica. Do not run `UPDATE STATISTICS` solely for Blueprint: row/page evidence comes from `sys.dm_db_partition_stats`, not optimizer histograms, and `UPDATE STATISTICS` requires broader `ALTER` authority. | Add the standard grants; confirm RLS, masking, Always Encrypted, `DENY`, replica filtering, and physical/clustered first-row ordering produce the approved population. Begin with `--sample-rows 1000 --max-wall-secs 300`; do not add `UNMASK`, key access, or RLS bypass. | Complete standard preparation and approve module-definition reads, `sys.sql_expression_dependencies`, the `msdb` Agent-job census, and the server-level state batch (or remove it). |
 | **SQL Server 2022/2025** | Apply the SQL Server 2019 preparation but use `VIEW DATABASE PERFORMANCE STATE`, not the 2019 DMV grant. | Apply the 2019 standard preparation with the 2022+ script. | Apply the 2019 enhanced preparation with the 2022+ script. |
 
 For higher requested detail, increase sampling and wall-time budgets together,
-not the privilege scope. Synthetic-copy readiness requires successful sampling
+not the privilege scope. Standard-tier completeness requires successful sampling
 of every nonempty selected table, reconciliation of the expected inventory and
-relationships, and no in-scope `DBP1406W`, `DBP1407W`, or `DBP1408W`. The
+relationships, and no in-scope `DBP1406W`, `DBP1407W`, `DBP1408W`, or
+`DBP1423W`. The
 audit's fidelity estimate measures evidence coverage; it is not an empirical
 error rate or confidence interval. The copy bundled with each grant set in
 `sql/grants/README.md` gives a separate row for every engine/version family and
@@ -281,14 +279,26 @@ tier so the approving DBA can keep the requirement beside the applied SQL.
 
 ### 2.5 Query-to-permission mapping
 
-The code audit maps every mandatory table-structure query and every optional
+The table below maps every mandatory table-structure query and every optional
 row query in the current engine implementations.
 
 | Engine | Current mandatory reads with `--artifact-detail none` | Permission consequence |
 |---|---|---|
-| PostgreSQL | `current_setting`, `pg_class`, `pg_namespace`, `pg_stat_all_tables`, `pg_attribute`, `pg_stats`, `pg_index`, `pg_am`, `pg_constraint`, `pg_table_size`, and `pg_indexes_size` | Standard catalog/function ACLs plus `CONNECT` run the walk. Table `SELECT` is needed for `pg_stats` rows and for Tier 2 row samples. |
-| MySQL | `VERSION()` and `information_schema.TABLES`, `COLUMNS`, `STATISTICS`, `KEY_COLUMN_USAGE`, and `REFERENTIAL_CONSTRAINTS` | `INFORMATION_SCHEMA` filters rows by effective object privilege. `REFERENCES` exposes the required table metadata without authorizing row reads; `SELECT` exposes the metadata and authorizes Tier 2. |
-| SQL Server | `ORIGINAL_LOGIN()`, `SUSER_SNAME()`, `USER_NAME()`, `SERVERPROPERTY`, `sys.tables`, `sys.dm_db_partition_stats`, `sys.columns`, `sys.types`, `sys.indexes`, `sys.index_columns`, `sys.foreign_keys`, and `sys.foreign_key_columns` | The three identity built-ins require no additional grant and provide local audit evidence. Metadata visibility plus the version-specific DMV permissions are mandatory. Tier 2 additionally needs table `SELECT`. |
+| PostgreSQL | `current_setting`, `pg_class`, `pg_namespace`, `pg_stat_all_tables`, `pg_partitioned_table`, `pg_inherits`, `pg_attribute`, `pg_stats`, `pg_index`, `pg_am`, `pg_constraint`, `pg_table_size`, and `pg_indexes_size` | Standard catalog/function ACLs plus `CONNECT` run the walk. Table `SELECT` is needed for `pg_stats` rows and for row sampling. |
+| MySQL | `VERSION()` and `information_schema.TABLES`, `PARTITIONS`, `TABLE_CONSTRAINTS`, `COLUMNS`, `STATISTICS`, `KEY_COLUMN_USAGE`, and `REFERENTIAL_CONSTRAINTS` | `INFORMATION_SCHEMA` filters rows by effective object privilege. `REFERENCES` exposes the required table metadata without authorizing row reads; `SELECT` exposes the metadata and authorizes row sampling. |
+| SQL Server | `ORIGINAL_LOGIN()`, `SUSER_SNAME()`, `USER_NAME()`, `SERVERPROPERTY`, `sys.tables`, `sys.external_tables`, `sys.dm_db_partition_stats`, `sys.partition_schemes`, `sys.check_constraints`, `sys.columns`, `sys.types`, `sys.indexes`, `sys.index_columns`, `sys.foreign_keys`, and `sys.foreign_key_columns` | The three identity built-ins require no additional grant and provide local audit evidence. Metadata visibility plus the version-specific database DMV permissions are mandatory. Row sampling additionally needs table `SELECT`. |
+
+Every capture, including `--artifact-detail none`, also runs one bounded
+topology probe that returns only booleans and counts:
+
+| Engine | Topology reads | Permission consequence |
+|---|---|---|
+| PostgreSQL | `pg_is_in_recovery()`, `citus` presence in `pg_extension`, a row count from `pg_stat_wal_receiver` (standby) or `pg_stat_replication` (primary), and, only when Citus is installed, counts from `pg_dist_local_group`, `pg_dist_partition`, and `pg_dist_node` | No additional grant. No endpoint or identity column is selected. |
+| MySQL | `information_schema.TABLES` for the Performance Schema replication tables; member and role counts from `performance_schema.replication_group_members` compared with `@@server_uuid` on the server; a channel count from `performance_schema.replication_connection_status`; `SHOW GLOBAL VARIABLES LIKE 'wsrep_on'` | Performance Schema rows are counted only where the account can read them; otherwise that topology is recorded unknown. No member identity or source address is returned. |
+| SQL Server | `SERVERPROPERTY('IsHadrEnabled')`; only when HADR is enabled, counts from `sys.dm_hadr_database_replica_states` and `sys.dm_hadr_availability_replica_states` | The HADR views need `VIEW SERVER STATE` (2019) or `VIEW SERVER PERFORMANCE STATE` (2022/2025). Only the enhanced script grants it, so availability-group topology is recorded unknown at the basic and standard tiers. |
+
+A refused or failed topology probe never stops the capture; the audit records
+a warning and the Blueprint leaves that topology unknown.
 
 Immediately after connecting, the collector also sets a session-local safety
 limit. PostgreSQL issues `SET statement_timeout`; MySQL issues `SET SESSION
@@ -298,13 +308,33 @@ read-only statements on the server. SQL Server's setting bounds lock waits
 only; the independent client wall deadline drops the connection for other
 stalls and does not prove that the server acknowledged cancellation.
 
-The optional Tier 2 statements are exactly:
+### 2.6 Optional source-environment evidence
+
+Schema v7 records anonymous source-environment evidence obtained through the
+database connection. It never substitutes CPU or memory from the operator's
+machine, even for a remote connection.
+
+| Engine | Read attempted | Evidence emitted under the minimum scripts | Optional broader permission |
+|---|---|---|---|
+| PostgreSQL 13-18 | `shared_buffers` from `pg_settings` | A coarse database-buffer-cache band; CPU unknown | None recommended. `pg_read_all_settings` is unnecessary and broader than this query. |
+| MySQL 8.0/8.4/9.7 | `@@innodb_buffer_pool_size` | A coarse database-buffer-cache band; CPU unknown | None. `PROCESS` is not required. |
+| SQL Server 2019/2022/2025 | `SERVERPROPERTY('EngineEdition')` at every tier; on recognized self-managed editions at the enhanced tier only, then `sys.dm_os_sys_info` | Hosting classification where `EngineEdition` is recognized. Basic and standard record capacity as not requested and leave CPU/memory unknown. Enhanced reads the DMV on recognized self-managed editions. Managed editions deliberately do not read this host-level DMV and remain unknown. | `VIEW SERVER STATE` (2019) or `VIEW SERVER PERFORMANCE STATE` (2022/2025) for the self-managed capacity probe, granted by the enhanced script only. These are server-wide built-in permissions and expose additional operational metadata, so remove that batch when the wider visibility is not accepted. Do not add them to a managed database to fill this field. |
+
+Failure of the optional capacity query does not abort table discovery. The
+Blueprint records `catalogs_unreadable`, unknown bands, and reduced
+`capacity_visibility` instead. The server permission is added only by the
+enhanced ready-to-run grant script, in its own server-level batch, and is not
+required for a complete table, column, index, relationship, statistics, or
+artifact capture.
+
+The optional row-sampling statements are exactly:
 
 - PostgreSQL: a bounded column projection with `LEFT(column::text, N)`,
   `TABLESAMPLE ... LIMIT N`, a `LIMIT N` fallback, and bounded single-column
   style probes;
 - MySQL: a bounded column projection using `LEFT` for variable-width cells,
-  `LIMIT N`, and bounded single-column style probes;
+  disjoint numeric-primary-key range windows when eligible or a `LIMIT N`
+  fallback, and bounded single-column style probes;
 - SQL Server: a bounded column projection using `LEFT`/`SUBSTRING` for
   variable-width cells, `SELECT TOP (N) ... ORDER BY (SELECT NULL)`, and bounded
   single-column style probes.
@@ -326,7 +356,7 @@ each engine still applies its own metadata-visibility rules:
 - PostgreSQL catalog defaults usually allow the queries, but some cluster- or
   owner-sensitive catalogs can remain incomplete.
 - MySQL schema `SELECT` does not prove visibility of every routine, event,
-  trigger, view, or loadable UDF family. Verified on 9.7.0: view definitions
+  trigger, view, or loadable UDF family. In supported MySQL versions, view definitions
   need `SHOW VIEW`, routine rows and definitions need global `SHOW_ROUTINE`
   (`EXECUTE` reveals rows without definitions), triggers need `TRIGGER`,
   events need `EVENT`, and the UDF census needs `SELECT` on
@@ -339,26 +369,26 @@ each engine still applies its own metadata-visibility rules:
   `dbo.sysjobs`; without them the run records `DBP1410W` and
   `privilege_filtered` visibility.
 
-This is why the catalog-only and synthetic-copy-ready contracts pin
+This is why the catalog-only and standard contracts pin
 `--artifact-detail none`. The `summary`/`graph`/`analyzed` contract is the
 **enhanced** profile, specified in `*/enhanced.sql` and detailed per engine in
 Section 3; its additional grants must not be silently added to a
-synthetic-data reader.
+sampled-data reader.
 
 ## 3. Database grant runbooks
 
 The statements in this section are the database-side grants for the selected
 profile, shown so a reviewer can see and justify each one. To apply a profile,
 run the matching ready-made script from `sql/grants/<engine>/<tier>.sql`
-rather than transcribing these fragments. Replace the example principals and object names with the approved
-customer scope; do not broaden them mechanically.
+rather than transcribing these fragments. Replace the example principals and
+object names with the approved scope; do not broaden them mechanically.
 
 ### 3.1 PostgreSQL
 
 #### Version family
 
-The same exact-grant permission model applies to the qualified PostgreSQL
-13-18 matrix. PostgreSQL 13 is an explicit legacy migration-path target after
+The same exact-grant permission model applies to PostgreSQL 13-18. PostgreSQL
+13 is supported for migrations off an end-of-life release after
 upstream support ended in November 2025 and must use object/schema grants
 because `pg_read_all_data` starts at 14. Do not infer support for an older
 release merely because an individual catalog query happens to parse there.
@@ -384,8 +414,8 @@ created with their default ACLs can grant `PUBLIC` the ability to create
 objects in schema `public`. PostgreSQL has no `DENY`, so revoking `CREATE` from
 the collector role does not override a `PUBLIC` grant. An exact no-DDL posture
 therefore requires the DBA to inspect effective schema privileges. If policy
-permits, use an already hardened schema/database or—only after assessing the
-effect on every role—run the cluster-wide policy change:
+permits, use an already hardened schema/database or, only after assessing the
+effect on every role, run the cluster-wide policy change:
 
 ```sql
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
@@ -397,7 +427,7 @@ changes access for all roles, not only the collector.
 This minimum has an intentional fidelity limit: `pg_stats` returns rows only
 for tables the account can read. Without table `SELECT`, average-width
 statistics can therefore be absent and the collector emits zero for those
-widths. That result is catalog-only, not synthetic-copy-ready.
+widths. That result is catalog-only, not standard.
 
 If the installation has revoked normal access to `pg_catalog` or its helper
 functions, do not compensate with `SUPERUSER`, `pg_read_all_data`, or broad
@@ -405,10 +435,11 @@ ownership. Review the local hardening policy and grant only the exact catalog
 relations/functions used by `src/engine_pg.rs`; PostgreSQL catalog ACLs and
 function availability are version-specific.
 
-#### Synthetic-copy-ready minimum
+#### Standard minimum
 
-Add schema lookup permission and table read permission for every ordinary
-table in the connected database. The literal minimum is object-level:
+Add schema lookup permission and table read permission for every sampled
+row-holding ordinary table, leaf partition, and materialized view. The literal
+minimum is object-level:
 
 ```sql
 GRANT USAGE ON SCHEMA app, billing TO dbwarp_blueprint;
@@ -423,9 +454,9 @@ schema-wide shortcut is:
 GRANT SELECT ON ALL TABLES IN SCHEMA app, billing TO dbwarp_blueprint;
 ```
 
-That shortcut can grant read access to views, materialized views, and foreign
-tables that the current ordinary-table sampler does not use. It is still
-read-only, but it is broader than the literal minimum.
+That shortcut also grants read access to ordinary views and foreign tables,
+which the sampler does not use, and to any other current table-like relation in
+the schemas. It is still read-only, but broader than the literal minimum.
 
 For future relations, each owning role can set matching default privileges for
 each fully approved schema it owns:
@@ -441,19 +472,21 @@ new tables must be approved individually.
 
 `SELECT` covers all current bounded sampling statements:
 
-- a bounded all-column projection using `LEFT(column::text, N)`,
-  `TABLESAMPLE SYSTEM (0.1) LIMIT N`, with a `LIMIT N` fallback;
+- a bounded all-column projection using `LEFT(column::text, N)`, an adaptive
+  `TABLESAMPLE SYSTEM (p) ... LIMIT N`, with a `LIMIT N` fallback;
 - one-column `TABLESAMPLE ... LIMIT 32` style probes;
 - `pg_stats` visibility for average widths.
 
 No write, DDL, temporary-object, sequence, replication, superuser, or
 `pg_read_all_stats` privilege is required by the current table-structure path.
 
-PostgreSQL row-level security still applies. A role that can select a table but
-sees only policy-filtered rows is not sufficient for a representative
-synthetic copy unless the approved source population is exactly that filtered
-population. Do not grant `BYPASSRLS` automatically; use an approved policy or a
-scrubbed/read replica when full-population sampling is required.
+PostgreSQL row-level security still applies. Blueprint does not sample a table
+while row-level security is active for the collector, nor an inheritance or
+partition child whose ancestor policy a direct child query could bypass. The
+catalog shape remains in the Blueprint, but row-derived measurements
+for that table are absent and `DBP1407W` records the degradation. Do not grant
+`BYPASSRLS` automatically; use an approved scrubbed/read replica when
+full-population sampling is required.
 
 #### Enhanced
 
@@ -463,7 +496,7 @@ reads `pg_proc`, `pg_rewrite`, `pg_trigger`, `pg_policy`, `pg_event_trigger`,
 `pg_publication_rel`, `pg_subscription` (connection data is never selected),
 `pg_tablespace`, `pg_type`, `pg_attrdef`, `pg_depend`, and every `pg_get_*def`
 function that `analyzed` mode calls. The enhanced script therefore grants the
-same set as the synthetic-copy-ready script.
+same set as the standard script.
 
 PostgreSQL 13 needs a version-specific query, not a broader grant. Its
 `pg_subscription.oid` is a protected hidden system column; selecting it would
@@ -572,19 +605,22 @@ If these grants are assigned through a MySQL role, make it a default role for
 the collector account. An inactive role does not provide metadata visibility
 or row access to the new session.
 
-#### Synthetic-copy-ready minimum
+#### Standard minimum
 
-Use object-level `SELECT` instead of `REFERENCES` for every in-scope base
-table:
+Use object-level `SELECT` instead of `REFERENCES` for every sampled local base
+table. Keep only `REFERENCES` on an in-scope FEDERATED table: Blueprint records
+its metadata but deliberately never follows its remote connection.
 
 ```sql
 GRANT SELECT ON `appdb`.`orders`
     TO 'dbwarp_blueprint'@'collector-host';
 ```
 
-When the whole schema is approved, `GRANT SELECT ON appdb.*` is the practical
-read-only shortcut and automatically covers future tables. It can also read
-approved-schema views, which the current base-table sampler does not need.
+When the whole schema and every external target reachable through it are
+approved, `GRANT SELECT ON appdb.*` is the practical read-only shortcut and
+automatically covers future tables. It can also read approved-schema views and
+FEDERATED tables in another client, which Blueprint itself does not need and
+will not sample.
 
 `SELECT` both exposes the required `INFORMATION_SCHEMA` rows and authorizes the
 current bounded sample:
@@ -598,12 +634,13 @@ No `PROCESS`, `FILE`, `LOCK TABLES`, DDL, write, replication, or administrative
 privilege is required by the current table-structure path. Keep the default
 `--length-fidelity balanced`; it preserves declared capacities and index
 prefixes exactly while privacy-rounding observed lengths. Exact length mode is
-not required to generate a representative synthetic copy.
+not required for a standard capture.
 
-MySQL has no native table sampling in this path, so the first `N` rows can be
-biased. Sufficient permission proves access, not statistical
-representativeness. A sorted or clustered table may require a separately
-approved sampling strategy in a future release.
+MySQL has no native table sampling in this path. Blueprint uses disjoint
+numeric-primary-key range windows when the catalog proves that plan is valid,
+and a bounded first-`N` fallback otherwise. Both can be biased by key gaps,
+clustering, tenant, or time order. Sufficient permission proves access, not
+statistical representativeness.
 
 #### Enhanced minimum
 
@@ -615,6 +652,8 @@ GRANT SELECT, SHOW VIEW, TRIGGER, EVENT ON `appdb`.*
     TO 'dbwarp_blueprint'@'collector-host';
 GRANT SHOW_ROUTINE ON *.* TO 'dbwarp_blueprint'@'collector-host';
 GRANT SELECT ON `performance_schema`.`user_defined_functions`
+    TO 'dbwarp_blueprint'@'collector-host';
+GRANT SELECT ON `mysql`.`component`
     TO 'dbwarp_blueprint'@'collector-host';
 ```
 
@@ -628,11 +667,21 @@ GRANT SELECT ON `performance_schema`.`user_defined_functions`
   routines from every non-system schema, not only the granted ones (anonymous
   counts). Below 8.0.20 the only substitute is global `SELECT ON *.*`, which is
   broader still and not recommended.
+- Blueprint reads only `COUNT(*)` from `mysql.component`, never component
+  names or URNs. Together with the dynamic-plugin count, this prevents the
+  collector from labelling site-installed component/plugin functions as
+  engine-generated merely because `UDF_LIBRARY` is null.
+- MySQL cannot grant an aggregate-only view of this table: `SELECT ON
+  mysql.component` also lets any other client using the Blueprint credential
+  read its component names and URNs. Keep the credential dedicated to this
+  tool. If that visibility is unacceptable, omit this one grant and accept an
+  explicit unreadable-catalog warning plus unknown UDF origin; Blueprint does
+  not guess or abort the rest of the capture.
 - The collector reports artifact `visibility = "full"` for MySQL only when the
   account holds `ALL PRIVILEGES ON *.*`; with this least-privilege set it
   records `privilege_filtered` even though every catalog was read.
 
-If those trade-offs are unacceptable, use the synthetic-copy-ready grant with
+If those trade-offs are unacceptable, use the standard grant with
 `--artifact-detail none`, or accept a privilege-filtered inventory.
 
 #### DBA-friendly reusable roles
@@ -732,10 +781,12 @@ session identity built-ins and need no extra database or server grant. Pass
 login before catalog capture; mismatch or unavailable evidence fails closed
 with `DBP1606E`. The exact values are retained only in the local audit.
 
-#### Synthetic-copy-ready addition
+#### Standard addition
 
 For both SQL Server permission families, add object-level `SELECT` on every
-table visible to the collector. The literal minimum is:
+local table the collector samples. External tables need metadata visibility,
+not row access, because Blueprint never follows their external data source. The
+literal minimum is:
 
 ```sql
 GRANT SELECT ON OBJECT::[app].[orders] TO [dbwarp_blueprint];
@@ -750,9 +801,10 @@ GRANT SELECT ON SCHEMA::[app] TO [dbwarp_blueprint];
 GRANT SELECT ON SCHEMA::[billing] TO [dbwarp_blueprint];
 ```
 
-Schema `SELECT` is read-only but also covers views and selectable functions in
-the schema and exposes metadata for other schema-contained objects. The current
-base-table sampler does not need that additional scope.
+Schema `SELECT` is read-only but also covers views, selectable functions, and
+external tables in the schema and exposes metadata for other schema-contained
+objects. Blueprint does not use that additional row-access scope; another
+client using the same principal may be able to follow an external table.
 
 This authorizes the current bounded sample:
 
@@ -768,12 +820,12 @@ No write, DDL, impersonation, server-state, SQL Agent, `db_owner`, or
 SQL Server row-level security still applies. A filtered security predicate can
 make the sample unrepresentative even though `sys.dm_db_partition_stats`
 reports the full table row/page counts. Treat that mismatch as a failed
-synthetic-copy-readiness check, not as a reason to grant `sysadmin`.
+standard-tier completeness check, not as a reason to grant `sysadmin`.
 
 #### Enhanced addition
 
-For both permission families, `graph`/`analyzed` need two more grants
-(without them the run records `DBP1410W` with
+For both permission families, `graph`/`analyzed` need two more
+database-level grants (without them the run records `DBP1410W` with
 `catalogs_unreadable = ["msdb.dbo.sysjobs", "sys.sql_expression_dependencies"]`):
 
 ```sql
@@ -789,13 +841,28 @@ GRANT SELECT ON dbo.sysjobs TO [dbwarp_blueprint];
 job census because the collector reads the base table rather than
 `sysjobs_view`. Azure SQL Database has no `msdb`, so skip that batch there.
 Column master/encryption keys, partition objects, filegroups, `sys.servers`,
-and `sys.databases` were visible with `CONNECT` alone, so `VIEW ANY COLUMN
+and `sys.databases` are visible with `CONNECT` alone, so `VIEW ANY COLUMN
 MASTER KEY DEFINITION`, `VIEW ANY COLUMN ENCRYPTION KEY DEFINITION`, and
 server-level `VIEW ANY DEFINITION` are not part of the minimum.
 
+The enhanced script also carries one optional server-level batch that no
+capture requires:
+
+```sql
+USE [master];
+GRANT VIEW SERVER STATE TO [dbwarp_blueprint];              -- SQL Server 2019
+GRANT VIEW SERVER PERFORMANCE STATE TO [dbwarp_blueprint];  -- SQL Server 2022/2025
+```
+
+It lets an enhanced capture report coarse CPU and memory bands for a
+self-managed server and count availability-group replicas. It exposes
+server-wide operational metadata, so remove the batch when that visibility is
+not accepted; the capture still completes and reports those values as unknown.
+Skip it on Azure SQL Database and managed instances.
+
 #### DBA-friendly fixed role: `db_datareader`
 
-For a synthetic-copy-ready account, the fixed per-database `db_datareader`
+For a standard account, the fixed per-database `db_datareader`
 role is the preferred low-maintenance alternative to maintaining object or
 schema `SELECT` grants:
 
@@ -811,10 +878,11 @@ granular DMV pair.
 `db_datareader` adds no write, DDL, impersonation, server-state, SQL Agent, or
 administrative capability. It is broader than the exact grant because it reads
 all current and future user tables and views in every schema in that database,
-while the current collector samples base tables only. Unlike PostgreSQL's
+while the current collector samples local base tables only. Unlike PostgreSQL's
 `pg_read_all_data`, its scope is one database, so it is usually a reasonable
-shortcut when the entire connected database is approved for synthetic
-sampling. Keep schema grants when only selected schemas are approved.
+shortcut when the entire connected database is approved for sampling. Keep
+object grants when only selected schemas and their current
+local tables are approved.
 
 It also keeps per-object exclusion available, which the PostgreSQL shortcut
 does not. `DENY` overrides any `GRANT`, including one inherited from a fixed
@@ -881,10 +949,11 @@ PostgreSQL and MySQL do not accept `--auth-mode integrated` at all and reject
 it with `DBP1005E`, so this section applies only to SQL Server.
 
 RLS, dynamic data masking, Always Encrypted, and explicit object/column
-`DENY` rules still apply. Do not add `UNMASK`, key access, `IMPERSONATE`, or
-`sysadmin` automatically. Decide whether the approved synthetic population is
-the protected representation the reader actually sees; otherwise use a
-separately approved scrubbed source.
+`DENY` rules still apply. Blueprint does not sample a table with an enabled
+SQL Server filter predicate; it retains the catalog shape and records the
+missing row-sample measurements with `DBP1407W`. Do not add `UNMASK`, key access,
+`IMPERSONATE`, or `sysadmin` automatically. Use a separately approved scrubbed
+source when row-derived measurements are required.
 
 `db_datareader` also grants `SELECT` on `sys.sql_expression_dependencies`, so a
 `db_datareader` account needs only the `msdb` grant for the enhanced profile.
@@ -907,9 +976,9 @@ This section covers the current mainstream mappings:
 | MySQL | Amazon RDS for MySQL and Aurora MySQL | Azure Database for MySQL Flexible Server | Cloud SQL for MySQL |
 | SQL Server | Amazon RDS for SQL Server | Azure SQL Database and Azure SQL Managed Instance | Cloud SQL for SQL Server |
 
-Each service/version/authentication combination is a separate qualification
-row. Apply the underlying engine/version grant family above, then add only the
-cloud permission required by the selected connection path below. Do not infer
+Assess each service/version/authentication combination independently. Apply the
+underlying engine/version grant family above, then add only the cloud permission
+required by the selected connection path below. Do not infer
 support for a provider's compatibility service, proxy, directory integration,
 or new major version merely because it speaks the same wire protocol.
 
@@ -970,11 +1039,8 @@ The current client implements this boundary explicitly:
 - the audit identifies the cloud-token authentication path without recording
   the token.
 
-Local tests prove the activation and rejection logic, including that the
-normal MySQL builder remains disabled. That is implementation evidence, not
-provider qualification. RDS/Aurora MySQL IAM, Azure MySQL Entra, and Cloud SQL
-MySQL IAM can now proceed to separate live service/version tests; none is a
-support claim until those tests pass.
+Validate the exact service, version, and authentication path before production
+use.
 
 ### 4.3 AWS RDS and Aurora
 
@@ -1006,11 +1072,12 @@ resource ID appropriate to the actual path. Do not wildcard the resource to
 - on MySQL, the DBA creates/configures the account with the AWS IAM
   authentication plugin and then applies the MySQL grants from this document.
 
-Both PostgreSQL and MySQL IAM paths can proceed to live qualification. Use
+For PostgreSQL and MySQL IAM paths, use
 `--auth-mode cloud-token --tls-mode verify-full`; for MySQL, the explicit mode
-activates the required plugin only inside verified TLS.
+activates the required plugin only inside verified TLS. Validate the exact
+deployment before production use.
 
-The token generator runs outside `dbwarp-blueprint`; the short-lived token is
+The token helper runs outside `dbwarp-blueprint`; the short-lived token is
 passed through exactly one of `--password-file` or `--password-env` with
 `--auth-mode cloud-token --tls-mode verify-full`. Cross-account role assumption can additionally require
 `sts:AssumeRole` on the specific authentication role, but that is an identity
@@ -1022,7 +1089,7 @@ workload role is the low-maintenance option. `AmazonRDSReadOnlyAccess` is a
 control-plane inventory role and does not replace `rds-db:connect` or the
 database grants; `AmazonRDSFullAccess` is administrative and must not be used.
 
-RDS for SQL Server must use a qualified SQL Server authentication path. Do not
+RDS for SQL Server must use a SQL Server authentication path. Do not
 grant `rds-db:connect` for it: that action cannot turn an RDS SQL Server login
 into IAM database authentication.
 
@@ -1046,9 +1113,9 @@ identity and access boundary. Token acquisition and refresh remain the
 wrapper's responsibility because the current binary does not call Azure CLI,
 Azure Identity, or the instance metadata endpoint.
 
-Azure Database for MySQL Entra authentication can proceed to live
-qualification through the explicit cloud-token mode. A token working in the
-`mysql` CLI is still not sufficient proof for this binary.
+For Azure Database for MySQL Entra authentication, use the explicit
+`cloud-token` mode. A token working in the `mysql` CLI is not sufficient proof
+for this binary; validate the exact Blueprint connection before production use.
 
 Some Entra principal-creation flows require the **managed database server's
 own identity**, or the provisioning identity, to read Microsoft Graph. For
@@ -1081,14 +1148,11 @@ SQL Auth Proxy.
 For strict least privilege, use a custom role containing only
 `cloudsql.instances.login` for a direct PostgreSQL/MySQL IAM login, then add
 the IAM principal to the Cloud SQL instance and apply the PostgreSQL/MySQL
-database grants above. This custom-role path requires live proof because the
-provider documentation normally instructs operators to grant
+database grants above. Provider documentation normally instructs operators to grant
 `roles/cloudsql.instanceUser`.
 
-The custom-role PostgreSQL and direct MySQL paths can proceed to live
-qualification. Automatic IAM authentication through the Auth Proxy remains a
-separate path and must be proven with the exact local PostgreSQL/MySQL
-handshake before it can be offered.
+Validate custom-role, direct-IAM, and automatic-IAM proxy paths independently
+with the exact local PostgreSQL/MySQL handshake before production use.
 
 `roles/cloudsql.client` is a reasonable built-in connector role: it authorizes
 the encrypted Cloud SQL connection and instance lookup but grants no table
@@ -1104,8 +1168,7 @@ an alternate Cloud SQL Data API query surface beyond the direct login
 requirement when that API is enabled. The Data API executes with the mapped
 database principal's grants, so the no-write/no-DDL grant sets in this document
 still apply. That is often an acceptable read-only convenience, but it must be
-disclosed and some customers will correctly require the one-permission custom
-role instead.
+disclosed. If that is not acceptable, use the one-permission custom role.
 
 The Auth Proxy or connector holds the Google identity and exposes a local
 socket/TCP endpoint. `dbwarp-blueprint` connects to that endpoint and still
@@ -1136,10 +1199,10 @@ permissions, not part of the database collector's mandatory role set.
 An administrator may need to enable IAM/Entra authentication, set an Entra
 administrator, create a cloud IAM database user, enable an API, establish a
 private endpoint, authorize a network, or change a security-group/firewall
-rule. The exact actions depend on the customer's existing network and IaC
+rule. The exact actions depend on your existing network and IaC
 model, so there is no honest universal provisioning-role minimum.
 
-Use the customer's existing scoped DBA, identity, network, and deployment
+Use your existing scoped DBA, identity, network, and deployment
 operators for those changes. Broad shortcuts such as AWS RDS full access,
 Azure `Contributor`/`Network Contributor`, Google Cloud SQL Admin, project IAM
 administration, or directory administration may be convenient for a human or
@@ -1151,28 +1214,34 @@ route and allowed endpoint already exist, the collector needs no permission to
 modify VPCs/VNets, security groups, firewalls, private endpoints, DNS, service
 networking, or authorized networks.
 
-## 5. Acceptance and control gates
+## 5. Acceptance checks
 
 ### 5.1 Real-world boundaries that grants do not fix
 
-The query audit also found cases where a DBA can grant exactly the documented
-permissions and the resulting blueprint can still be incomplete or biased. These
+Even with exactly the documented permissions, the resulting Blueprint can be
+incomplete or biased in these cases. These
 must be acceptance checks, not reasons to broaden the account:
 
-- PostgreSQL's mandatory table query currently includes only `relkind = 'r'`.
-  A partitioned parent (`relkind = 'p'`) is not a table-structure record, although
-  ordinary leaf partitions can appear. Partitioned fixtures are therefore a
-  product-qualification gate, not a permission problem.
+- The `dbwarp-blueprint` binary inventories ordinary tables, partition roots
+  and leaves, materialized views, and foreign tables. Logical roots carry no
+  row/byte totals and foreign tables are never followed or counted in totals.
+  The SQL fallback script covers only row-holding ordinary
+  relations and marks every structure family incomplete; this is a capability
+  boundary, not a reason to broaden its account.
 - PostgreSQL `reltuples` and MySQL InnoDB `TABLE_ROWS` are optimizer estimates;
   stale statistics can produce coarse row totals even with full read access.
-- MySQL and SQL Server Tier 2 use natural/first-row order rather than a random
-  sample. Clustered keys, tenant ordering, and time ordering can bias values.
-- MySQL invisible columns require a live qualification case because the
-  catalog walk and a bounded all-column projection do not necessarily expose the same positional
-  column set.
-- SQL Server's DMV reports database storage counts independently of the rows
-  visible through RLS. Dynamic data masking and client-side encryption can
-  also change what the sampler observes without causing a permission error.
+- MySQL uses disjoint numeric-primary-key range windows when the catalog proves
+  that plan is valid, with a bounded first-row fallback otherwise. SQL Server
+  uses bounded physical/clustered first-row order. Clustered keys, tenant
+  ordering, gaps, and time ordering can still bias values.
+- Validate MySQL invisible-column behavior before production use because the
+  catalog walk and a bounded all-column projection do not necessarily expose
+  the same positional column set.
+- SQL Server's DMV reports database storage counts independently of rows that
+  an RLS filter would expose. Blueprint detects enabled filter predicates and
+  skips row sampling for those tables. Dynamic data masking and client-side
+  encryption can still change sampled values without causing a permission
+  error.
 - All engines can acquire new tables during a long-running capture. The broad
   reader shortcuts cover future objects automatically, while exact grants need
   default privileges or role maintenance. In either case, reconcile the
@@ -1181,9 +1250,9 @@ must be acceptance checks, not reasons to broaden the account:
 Do not grant ownership, RLS bypass, unmasking, decryption-key access, or
 administrative roles to make one of these cases disappear. Either accept the
 protected population explicitly, capture from an approved scrubbed replica,
-or fail the synthetic-copy-readiness gate.
+or fail the standard-tier acceptance criteria.
 
-### 5.2 Synthetic-copy-ready acceptance gate
+### 5.2 Standard-tier acceptance criteria
 
 Permissions are sufficient only when all of the following are true for the
 actual capture:
@@ -1195,14 +1264,15 @@ actual capture:
 3. Require a table-level compression block with `measured = true`, a recognized
    `sample_encoding`, and a nonzero `sample_rows` value for every nonempty
    table.
-4. Require sampled cardinality for the columns needed by unique/index/FK and
-   relationship generation. For MySQL, also require observed length statistics
+4. Require sampled cardinality for columns covered by unique, index and
+   foreign-key structure. For MySQL, also require observed length statistics
    for every nonempty variable-width indexed column.
 5. Reject `DBP1406W` (sampling budget exhausted), `DBP1407W` (table sample
-   unavailable), and `DBP1408W` (column style sample unavailable) when the
-   affected object is in scope.
+   unavailable), `DBP1408W` (column style sample unavailable), and `DBP1423W`
+   (index/relationship structure catalog unavailable) when the affected object
+   is in scope.
 6. Reconcile primary/unique indexes and foreign-key counts with expected
-   metadata; generation planning depends on their exact column ordinals.
+   metadata; relationship evidence depends on their exact column ordinals.
 7. Confirm that row-level security, views, tenant predicates, and replica
    filtering did not change the approved source population.
 8. Keep the engine version, command, output, and audit together as the run
@@ -1215,7 +1285,7 @@ MySQL and SQL Server can remain biased even when every grant is correct.
 ### 5.3 Explicitly unnecessary permissions
 
 Do not grant any of the following merely to run the current table-structure or
-synthetic-copy-ready capture:
+standard capture:
 
 - PostgreSQL `SUPERUSER`, `pg_monitor`, `pg_read_all_stats`, `BYPASSRLS`,
   schema `CREATE`, table write, or direct sequence privileges (`pg_read_all_data`
@@ -1226,7 +1296,9 @@ synthetic-copy-ready capture:
   `EVENT` are DDL-capable and `SHOW_ROUTINE` is global);
 - SQL Server `sysadmin`, `db_owner`, `CONTROL`, `IMPERSONATE`, `VIEW SERVER
   STATE`, SQL Agent roles, DDL, or write privileges (`db_datareader` is the
-  documented per-database convenience exception);
+  documented per-database convenience exception, and the enhanced script's
+  separate server-state batch is the documented optional exception for
+  capacity and topology evidence);
 - cloud control-plane inventory or administration roles, including AWS RDS
   read/full access, Azure `Reader`/`Contributor` and database contributor
   roles, or Google Cloud SQL Viewer/Editor/Admin. The documented
@@ -1237,8 +1309,8 @@ synthetic-copy-ready capture:
 ### 5.4 Deployment-specific validation
 
 Validate the exact managed service, engine version, authentication mode, TLS
-settings, and connector configuration before production use. Protocol support
-and self-managed testing do not establish qualification of a managed service.
+settings, and connector configuration before production use. Protocol
+compatibility alone does not show that a managed service works.
 
 ## 6. Evidence and references
 
@@ -1264,11 +1336,6 @@ and self-managed testing do not establish qualification of a managed service.
   one-database-connection and no-cloud-API operating boundary.
 - [`src/statistics.rs`](../../src/statistics.rs): sampled cardinality to index/FK
   relationship inference.
-- [`crates/dbwarp-blueprint-core/src/generator.rs`](../../crates/dbwarp-blueprint-core/src/generator.rs):
-  synthetic value generation from captured type, length, cardinality, and
-  compression signals.
-- [`crates/dbwarp-blueprint-core/src/generation_plan.rs`](../../crates/dbwarp-blueprint-core/src/generation_plan.rs):
-  table, unique-key, and foreign-key generation planning.
 
 ### 6.2 Vendor references
 

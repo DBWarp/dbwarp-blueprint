@@ -22,21 +22,11 @@
 瞬时探针缓冲区，在本地使用 zstd 级别 3 压缩这些缓冲区，并派生汇总压缩、NULL 密度、
 基数／频率、长度和样式测量值，之后丢弃采样值及临时指纹。
 
-对于选定的文本/二进制列，Tier 2 还可能单独采样该列。这使下游规划工具能够匹配每列熵，而不是只依赖表级平均值。
+对于选定的 text/binary 列，Tier 2 也可以单独对该列进行抽样。 这样可以获得每个列的压缩率，而不仅仅是表级别的平均值。
 
-实时数据库的表级比率使用中立序列：每组最多 1000 行、每列一个描述符、固定宽度的值长度，
-以及按列连续的负载。它测量大容量传输共享的与压缩相关的结构，但不捕获数据库协议或 DBWarp 线路格式。
-逐列比率仍使用 `blueprint-compression-probe-v2`；其带标记且以长度为前缀的值仍是更具体的熵输入。
+实时数据库表的数据比例使用一个中性的、固定大小的1000行分组，每个分组包含一个描述符，每列具有固定的值长度，并且数据按列连续存储。 这种方式衡量了与压缩相关的结构，而不会捕获任何数据库或传输协议的信息。 每列的比例保留了`blueprint-compression-probe-v2`，其带有标签的、长度前缀的值仍然是更具体的熵输入。
 
-PostgreSQL 表块目前使用 `blueprint-columnar-transfer-probe-v2`，将行组送入同一个持久的
-zstd 级别 3 上下文，并在每组后刷新。MySQL 和 SQL Server 使用
-`blueprint-columnar-transfer-probe-v3`：同样的中立字节和持久上下文，并在 256 KiB 探针分块边界额外刷新。
-SQL Server 的 `nvarchar`、`nchar` 和 `ntext` 样本按 UTF-16LE 字节分布进行测量。
-`varchar`、`char` 和 `text` 保留其采样的窄字节宽度；Blueprint 将源排序规则的目录代码页记录为
-`utf-8`、`windows-N` 或 `code-page-N`，使获批的消费方可选择兼容的原生编码器，而不是扩宽这些值。
-数据库驱动仍向采样器提供解码后的字符串，因此不声称旧代码页的字节完全相同。表级 `ratio_stddev` 在外层行组输出之间测量。
-逐列投影块仍是独立的单次熵测量，并输出 `0.0`。以前标记为
-`blueprint-columnar-transfer-probe-v1` 的表测量对合并后的帧执行一次已声明大小的操作；显式版本可防止这些比率被按当前流式策略静默重新解释。
+PostgreSQL 表的块使用 `blueprint-columnar-transfer-probe-v2`，它将行组通过一个持久的 zstd 级别 3 上下文，并在每个组之后刷新。MySQL 和 SQL Server 使用 `blueprint-columnar-transfer-probe-v3`：相同的中性字节和持久上下文，并在 256 KiB 的探测块边界处进行额外的刷新。SQL Server 的 `nvarchar`、`nchar` 和 `ntext` 样本被测量为 UTF-16LE 字节分布。SQL Server 的 `varchar`、`char` 和 `text` 保留其采样的窄字节宽度；Blueprint 记录源排序规则的目录代码页为 `utf-8`、`windows-N` 或 `code-page-N`。数据库驱动程序仍然将解码后的字符串暴露给采样器，因此不声称具有旧代码页的字节身份。表 `ratio_stddev` 跨外部行组输出进行测量。每个列的投影块仍然是独立的、一次性的熵测量，并输出 `0.0`。较早版本的 Blueprint 可能包含 `blueprint-columnar-transfer-probe-v1`；具有不同标签的比例不可比较。
 
 采样字节只会通过所选数据库会话进入本地进程。它们不会写入磁盘，不会包含在
 `blueprint.toml` 或审计日志中，不会上传，也不会发送到 DBWarp 基础设施。
@@ -80,9 +70,9 @@ style = "json"
 measured = true
 sample_rows = 1000
 sample_bytes = 65536
-sample_method = "column LIMIT N (engine-specific bounded sample)"
+sample_method = "LIMIT N (fallback after underfilled adaptive TABLESAMPLE; simple-query text fields; raw binary/vector decoded; server-side cell cap)"
 sampled_with_bias = true
-bias_reason = "unordered_limit_after_empty_TABLESAMPLE"
+bias_reason = "unordered_limit_after_underfilled_adaptive_TABLESAMPLE+server_side_cell_cap"
 ratio_zstd_3 = 12.35
 ratio_stddev = 0.2
 sample_encoding = "blueprint-compression-probe-v2"
@@ -98,7 +88,7 @@ ratio_stddev = 0.15
 sample_encoding = "blueprint-columnar-transfer-probe-v3"
 ```
 
-这些值可帮助经批准的下游工具估算网络传输大小，并生成具有相似可压缩性的合成文本/二进制数据。
+这些值用于估算网络传输的大小。
 
 ## 重要性
 
@@ -113,14 +103,13 @@ sample_encoding = "blueprint-columnar-transfer-probe-v3"
 ## 偏差和透明度
 
 某些引擎不提供完全均匀的表采样。当可使用该访问路径时，MySQL 会将有界样本分散到四个数值主键范围；
-否则回退到 `LIMIT N`。两者都会显式标记为有偏，因为它们都不是统计随机样本。其他不太理想的引擎回退也通过
-`sampled_with_bias` 和 `bias_reason` 记录。
+否则回退到 `LIMIT N`。两者都会显式标记为有偏，因为它们都不是统计随机样本。除最后一个范围窗口外，每个窗口
+都有排他的上界。稀疏或偏斜的主键区域可能使窗口不足，但窗口不会再次读取下一个窗口中的行。其他不太理想的
+引擎回退也通过 `sampled_with_bias` 和 `bias_reason` 记录。
 
-当有界样本的布局会影响合成生成时，Blueprint 会将它与这些文本字段分开记录。MySQL 数值主键范围采样会输出
-`sample_layout = "primary-key-range-windows"`，并按完整主键对每个窗口排序。这使消费方无需解析 `sample_method` 或
-`bias_reason` 即可保留复合键的分组局部性。
+Blueprint 记录了有限样本的布局，并将其与相关的文本字段分开。MySQL 数值主键范围抽样会输出 `sample_layout = "primary-key-range-windows"`，并且对每个窗口按照完整的键进行排序。
 
-有偏样本仍然有用，但下游工具应以较低置信度处理它们。审计日志会记录已启用行采样和本地编码的探针字节数。驱动不公开的数据库会话字节总数标为 `unknown`。
+带有偏差的样本仍然有用，但置信度较低。审计日志记录了已启用行采样以及本地编码的探测字节计数。数据库会话的字节总数报告为 `unknown`，当驱动程序不提供这些信息时。
 
 ## 实际采样设置
 
@@ -132,7 +121,7 @@ sample_encoding = "blueprint-columnar-transfer-probe-v3"
 --max-wall-secs 120
 ```
 
-有只读副本或维护窗口时，可使用更佳的估算器输入：
+当存在读取副本或维护窗口时，可以获得更准确的测量结果：
 
 ```bash
 --measure-compression --yes \
@@ -152,13 +141,6 @@ MySQL 和 SQL Server 可以减少行数，并调整逐列限制后重试，但�
 审计会记录配置的负载上限、执行的查询以及在本地编码的确切探针字节总数；
 它并不报告实测的数据库网络流量。
 
-## 下游消费者如何使用它
+## 如何解读这些测量结果。
 
-下游消费者应按以下顺序使用压缩证据：
-
-1. 可识别的逐列压缩块；
-2. 可识别的表级压缩块；
-3. 没有实测比率时的类型/样式默认值。
-
-`sample_encoding` 字段是契约的一部分。消费者应只使用带有可识别编码标签的比率，因为不同的样本编码可能会对相同逻辑数据产生不同的压缩比率。
-特别是，表级列式传输探针比率和逐列 v2 比率是互补测量，不得互相替代。
+`sample_encoding` 字段是合同的一部分。 比例只能在同一个编码标签内进行比较，因为不同的采样编码可能会对相同的数据产生不同的压缩比例。 特别是，表级别的列式传输比例和每个列的 v2 比例是互补的测量值，不能互相替代。

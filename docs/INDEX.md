@@ -1,8 +1,8 @@
 # dbwarp-blueprint Documentation Index
 
-**Language:** English is authoritative. Machine-translated document sets may be
-published separately after multiple independent reviews and may still contain
-errors. See [Documentation Translations](TRANSLATIONS.md).
+**Language:** English is authoritative. Machine-translated editions, when
+available, are non-authoritative and may contain errors. See
+[Documentation Translations](TRANSLATIONS.md).
 
 Start with:
 
@@ -33,6 +33,4 @@ Core references:
 - [Visual Summary Deck](../DECK.md)
 - [Download Binaries](../binaries/README.md)
 
-Blueprint handoff and downstream use are covered by the customer agreement and
-the documentation supplied with the approved downstream DBWarp product. This
-repository documents only Blueprint capture, review, and packaging.
+This repository documents Blueprint capture, review, and packaging only.

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import tempfile
 import subprocess
-import re
+import os
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -26,7 +26,7 @@ class PublicTreeCheckerTests(unittest.TestCase):
             target = self.root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("fixture\n", encoding="utf-8")
-            if relative in check_public_tree.REQUIRED_EXECUTABLES:
+            if os.name != "nt" and relative in check_public_tree.REQUIRED_EXECUTABLES:
                 target.chmod(0o755)
         (self.root / "LICENSE-APACHE").write_bytes((ROOT / "LICENSE-APACHE").read_bytes())
         (self.root / "rustup-init.sha256").write_text("1" * 64 + "  rustup-init\n", encoding="utf-8")
@@ -35,6 +35,15 @@ class PublicTreeCheckerTests(unittest.TestCase):
             '"third_party_package_count":0,"packages":[]}\n',
             encoding="utf-8",
         )
+        subprocess.run(["git", "init", "--quiet"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=self.root, check=True, capture_output=True)
+        for relative in check_public_tree.REQUIRED_EXECUTABLES:
+            subprocess.run(
+                ["git", "update-index", "--chmod=+x", "--", relative],
+                cwd=self.root,
+                check=True,
+                capture_output=True,
+            )
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -63,15 +72,44 @@ class PublicTreeCheckerTests(unittest.TestCase):
     def test_lost_executable_modes_fail_for_every_entry_point(self) -> None:
         for relative in check_public_tree.REQUIRED_EXECUTABLES:
             with self.subTest(relative=relative):
-                path = self.root / relative
-                path.chmod(0o644)
+                subprocess.run(
+                    ["git", "update-index", "--chmod=-x", "--", relative],
+                    cwd=self.root,
+                    check=True,
+                    capture_output=True,
+                )
                 try:
-                    self.assertTrue(any(relative in error and "executable bit" in error for error in self.failures()))
+                    self.assertTrue(
+                        any(
+                            relative in error
+                            and ("executable bit" in error or "100755" in error)
+                            for error in self.failures()
+                        )
+                    )
                 finally:
-                    path.chmod(0o755)
+                    subprocess.run(
+                        ["git", "update-index", "--chmod=+x", "--", relative],
+                        cwd=self.root,
+                        check=True,
+                        capture_output=True,
+                    )
+
+    @unittest.skipIf(os.name == "nt", "POSIX disk modes are not represented on Windows")
+    def test_lost_disk_executable_mode_fails_without_an_index(self) -> None:
+        root = self.root / "unindexed"
+        root.mkdir()
+        path = root / "build.sh"
+        path.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        path.chmod(0o644)
+        self.assertTrue(
+            any(
+                "build.sh" in error and "executable bit" in error
+                for error in check_public_tree.validate_executable_modes(root, {"build.sh"})
+            )
+        )
 
     def test_git_index_modes_are_checked_even_when_disk_is_executable(self) -> None:
-        for args in (["init", "--quiet"], ["add", "."], ["config", "core.filemode", "false"],
+        for args in (["config", "core.filemode", "false"],
                      ["update-index", "--chmod=-x", "--", "build.sh"]):
             subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
         self.assertTrue(any("Git index" in error and "build.sh" in error for error in self.failures()))
@@ -79,9 +117,12 @@ class PublicTreeCheckerTests(unittest.TestCase):
         self.assertEqual(self.failures(), [])
 
     def test_windows_without_candidate_index_fails_closed(self) -> None:
+        root = self.root / "unindexed-windows"
+        root.mkdir()
+        (root / "build.sh").write_text("fixture\n", encoding="utf-8")
         with patch.object(check_public_tree.os, "name", "nt"):
             self.assertTrue(any("without a staged" in error for error in
-                                check_public_tree.validate_executable_modes(self.root, {"build.sh"})))
+                                check_public_tree.validate_executable_modes(root, {"build.sh"})))
 
     def test_repository_rule_is_enforced_even_in_non_utf8_data(self) -> None:
         organization = "DBWarp"
@@ -105,10 +146,10 @@ class PublicTreeCheckerTests(unittest.TestCase):
         self.write_probe(b"https://github.com/DBWarp/dbwarp-blueprint.git\n")
         self.assertEqual(self.failures(), [])
 
-    def test_private_layout_lab_host_and_retired_command_are_blocked(self) -> None:
+    def test_private_layout_and_non_blueprint_command_are_blocked(self) -> None:
         probes = [
             "dbwarp-" + "other/internal/readme",
-            "`dbwarp " + "estimate`",
+            "`dbwarp " + "example-subcommand`",
         ]
         for probe in probes:
             with self.subTest(probe=probe):
@@ -116,17 +157,28 @@ class PublicTreeCheckerTests(unittest.TestCase):
                 self.assertTrue(self.failures())
                 (self.root / "probe.bin").unlink()
 
-    def test_lab_host_rule_with_synthetic_domain(self) -> None:
-        pattern = re.compile(check_public_tree.LAB_HOST.pattern.replace("dbwarp", "example"), re.I)
-        with patch.object(check_public_tree, "LAB_HOST", pattern):
-            self.write_probe(b"host.example.test")
-            self.assertTrue(self.failures())
+    def test_private_tld_rule_with_synthetic_domain(self) -> None:
+        suffix = "test"
+        self.write_probe(f"host.example.{suffix}".encode())
+        self.assertTrue(self.failures())
+
+    def test_internal_source_trees_are_blocked_structurally(self) -> None:
+        for relative in ("ci/probe.sh", "tests/manual/harness.py"):
+            with self.subTest(relative=relative):
+                path = self.root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("fixture\n", encoding="utf-8")
+                try:
+                    self.assertTrue(any(relative in error for error in self.failures()))
+                finally:
+                    path.unlink()
 
     def test_vcs_metadata_is_deliberately_ignored(self) -> None:
         for args in (["init", "--quiet"], ["add", "."]):
             subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
         path = self.root / ".git" / "review-note"
-        path.write_text("host.example.test", encoding="utf-8")
+        suffix = "test"
+        path.write_text(f"host.example.{suffix}", encoding="utf-8")
         self.assertEqual(self.failures(), [])
 
     def test_invalid_utf8_markdown_fails_instead_of_being_skipped(self) -> None:

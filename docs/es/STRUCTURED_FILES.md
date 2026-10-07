@@ -24,7 +24,7 @@ Este es un modo sin conexión:
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
@@ -57,33 +57,18 @@ compresión de transporte DBWarp, y nunca se emiten como `ratio_zstd_3`.
 
 ```bash
 dbwarp-blueprint \
-  --from-avro /data/customer-sample.avro \
+  --from-avro /data/events.avro \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
 
-Los contenedores de objetos Avro no exponen un número de filas en un pie al
-estilo de Parquet. Por ello, el modo Avro recorre el contenedor una vez para
-contar los registros, derivar `table_bytes` lógicos y observar `len_avg`,
-`len_p95` y `null_fraction` por columna. El esquema del escritor proporciona los
-metadatos de tipo lógico. `storage_bytes` y `ratio_storage` describen el
-contenedor Avro, no una estimación de transferencia de DBWarp. Esto es adecuado
-para la planificación del estimador y de conjuntos de datos sintéticos.
+Los contenedores de objetos Avro no exponen un número de filas en un pie al estilo de Parquet. Por ello, el modo Avro recorre el contenedor una vez para contar los registros, derivar `table_bytes` lógicos y observar `len_avg`, `len_p95` y `null_fraction` por columna. El esquema del escritor proporciona los metadatos de tipo lógico. `storage_bytes` y `ratio_storage` describen el contenedor Avro, no una estimación de transferencia de DBWarp.
 
 ## Fidelidad de tipos lógicos
 
-La captura de archivos estructurados conserva los metadatos lógicos acotados
-que necesita el estimador: precisión y escala decimales, familias de fecha y
-hora, precisión de marcas de tiempo y semántica UTC/local, UUID, anchura binaria
-fija, cadenas UTF-8 y bytes sin procesar. Los campos que solo contienen valores
-nulos permanecen como `type = "null"` en lugar de convertirse en texto sintético.
+La captura de archivos estructurados preserva los metadatos lógicos limitados necesarios para el dimensionamiento: decimal precision/scale, familias de fecha y hora, precisión de marca de tiempo y semántica UTC/local, UUID, ancho binario de tamaño fijo, cadenas UTF-8 y bytes sin formato. Los campos que contienen solo valores nulos permanecen `type = "null"` en lugar de convertirse en texto sintético.
 
-Las hojas Parquet anidadas y los arrays, mapas, registros o uniones de varios
-tipos de Avro no pueden representarse como un único escalar SQL exacto. El
-Blueprint registra un tipo `json` normalizado y un valor `source_semantics` como
-`"repeated-leaf"`, `"nested-json"` o `"multi-type-union"`. Los generadores
-posteriores deben identificar estos valores como presión JSON representativa,
-sin afirmar una ida y vuelta exacta del esquema anidado.
+Los elementos anidados de Parquet y los arreglos, mapas, registros o uniones de múltiples tipos de Avro no se pueden representar como un único valor escalar de SQL. El Blueprint registra un tipo normalizado `json` más `source_semantics`, como `"repeated-leaf"`, `"nested-json"` o `"multi-type-union"`. Estas columnas se dimensionan como JSON; el esquema anidado no se reproduce exactamente.
 
 Las raíces de nombres de archivo, las rutas Parquet, los nombres de campos Avro
 y las etiquetas `logical_table` de un lote no se escriben como identificadores
@@ -99,7 +84,7 @@ decodificada:
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --measure-compression --yes \
   --sample-rows 5000 \
   --out blueprint.toml \
@@ -117,27 +102,16 @@ Cuando se habilita, `dbwarp-blueprint`:
 - emite resúmenes de compresión zstd-3 por tabla y por columna;
 - registra `sample_encoding = "blueprint-compression-probe-v2"` en el TOML generado;
 - conserva los bytes muestreados solo en memoria y nunca escribe valores de
-  filas en disco.
+`--measure-compression` requiere `--yes` porque lee valores de datos decodificados. Persiste mediciones de compresión agregada, densidad de nulos, cardinality/frequency, longitud y estilo, nunca valores muestreados.
 
-`--measure-compression` requiere `--yes` porque lee valores decodificados del
-cliente. Conserva mediciones agregadas de compresión, densidad de NULL,
-cardinalidad/frecuencia, longitud y estilo, nunca los valores muestreados.
-
-El muestreador actual utiliza una muestra determinista de los primeros N
-registros. Es reproducible y barato, pero puede estar sesgado si un archivo está
-ordenado o agrupado. Para estimaciones críticas, prefiera un archivo
-representativo o genere varios archivos Blueprint a partir de fragmentos
-distintos. Una versión futura puede incorporar muestreo estratificado por
-grupos de filas o bloques.
+El muestreador actual utiliza un muestreo determinista de los primeros N elementos. Esto es reproducible y económico, pero puede estar sesgado si un archivo está ordenado o agrupado. Para estimaciones importantes, es preferible utilizar un archivo representativo o generar múltiples archivos Blueprint a partir de diferentes particiones.
 
 ## Alcance
 
 El modo Blueprints a partir de archivos estructurados resulta útil para:
 
 - dimensionar una importación Parquet/Avro antes de una ejecución de DBWarp;
-- generar un conjunto de datos sintético representativo sin copiar nombres del
-  origen ni valores de filas;
-- planificar flujos Parquet/Avro -> DBWarp columnar -> base de datos de destino.
+- planificando una transferencia de datos a una base de datos Parquet/Avro.
 
 No sustituye a la captura de Blueprints de bases de datos en vivo cuando el origen
 real es una base de datos compatible, es decir, PostgreSQL, MySQL o SQL Server. Un

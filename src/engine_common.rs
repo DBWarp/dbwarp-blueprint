@@ -140,6 +140,22 @@ pub(crate) fn bounded_projection_plan(
     Ok(plan)
 }
 
+/// Re-clamp a planned row count against the final per-cell payload bytes.
+/// Engine prefix floors can exceed the planner's own per-column limits, so
+/// the ceiling must be re-established from the payloads actually projected.
+pub(crate) fn rows_within_sample_budget(planned_rows: u64, cell_payload_bytes: &[u64]) -> u64 {
+    use dbwarp_blueprint_core::{
+        TRANSFER_PROBE_CELL_OVERHEAD_BYTES, TRANSFER_PROBE_MAX_SAMPLE_BYTES,
+    };
+    let row_bytes = cell_payload_bytes.iter().fold(
+        (cell_payload_bytes.len() as u64).saturating_mul(TRANSFER_PROBE_CELL_OVERHEAD_BYTES),
+        |total, payload| total.saturating_add(*payload),
+    );
+    planned_rows
+        .min(((TRANSFER_PROBE_MAX_SAMPLE_BYTES as u64) / row_bytes.max(1)).max(1))
+        .max(1)
+}
+
 pub(crate) fn record_sample_prefix_bias(method: &mut String, bias: &mut String) {
     method.push_str("; bounded prefixes; original lengths retained");
     bias.push_str("+sample_byte_budget_prefix");
@@ -246,6 +262,13 @@ pub(crate) fn accumulate_table_totals(
     totals: &mut Totals,
     table: &BlueprintTable,
 ) -> anyhow::Result<()> {
+    if !table.counts_toward_totals() {
+        return Ok(());
+    }
+    let table_count = totals
+        .table_count
+        .checked_add(1)
+        .ok_or_else(|| anyhow::anyhow!("Blueprint table total exceeds the u64 format limit"))?;
     let row_count = totals
         .row_count
         .checked_add(table.rows)
@@ -263,6 +286,7 @@ pub(crate) fn accumulate_table_totals(
             anyhow::anyhow!("Blueprint index-byte total exceeds the u64 format limit")
         })?;
 
+    totals.table_count = table_count;
     totals.row_count = row_count;
     totals.table_bytes = table_bytes;
     totals.index_bytes = index_bytes;
@@ -380,8 +404,33 @@ mod tests {
         };
 
         accumulate_table_totals(&mut totals, &table).unwrap();
+        assert_eq!(totals.table_count, 1);
         assert_eq!(totals.row_count, 3);
         assert_eq!(totals.table_bytes, 5);
         assert_eq!(totals.index_bytes, 7);
+    }
+
+    #[test]
+    fn external_tables_do_not_contribute_to_totals() {
+        let mut totals = Totals {
+            table_count: 2,
+            row_count: 300,
+            table_bytes: 4_096,
+            index_bytes: 1_024,
+        };
+        let before = totals.clone();
+        let external = BlueprintTable {
+            rows: 9_000,
+            table_bytes: 90_000,
+            index_bytes: 9_000,
+            counted_in_totals: Some(false),
+            ..Default::default()
+        };
+
+        accumulate_table_totals(&mut totals, &external).unwrap();
+        assert_eq!(totals.table_count, before.table_count);
+        assert_eq!(totals.row_count, before.row_count);
+        assert_eq!(totals.table_bytes, before.table_bytes);
+        assert_eq!(totals.index_bytes, before.index_bytes);
     }
 }

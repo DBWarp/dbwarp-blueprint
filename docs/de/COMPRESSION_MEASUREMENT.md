@@ -27,35 +27,11 @@ zstd auf Stufe 3 und leitet aggregierte Komprimierungs-, NULL-Dichte-,
 Kardinalitäts-/Häufigkeits-, Längen- und Stilmessungen ab, bevor es beprobte
 Werte und temporäre Fingerprints verwirft.
 
-Tier 2 kann ausgewählte Text-/Binärspalten außerdem einzeln beproben. Dadurch können nachgelagerte Planungswerkzeuge die Entropie einzelner Spalten nachbilden, statt sich ausschließlich auf Durchschnittswerte der gesamten Tabelle zu stützen.
+Für ausgewählte text/binary-Spalten kann Tier 2 auch diese Spalte einzeln abtasten. Dies ermöglicht eine Komprimierbarkeit pro Spalte anstatt nur Tabellen-weite Durchschnittswerte.
 
-Verhältnisse für Live-Datenbanktabellen verwenden eine neutrale Folge von
-begrenzten Gruppen mit je 1.000 Zeilen, eine Beschreibung je Spalte, Werte mit
-fester Längenangabe und spaltenweise zusammenhängende Nutzdaten. Damit wird die
-für Massentransporte gemeinsame komprimierungsrelevante Struktur gemessen, ohne
-ein Datenbankprotokoll oder DBWarp-Drahtformat abzubilden. Verhältnisse je Spalte
-behalten `blueprint-compression-probe-v2`; dessen markierte, längenpräfigierte
-Werte bleiben die spezifischere Entropieeingabe.
+Die Verhältnisse von Tabellen in Live-Datenbanken verwenden eine neutrale Sequenz von begrenzten Gruppen mit jeweils 1.000 Zeilen, wobei jede Spalte durch einen Deskriptor gekennzeichnet ist, die Werte haben eine feste Breite und die Datenblöcke sind spaltenweise angeordnet. Dies misst die Struktur, die für die Komprimierung relevant ist, ohne dabei Datenbank- oder Übertragungsprotokolle zu erfassen. Die Verhältnisse pro Spalte behalten `blueprint-compression-probe-v2`, wobei die mit Längenpräfix versehenen Werte, die mit Tags versehen sind, den spezifischeren Entropie-Eingang darstellen.
 
-PostgreSQL-Tabellenblöcke verwenden derzeit
-`blueprint-columnar-transfer-probe-v2`: Zeilengruppen durchlaufen einen
-persistenten zstd-Kontext auf Stufe 3, der nach jeder Gruppe geleert wird. MySQL
-und SQL Server verwenden `blueprint-columnar-transfer-probe-v3` mit denselben
-neutralen Bytes und demselben persistenten Kontext, aber zusätzlichen Leerungen
-an 256-KiB-Probe-Blockgrenzen. SQL-Server-Stichproben aus `nvarchar`, `nchar`
-und `ntext` werden als UTF-16LE-Byteverteilungen gemessen. `varchar`,
-`char` und `text` behalten ihre beprobte schmale Bytebreite; der Blueprint zeichnet
-die Katalog-Codepage der Quellkollation als `utf-8`, `windows-N` oder
-`code-page-N` auf, damit ein genehmigter Verbraucher einen kompatiblen nativen
-Encoder wählen kann, statt die Werte zu verbreitern. Da der Datenbanktreiber dem
-Sampler weiterhin dekodierte Zeichenketten liefert, wird keine Byteidentität für
-alte Codepages behauptet. `ratio_stddev` der Tabelle wird über die Ausgaben der
-äußeren Zeilengruppen gemessen. Projektionsblöcke je Spalte bleiben unabhängige
-Einmal-Entropiemessungen und geben `0.0` aus. Ältere Tabellenmessungen mit
-`blueprint-columnar-transfer-probe-v1` verwendeten eine zugesagte Operation über
-die verbundenen Frames; die explizite Version verhindert, dass diese
-Verhältnisse stillschweigend nach der aktuellen Streaming-Richtlinie umgedeutet
-werden.
+PostgreSQL-Tabellenblöcke verwenden `blueprint-columnar-transfer-probe-v2`, wobei Gruppierungen von Zeilen durch einen persistenten zstd-Kontext der Stufe 3 geleitet und nach jeder Gruppe geleert werden. MySQL und SQL Server verwenden `blueprint-columnar-transfer-probe-v3`: die gleichen neutralen Bytes und einen persistenten Kontext, mit zusätzlichen Leerungen an den Grenzen von 256-KB-Proben. Die `nvarchar`, `nchar` und `ntext`-Samples von SQL Server werden als UTF-16LE-Byt-Verteilungen gemessen. Die `varchar`, `char` und `text`-Samples von SQL Server behalten ihre gemessene, schmale Bytebreite; das Blueprint speichert den Katalog-Codepage des Quell-Sortierverfahrens als `utf-8`, `windows-N` oder `code-page-N`. Der Datenbanktreiber stellt dekodierte Strings weiterhin dem Sampler zur Verfügung, sodass die Byte-Identität einer alten Codepage nicht beansprucht wird. Die Tabelle `ratio_stddev` wird über die äußeren Ausgaben von Zeilengruppen gemessen. Pro-Spalte-Projektionsblöcke bleiben unabhängige, einmalige Entropiemessungen und geben `0.0` aus. Blueprints aus früheren Versionen können `blueprint-columnar-transfer-probe-v1` enthalten; Verhältnisse mit unterschiedlichen Tags sind nicht vergleichbar.
 
 Die beprobten Bytes gelangen ausschließlich über die ausgewählte
 Datenbanksitzung in den lokalen Prozess. Sie werden weder auf den Datenträger
@@ -111,9 +87,9 @@ style = "json"
 measured = true
 sample_rows = 1000
 sample_bytes = 65536
-sample_method = "column LIMIT N (engine-specific bounded sample)"
+sample_method = "LIMIT N (fallback after underfilled adaptive TABLESAMPLE; simple-query text fields; raw binary/vector decoded; server-side cell cap)"
 sampled_with_bias = true
-bias_reason = "unordered_limit_after_empty_TABLESAMPLE"
+bias_reason = "unordered_limit_after_underfilled_adaptive_TABLESAMPLE+server_side_cell_cap"
 ratio_zstd_3 = 12.35
 ratio_stddev = 0.2
 sample_encoding = "blueprint-compression-probe-v2"
@@ -129,7 +105,7 @@ ratio_stddev = 0.15
 sample_encoding = "blueprint-columnar-transfer-probe-v3"
 ```
 
-Diese Werte helfen genehmigten nachgelagerten Werkzeugen, die Netzwerkübertragungsgröße zu schätzen und synthetische Text-/Binärdaten mit ähnlicher Komprimierbarkeit zu erzeugen.
+Diese Werte werden verwendet, um die Größe des Netzwerktransfers abzuschätzen.
 
 ## Bedeutung
 
@@ -147,19 +123,16 @@ Einige Engines bieten keine vollkommen gleichmäßige Tabellenstichprobe. MySQL
 verteilt eine begrenzte Stichprobe auf vier Bereiche des numerischen
 Primärschlüssels, wenn dieser Zugriffspfad verfügbar ist, und fällt sonst auf
 `LIMIT N` zurück. Beide Verfahren bleiben ausdrücklich als verzerrt markiert, da
-keines eine statistische Zufallsstichprobe darstellt. Andere weniger geeignete
+keines eine statistische Zufallsstichprobe darstellt. Nicht abschließende
+Bereichsfenster haben eine exklusive Obergrenze. Dünn oder ungleichmäßig belegte
+Primärschlüsselbereiche können daher ein Fenster unterfüllen, aber ein Fenster
+kann keine Zeilen aus dem nächsten erneut lesen. Andere weniger geeignete
 Engine-Fallbacks werden ebenso mit `sampled_with_bias` und `bias_reason`
 aufgezeichnet.
 
-Wenn die Anordnung einer begrenzten Stichprobe die synthetische Erzeugung
-beeinflusst, zeichnet Blueprint sie getrennt von diesen Textfeldern auf. Die
-MySQL-Stichprobe nach numerischen Primärschlüsselbereichen gibt
-`sample_layout = "primary-key-range-windows"` aus und ordnet jedes Fenster nach
-dem vollständigen Primärschlüssel. Verbraucher können dadurch gruppierte
-Datenlokalität zusammengesetzter Schlüssel erhalten, ohne `sample_method` oder
-`bias_reason` zu parsen.
+Blueprint speichert die Struktur einer begrenzten Stichprobe getrennt von den entsprechenden Textfeldern. Die Bereichsabtastung numerischer Primärschlüssel in MySQL gibt `sample_layout = "primary-key-range-windows"` aus und sortiert jedes Fenster nach dem vollständigen Primärschlüssel.
 
-Verzerrte Stichproben sind weiterhin nützlich, nachgelagerte Werkzeuge sollten sie jedoch mit geringerem Vertrauen behandeln. Das Audit zeichnet die aktivierte Zeilenstichprobe und die lokal codierte Byteanzahl des Prüfpuffers auf. Bytewerte der Datenbanksitzung bleiben `unknown`, wenn der Treiber sie nicht bereitstellt.
+Voreingenommene Stichproben sind zwar weiterhin nützlich, aber sie haben eine geringere Zuverlässigkeit. Das Audit-Protokoll protokolliert, dass die Zeilenstichproben aktiviert wurden und die Anzahl der lokal codierten Prüfbytes. Datenbank-Sitzungs-Byte-Gesamtwerte werden als `unknown` gemeldet, wenn der Treiber diese nicht bereitstellt.
 
 ## Praktische Stichprobeneinstellungen
 
@@ -171,7 +144,7 @@ Erster produktionssicherer Durchlauf:
 --max-wall-secs 120
 ```
 
-Bessere Estimator-Eingabe, wenn ein Lesereplikat oder Wartungsfenster verfügbar ist:
+Genauere Messung, wenn eine Read-Replika oder ein Wartungsfenster verfügbar ist:
 
 ```bash
 --measure-compression --yes \
@@ -199,18 +172,6 @@ konfigurierte Nutzlastobergrenze, die ausgeführten Abfragen und die genaue
 lokal kodierte Byteanzahl des Prüfpuffers auf; es meldet keinen gemessenen
 Datenbankverkehr auf der Leitung.
 
-## Verwendung durch nachgelagerte Verbraucher
+## Wie die Messungen interpretiert werden.
 
-Ein nachgelagerter Verbraucher sollte Komprimierungsevidenz in dieser Reihenfolge verwenden:
-
-1. erkannte Komprimierungsblöcke pro Spalte;
-2. erkannte Komprimierungsblöcke auf Tabellenebene;
-3. Typ-/Stilvorgaben, wenn kein gemessenes Verhältnis vorhanden ist.
-
-Das Feld `sample_encoding` ist Teil des Vertrags. Verbraucher sollten nur
-Verhältnisse mit einer erkannten Kodierungskennzeichnung verwenden, weil
-unterschiedliche Stichprobenkodierungen für dieselben logischen Daten
-unterschiedliche Komprimierungsverhältnisse ergeben können. Insbesondere sind
-das spaltenorientierte Tabellenverhältnis des Transfer-Prüfpuffers und die
-v2-Verhältnisse je Spalte komplementäre Messungen und dürfen nicht gegeneinander
-ausgetauscht werden.
+Das Feld `sample_encoding` ist Teil des Vertrags. Verhältnisse sind nur innerhalb eines einzelnen Encoding-Tags vergleichbar, da unterschiedliche Sample-Encodings unterschiedliche Kompressionsraten für die gleichen logischen Daten erzeugen können. Insbesondere sind das tabellenbasierte Verhältnis für den spaltenweisen Datentransfer und die pro-Spalte-Verhältnisse der Version 2 komplementäre Messungen und dürfen nicht gegeneinander ausgetauscht werden.

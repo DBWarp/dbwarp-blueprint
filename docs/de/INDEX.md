@@ -33,4 +33,4 @@ Kernreferenzen:
 - [Visuelle Zusammenfassungspräsentation](DECK.md)
 - [Binärdateien herunterladen](BINARIES.md)
 
-Die Übergabe von Blueprints und ihre nachgelagerte Verwendung werden durch die Kundenvereinbarung und die Dokumentation des genehmigten nachgelagerten DBWarp-Produkts geregelt. Dieses Repository dokumentiert ausschließlich Erfassung, Prüfung und Verpackung von Blueprints.
+Dieses Repository dokumentiert ausschließlich die Erfassung, Überprüfung und Verpackung von Blueprint.

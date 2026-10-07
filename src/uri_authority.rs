@@ -2,8 +2,8 @@
 //!
 //! This module implements the minimal bracket-aware splitter described in
 //! RFC 3986 §3.2.2 (host = IP-literal / IPv4address / reg-name) without
-//! pulling in the full `url` crate as a direct dependency. The trust pitch
-//! favors a small parser whose IPv6 and port boundary behavior is easy to
+//! pulling in the full `url` crate as a direct dependency. A small parser
+//! keeps IPv6 and port boundary behavior easy to
 //! audit.
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -61,9 +61,9 @@ pub fn split_host_port(hostport: &str, default_port: u16) -> Result<(String, u16
         }
         bail!("junk after IPv6 ']': expected ':PORT' or end-of-authority");
     }
-    // No brackets — must NOT contain a colon-IPv6 form (those require brackets).
+    // No brackets: must NOT contain a colon-IPv6 form (those require brackets).
     // We distinguish "127.0.0.1:5432" (one colon, port follows) from
-    // "::1" (two colons, IPv6 without brackets — rejected; tell user to bracket).
+    // "::1" (two colons, IPv6 without brackets: rejected; tell user to bracket).
     let colon_count = hostport.bytes().filter(|&b| b == b':').count();
     if colon_count == 0 {
         return Ok((hostport.to_string(), default_port));
@@ -79,7 +79,7 @@ pub fn split_host_port(hostport: &str, default_port: u16) -> Result<(String, u16
         }
         return Ok((host.to_string(), port));
     }
-    // Multiple colons without brackets — almost certainly a bare IPv6 address.
+    // Multiple colons without brackets: almost certainly a bare IPv6 address.
     // Refuse rather than guess; the customer should bracket it.
     bail!(
         "authority contains multiple ':' without IPv6 brackets; \
@@ -89,7 +89,7 @@ pub fn split_host_port(hostport: &str, default_port: u16) -> Result<(String, u16
 
 /// SQL Server allows `host,port` in addition to `host:port`. This wrapper
 /// recognizes the comma form (with bracket awareness so a `,` inside an
-/// IPv6 zone identifier doesn't mis-split — though currently zone ids don't
+/// IPv6 zone identifier does not mis-split. Zone ids do not currently
 /// contain commas in practice, the bracket guard is cheap insurance).
 pub fn split_host_port_mssql(hostport: &str, default_port: u16) -> Result<(String, u16)> {
     if hostport.is_empty() {
@@ -180,8 +180,7 @@ mod tests {
 
     #[test]
     fn ipv6_bracketed_without_port_uses_default() {
-        // Earlier hand-rolled parsers crashed by trying to parse
-        // ":1]" as a port number.
+        // A naive split would try to parse ":1]" as a port number.
         let (h, p) = split_host_port("[::1]", 5432).unwrap();
         assert_eq!(h, "::1");
         assert_eq!(p, 5432);

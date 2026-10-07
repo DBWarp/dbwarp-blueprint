@@ -25,15 +25,14 @@ minimum safe description, and review each attachment before sharing it.
 
 ## Supported configurations
 
-[STATUS.md](STATUS.md) describes capabilities and the qualified engine matrix.
+[STATUS.md](STATUS.md) describes capabilities and the supported database versions.
 [BUILD.md](BUILD.md) describes platform and authentication-specific build
 requirements. Rust is pinned to the exact version in `rust-toolchain.toml`;
-the package's `rust-version` is not a promise that every newer toolchain is
-qualified.
+other toolchains have not necessarily been tested.
 
 Managed-service permission guidance is not a claim that every service or
 configuration has been tested. Use the matching
-[permission requirements](sql/grants/DATABASE_PERMISSIONS.md) and qualify the
-exact configuration before production use.
+[permission requirements](sql/grants/DATABASE_PERMISSIONS.md) and test the exact
+configuration before production use.
 
 For changes between collector versions, see [CHANGELOG.md](CHANGELOG.md).

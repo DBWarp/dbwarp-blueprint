@@ -4,7 +4,7 @@
 
 **Langues :** [English](../../BUILD.md) | [Deutsch](../de/BUILD.md) | **Français** | [Español](../es/BUILD.md) | [Polski](../pl/BUILD.md) | [日本語](../ja/BUILD.md) | [简体中文](../zh/BUILD.md)
 
-Ce guide s'adresse aux clients qui préfèrent compiler eux-mêmes l'outil avant de l'exécuter sur une base de données.
+Utilisez ce guide si vous préférez compiler vous-même l'outil avant de l'exécuter sur une base de données.
 
 ## Compilation rapide
 
@@ -95,20 +95,29 @@ Windows PowerShell :
 Get-FileHash .\dbwarp-blueprint-windows-x86_64.zip -Algorithm SHA256
 ```
 
+Chaque version publie également un fichier
+`dbwarp-blueprint-<platform>.binary.sha256` pour l’exécutable extrait. Consultez
+[Télécharger les binaires](BINARIES.md) pour la commande de vérification.
+
 ## Compilations propres aux modes d'authentification
 
 La compilation par défaut prend en charge les flux par mot de passe, fichier de
 jeton, variable d'environnement de jeton et TLS ; le mTLS par certificat client
 est disponible pour PostgreSQL et MySQL.
 
-L'authentification intégrée SQL Server dispose de compilations propres à chaque plateforme :
+L'authentification intégrée SQL Server est prise en charge selon la plateforme :
 
 | Plateforme | Commande de compilation | Rôle |
 |---|---|---|
-| Linux | `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh` | Kerberos / GSSAPI |
-| Windows | Binaire Windows de la version GitHub, ou `cargo build --release --features winauth` | Windows Integrated Auth / SSPI |
+| Linux | Binaire Linux de la version GitHub, ou `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh` | Authentification par mot de passe, jeton et TLS, plus Kerberos / GSSAPI lorsqu'il est sélectionné |
+| Windows | Binaire Windows de la version GitHub, ou `cargo build --release --locked --features winauth` | Windows Integrated Auth / SSPI |
 
-Sous Linux, Kerberos nécessite les bibliothèques d'exécution MIT Kerberos habituelles. Si `kinit` fonctionne sur l'hôte, les composants d'exécution requis sont généralement déjà présents.
+Les binaires de publication Linux ne nécessitent pas les bibliothèques Kerberos
+au démarrage. Ils chargent l'environnement d'exécution GSSAPI de la plateforme
+uniquement lorsque `--auth-mode integrated` est sélectionné. Si `kinit`
+fonctionne, les composants d'exécution requis sont généralement déjà présents.
+Les compilations à partir du code source activent Kerberos/GSSAPI avec
+`integrated-auth-gssapi`, comme indiqué ci-dessus.
 
 ## Compiler sans le script
 
@@ -132,13 +141,7 @@ cargo build --release --locked --features integrated-auth-gssapi
 
 ## Reproduire un binaire de release
 
-`./build.sh` prouve que les sources examinées se compilent ; l'identité octet
-par octet exige aussi tous les paramètres natifs de la release. Utilisez la
-révision exacte indiquée dans `PROVENANCE.json`, sa cible et ses fonctionnalités,
-la chaîne Rust épinglée, le compilateur/éditeur de liens natif enregistré,
-l'horodatage du commit comme `SOURCE_DATE_EPOCH`, ainsi que les options de
-remappage de chemins et d'édition de liens du workflow. Les releases Windows
-emploient aussi `clang-cl` et `/Brepro`.
+`./build.sh` prouve que la source analysée est correctement compilée ; l'identité des octets nécessite en outre les entrées de compilation natives complètes de la version. Consultez la révision exacte de la source enregistrée dans `PROVENANCE.json`, publiée avec chaque version, utilisez sa liste de cibles et de fonctionnalités, la chaîne d'outils Rust spécifiée, les entrées natives enregistrées compiler/linker, l'horodatage du commit `SOURCE_DATE_EPOCH`, ainsi que les rémappages de chemin et les indicateurs du linker du flux de travail de la version. Les versions Windows utilisent également `clang-cl` et `/Brepro`.
 
 Après avoir reproduit ces paramètres, comparez le binaire extrait au résultat local :
 
@@ -147,14 +150,11 @@ SOURCE_BIN=target/release/dbwarp-blueprint \
   ./verify.sh /path/to/extracted/dbwarp-blueprint
 ```
 
-Si les condensats diffèrent, ne considérez pas les binaires comme équivalents.
-La CI de release compile deux fois sur le même runner dans des répertoires Cargo
-distincts et refuse toute différence ; `PROVENANCE.json` consigne les éléments
-nécessaires à l'évaluation d'une reproduction locale.
+Si les hachages sont différents, ne considérez pas les binaires comme équivalents. Chaque version est construite deux fois, et une différence de byte entraîne l'échec de la version. `PROVENANCE.json` enregistre la révision source, la cible, les fonctionnalités, la chaîne d'outils, l'époque de la date source, le compilateur natif, la taille du binaire et le hachage nécessaires pour évaluer une reproduction locale.
 
 ## Dépendances embarquées
 
-Le dépôt normal contient une petite dépendance corrigée sous `vendor/mysql_async`, afin que l'option MySQL `--tls-ca` applique les mêmes règles restrictives de confiance que le reste de l'outil. Les versions de toutes les autres dépendances sont figées par `Cargo.lock`.
+Le dépôt contient des dépendances corrigées sous `vendor/`. Elles préservent les règles de confiance restrictives de `--tls-ca` pour MySQL et SQL Server. L'authentification intégrée Linux charge GSSAPI uniquement lorsqu'elle est demandée. L'authentification intégrée Windows utilise une dépendance maintenue pour la génération de nombres aléatoires. Les versions de toutes les autres dépendances sont figées par `Cargo.lock`.
 
 Chaque version GitHub publie un bundle `dbwarp-blueprint-source-vendored.tar.gz` distinct pour les équipes de sécurité qui souhaitent examiner et compiler hors ligne tous les fichiers source des dépendances.
 
@@ -164,4 +164,4 @@ cd dbwarp-blueprint-source-vendored
 DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh
 ```
 
-Ce bundle contient le correctif `vendor/mysql_async`, une arborescence `vendor-crates/` générée pour toutes les autres dépendances et un fichier `.cargo/config.toml` généré qui redirige crates.io vers l'arborescence locale des dépendances. Dans ce mode, `build.sh` utilise `cargo build --release --frozen --offline --locked`.
+Ce bundle contient les dépendances corrigées sous `vendor/`, une arborescence `vendor-crates/` générée pour toutes les autres dépendances et un fichier `.cargo/config.toml` généré qui redirige crates.io vers l'arborescence locale des dépendances. Dans ce mode, `build.sh` utilise `cargo build --release --frozen --offline --locked`.

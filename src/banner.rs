@@ -277,25 +277,9 @@ fn unix_stdout_cols() -> Option<usize> {
         xpixel: u16,
         ypixel: u16,
     }
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    const TIOCGWINSZ: usize = 0x5413;
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    ))]
+    #[cfg(target_os = "macos")]
     const TIOCGWINSZ: usize = 0x4008_7468;
-    #[cfg(not(any(
-        target_os = "linux",
-        target_os = "android",
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    )))]
+    #[cfg(not(target_os = "macos"))]
     const TIOCGWINSZ: usize = 0x5413;
 
     extern "C" {

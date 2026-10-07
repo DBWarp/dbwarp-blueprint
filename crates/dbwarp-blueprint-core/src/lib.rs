@@ -1,9 +1,10 @@
-//! Shared DBWarp Blueprint model and deterministic synthetic data primitives.
+//! DBWarp Blueprint model, validation and structured-file readers.
 //!
 //! This crate intentionally stays small by default. Heavy structured-file
-//! readers/writers are feature-gated so runtime users can share the same Blueprint
-//! vocabulary without always pulling Parquet/Avro dependencies.
+//! readers and writers are feature-gated so callers that only need the model do
+//! not pull Parquet or Avro dependencies.
 
+mod artifact_complexity;
 #[cfg(any(feature = "sampling", feature = "avro"))]
 mod canonical;
 mod deadline;
@@ -23,6 +24,7 @@ pub mod avro;
 #[cfg(feature = "parquet")]
 pub mod parquet;
 
+pub use artifact_complexity::*;
 #[cfg(any(feature = "sampling", feature = "avro"))]
 pub use canonical::*;
 pub use deadline::*;

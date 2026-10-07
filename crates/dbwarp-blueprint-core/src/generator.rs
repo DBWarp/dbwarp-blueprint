@@ -34,10 +34,8 @@ pub fn ordered_columns(table: &BlueprintTable) -> Vec<(&String, &BlueprintColumn
     columns
 }
 
-/// Whether a source column contributes a value to a logical migration row.
-/// Database-maintained generated/computed/system columns remain represented
-/// in the Blueprint, but a statistical twin must not invent and transfer a
-/// value that the real source adapter omits.
+/// Whether a column holds an application-supplied value. Database-maintained
+/// generated, computed and system columns are excluded.
 pub fn column_is_transfer_value(column: &BlueprintColumn) -> bool {
     !matches!(
         column.value_source.as_str(),
@@ -101,8 +99,10 @@ pub fn blueprint_row_value_with_entropy(
 }
 
 /// Generate a value while projecting captured source cardinality onto the
-/// actual generated table size. Callers applying a fixture scale should use
-/// this entry point; the legacy helpers retain source-row-count semantics.
+/// actual generated table size. Use this entry point when the generated row
+/// count differs from the source row count.
+/// Admit the requested scale with `plan_blueprint_generation` first: this
+/// infallible row primitive cannot report an impossible distinct-value domain.
 pub fn blueprint_row_value_for_generated_rows_with_entropy(
     table: &BlueprintTable,
     column: &BlueprintColumn,
@@ -143,7 +143,12 @@ pub fn blueprint_row_value_for_generated_rows_with_entropy(
         // A measured cardinality domain is semantic evidence. Entropy may
         // affect byte content and ordering, but it must never expand a
         // bounded source domain into unrelated 64-bit values.
-        if is_integer_type(&ty) {
+        if matches!(
+            numeric_model_dispatch(column),
+            NumericModelDispatch::Integer
+        ) || (matches!(numeric_model_dispatch(column), NumericModelDispatch::Legacy)
+            && is_integer_type(&ty))
+        {
             // Row-order permutation alone leaves decimal digits in adjacent
             // domain order and makes high-cardinality numeric data
             // artificially compressible. Relabel the finite domain with the
@@ -191,9 +196,22 @@ pub fn blueprint_row_value_for_generated_rows_with_entropy(
         } else {
             "0".to_string()
         }
-    } else if is_integer_type(&ty) {
-        generated_integer(distribution_seed, &ty, column)
-    } else if is_numeric_type(&ty) {
+    } else if match numeric_model_dispatch(column) {
+        NumericModelDispatch::Integer => true,
+        NumericModelDispatch::Legacy => is_integer_type(&ty),
+        _ => false,
+    } {
+        if let Some(domain) = decimal_integer_domain(&ty, column) {
+            generated_decimal_integer(distribution_seed, column, domain, generated_distinct_count)
+        } else {
+            generated_integer(distribution_seed, &ty, column)
+        }
+    } else if match numeric_model_dispatch(column) {
+        NumericModelDispatch::Decimal => true,
+        // Documents without a numeric model dispatch on `column_type`.
+        NumericModelDispatch::Legacy => is_numeric_type(&ty),
+        _ => false,
+    } {
         generated_numeric(
             distribution_seed,
             column,
@@ -201,11 +219,8 @@ pub fn blueprint_row_value_for_generated_rows_with_entropy(
             synthetic_seed(table_idx, 0, col_idx) ^ 0x4e55_4d45_5249_4302,
             entropy,
         )
-    } else if matches!(
-        ty.as_str(),
-        "float" | "float4" | "real" | "double" | "float8" | "double precision"
-    ) {
-        format!("{:.6}", (distribution_seed % 10_000_000) as f64 / 97.0)
+    } else if numeric_model_dispatch(column) == NumericModelDispatch::BinaryFloat {
+        generated_binary_float(distribution_seed)
     } else if ty == "date" {
         generated_date(distribution_seed)
     } else if ty == "time" {
@@ -275,10 +290,8 @@ pub fn append_synthetic_value_bytes_with_entropy(
     }
 }
 
-/// Append one generated row using the canonical typed compression-probe
-/// representation used by dbwarp-blueprint sampling. This lets every generator
-/// calibrate synthetic entropy against the captured ratio without retaining
-/// or reconstructing source values.
+/// Append one generated row in the canonical typed compression-probe
+/// representation.
 pub fn append_synthetic_probe_row_with_entropy(
     out: &mut Vec<u8>,
     table: &BlueprintTable,
@@ -370,9 +383,8 @@ pub fn append_synthetic_probe_row_for_generated_rows_with_table_entropy_calibrat
     }
 }
 
-/// Return the canonical transient compression-probe tag for a normalized SQL
-/// type. Frontends with their own Blueprint model use this rather than
-/// duplicating the public measurement representation.
+/// Return the canonical transient compression-probe tag for a normalised SQL
+/// type.
 pub fn synthetic_probe_type_tag(column_type: &str) -> u8 {
     let ty = normalized_type(column_type);
     if is_boolean_type(&ty) {
@@ -431,10 +443,10 @@ pub struct EntropyCalibration {
     pub matched: bool,
 }
 
-/// Search the continuous entropy domain without assuming fixture-specific
+/// Search the continuous entropy domain without assuming fixed
 /// buckets. `observe` must return the compression ratio produced at the given
 /// entropy. The highest-quality observation is returned even when the target
-/// is outside the generator's achievable range.
+/// is outside the achievable range.
 pub fn calibrate_entropy<F>(
     target_ratio: f64,
     initial_entropy: f64,
@@ -477,7 +489,7 @@ where
         )?;
     }
 
-    // Generator ordering is intentionally discrete at finite-domain locality
+    // Value ordering is intentionally discrete at finite-domain locality
     // boundaries, while byte-content entropy is continuous. Ratios therefore
     // need not be globally monotonic. Cover the complete domain first rather
     // than choosing one binary-search direction from the two endpoints.
@@ -664,11 +676,10 @@ pub fn entropy_for_column_with_table_calibration(
 /// Scale a column's already-calibrated entropy through the table baseline
 /// while preserving column ordering. Both halves span their complete bounded
 /// range: table entropy zero can make every unpinned column fully local, and
-/// table entropy one can make every unpinned column fully disordered. An
-/// additive shift clipped high-entropy columns before they reached either
-/// endpoint and made valid aggregate compression ratios unreachable. A measured incompressible
-/// binary/container profile is pinned: aggregate calibration must never make
-/// JPEG/PNG/archive-like bytes artificially compressible.
+/// table entropy one can make every unpinned column fully disordered. A
+/// measured incompressible binary or container profile is pinned: aggregate
+/// calibration must never make JPEG, PNG or archive-like bytes artificially
+/// compressible.
 pub fn shift_column_entropy_for_table_calibration(
     table: &BlueprintTable,
     column: &BlueprintColumn,
@@ -706,7 +717,7 @@ pub fn shift_column_entropy_for_table_calibration(
 
 /// Project a source-domain distribution onto a generated row. The returned
 /// index is deterministic and contains no source value material. Exact unique
-/// keys are handled by target adapters and deliberately bypass this helper.
+/// keys are not handled by this helper.
 pub fn statistical_value_row_index(
     table: &BlueprintTable,
     column: &BlueprintColumn,
@@ -717,8 +728,8 @@ pub fn statistical_value_row_index(
 }
 
 /// Project source cardinality onto `generated_row_count` while preserving the
-/// observed distinct-to-row ratio. This keeps scaled fixtures representative
-/// instead of accidentally retaining the source table's absolute domain size.
+/// observed distinct-to-row ratio. This keeps scaled output representative
+/// instead of retaining the source table's absolute domain size.
 pub fn statistical_value_row_index_for_generated_rows(
     table: &BlueprintTable,
     column: &BlueprintColumn,
@@ -802,12 +813,9 @@ fn effective_source_distinct_count(
         return cardinality.estimated_distinct_count;
     }
 
-    // Older Blueprints retained only the observed lower bound for biased
-    // samples. Do not let one duplicate (or privacy quantization around the
-    // sample size) collapse a near-unique many-million-row domain to a few
-    // thousand values. New captures carry a continuous collision estimate in
-    // `estimated_distinct_count`; this fallback is for the old lower-bound
-    // contract only.
+    // Fallback for Blueprints that carry only an observed lower bound. Do not
+    // let one duplicate, or privacy quantisation around the sample size,
+    // collapse a near-unique many-million-row domain to a few thousand values.
     let estimated_source_non_null = ((source_row_count as u128)
         .saturating_mul(cardinality.non_null_rows as u128)
         .saturating_add(cardinality.sample_rows as u128 / 2)
@@ -819,8 +827,7 @@ fn effective_source_distinct_count(
 }
 
 /// Project privacy-safe cardinality aggregates from a source row domain onto
-/// an arbitrary generated row domain. This primitive is shared by frontends
-/// that deserialize Blueprint TOML into their own compatibility models.
+/// an arbitrary generated row domain.
 pub fn project_scaled_cardinality_index(
     source_row_count: u64,
     observed_distinct_count: u64,
@@ -1039,7 +1046,7 @@ fn project_distribution_index_with_locality(
     let position = entropy_permuted_index(position, rows, salt ^ 0x4f52_4445_525f_0001, entropy);
     // Frequency evidence was observed inside a bounded sample. Repeating its
     // locality horizon prevents a broad run from growing from thousands to
-    // millions of rows merely because the generated fixture is larger. A
+    // millions of rows merely because the generated output is larger. A
     // domain wider than the sample remains the lower bound so every projected
     // value can still be represented.
     let locality_rows = locality_reference
@@ -1157,9 +1164,8 @@ fn entropy_permuted_index(index: u64, count: u64, salt: u64, entropy: f64) -> u6
     }
 
     // Grow the shuffled locality window from one item to the complete finite
-    // domain. Interpolate between adjacent powers of two instead of rounding
-    // entropy to a whole bit: the old staircase left common categorical
-    // compression ratios unreachable at large row counts. Every arbitrary
+    // domain. Interpolate between adjacent powers of two so common categorical
+    // compression ratios remain reachable at large row counts. Every arbitrary
     // window is still independently permuted by a bounded bijection, so exact
     // domain membership and bucket frequencies survive.
     let block_size = entropy_permutation_window(count, entropy);
@@ -1211,10 +1217,8 @@ fn entropy_permutation_window(count: u64, entropy: f64) -> u64 {
 
 /// Deterministically permute a finite cardinality domain as entropy rises.
 ///
-/// This is the shared ordering primitive for consumers that must satisfy a
-/// compound-key constraint while retaining Blueprint distribution fidelity.
-/// It is a bijection over `0..count`, so callers can change order without
-/// introducing duplicate or missing domain members.
+/// Ordering primitive: a bijection over `0..count`, so callers can change order
+/// without introducing duplicate or missing domain members.
 pub fn entropy_permuted_cardinality_index(index: u64, count: u64, salt: u64, entropy: f64) -> u64 {
     entropy_permuted_index(index, count, salt, entropy)
 }
@@ -1226,9 +1230,7 @@ fn uniform_group_index(group: u64, group_count: u64, domain: u64, salt: u64, ent
     // Permute the finite group positions before projecting them onto the
     // domain. Because this is a bijection over every group position, all
     // captured frequencies (including a partial final cycle) remain exact.
-    // A unique domain is still shuffled at non-zero entropy; keying the
-    // shuffle window only from the number of repeated cycles accidentally
-    // made unique domains permanently ordered.
+    // A unique domain is still shuffled at non-zero entropy.
     // Fractional run-length mixing already supplies the continuous locality
     // control for uniform distributions. Keep the stable power-of-two group
     // permutation here so a second continuous control does not destroy that
@@ -1289,8 +1291,8 @@ fn weighted_tail_index(
     let p95 = frequency_quantiles[1].max(p50);
     let p99 = frequency_quantiles[2].max(p95);
 
-    let group_50 = ((domain as u128 * 50 + 99) / 100).max(1) as u64;
-    let group_95 = ((domain as u128 * 45 + 99) / 100) as u64;
+    let group_50 = (domain as u128 * 50).div_ceil(100).max(1) as u64;
+    let group_95 = (domain as u128 * 45).div_ceil(100) as u64;
     let group_99 = domain.saturating_sub(group_50).saturating_sub(group_95);
     let weights = [(group_50, p50), (group_95, p95), (group_99, p99)];
     let total_weight = weights.iter().fold(0_u128, |total, (count, weight)| {
@@ -1299,11 +1301,10 @@ fn weighted_tail_index(
     if total_weight == 0 {
         return row_idx % domain;
     }
-    // Materialize the same weighted multiset in broad, deterministic runs.
+    // Materialise the same weighted multiset in broad, deterministic runs.
     // The caller applies an entropy-controlled bijection to row positions, so
     // low entropy retains source-like locality while high entropy scatters the
-    // identical frequency allocation. Hashing here made every skewed domain
-    // maximally disordered even when entropy was zero.
+    // identical frequency allocation.
     let selector = (u128::from(row_idx).saturating_mul(total_weight) / u128::from(row_count))
         .min(total_weight.saturating_sub(1));
     let mut offset = 0_u64;
@@ -1411,6 +1412,32 @@ fn is_bit_column(ty: &str, column: &BlueprintColumn) -> bool {
 
 pub fn is_null_type(ty: &str) -> bool {
     matches!(ty, "null" | "null-only")
+}
+
+/// How the v7 numeric model resolves generation dispatch. A declared model is
+/// authoritative; `column_type` is used only when no model is declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NumericModelDispatch {
+    Integer,
+    Decimal,
+    BinaryFloat,
+    NonNumeric,
+    Legacy,
+}
+
+fn numeric_model_dispatch(column: &BlueprintColumn) -> NumericModelDispatch {
+    match column.numeric_model.as_str() {
+        "integer" => NumericModelDispatch::Integer,
+        "fixed-decimal" | "unconstrained-decimal" | "decimal-float" => {
+            // Decimal-float is an exact decimal value model with floating
+            // scale; equating it with IEEE floating point is exactly the
+            // conflation the contract forbids.
+            NumericModelDispatch::Decimal
+        }
+        "binary-float" => NumericModelDispatch::BinaryFloat,
+        "not-applicable" => NumericModelDispatch::NonNumeric,
+        _ => NumericModelDispatch::Legacy,
+    }
 }
 
 pub fn is_integer_type(ty: &str) -> bool {
@@ -1559,7 +1586,7 @@ fn generated_utf8(row_idx: u64, col_idx: u64, len: usize, entropy: f64) -> Strin
         "界".as_bytes(),
         "語".as_bytes(),
     ];
-    const ASCII: &[u8] = b"customer data content value status title body language ";
+    const ASCII: &[u8] = b"alpha beta gamma delta epsilon zeta eta theta ";
     let mut out = Vec::with_capacity(len);
     let mut state = synthetic_seed(0, row_idx, col_idx);
     while out.len() < len {
@@ -1602,14 +1629,14 @@ fn generated_binary(seed: u64, len: usize, entropy: f64) -> Vec<u8> {
         out.push(if noise < entropy {
             state as u8
         } else {
-            b"DBWARP"[idx % 6]
+            b"\x00\x55\xaa\xff"[idx % 4]
         });
     }
     out
 }
 
 /// Recover a dense float32 vector dimension from its exact PostgreSQL binary
-/// payload width. The transferable Blueprint exposes the neutral vector type
+/// payload width. The shareable Blueprint exposes the neutral vector type
 /// and byte width, never the source extension or type name.
 pub fn float32_vector_dimension(column: &BlueprintColumn) -> Option<u16> {
     const HEADER_BYTES: u64 = 4;
@@ -1760,42 +1787,51 @@ fn generated_numeric(
     salt: u64,
     entropy: f64,
 ) -> String {
-    let precision = if column.numeric_precision == 0 {
-        18
-    } else {
-        column.numeric_precision.min(18)
-    } as u32;
-    let scale = if column.numeric_precision == 0 && column.numeric_scale == 0 {
-        6
-    } else {
-        column.numeric_scale.min(precision as u64)
-    } as u32;
+    let precision = column.numeric_precision.unwrap_or(18).clamp(1, 18) as u32;
+    let scale = column.numeric_scale.unwrap_or_else(|| {
+        if column.numeric_precision.is_none() {
+            6
+        } else {
+            0
+        }
+    });
+    let bounded_positive_scale = u32::try_from(scale).unwrap_or(0).min(precision);
     let modulus = 10_u64.pow(precision);
-    let width_offset = if column.len_avg > 0 {
-        let punctuation_width = u64::from(scale > 0);
+    let width_offset = if column.len_avg > 0 && (0..=i64::from(precision)).contains(&scale) {
+        let punctuation_width = u64::from(bounded_positive_scale > 0);
         let requested_integer_digits = column
             .len_avg
-            .saturating_sub(u64::from(scale))
+            .saturating_sub(u64::from(bounded_positive_scale))
             .saturating_sub(punctuation_width)
-            .clamp(1, u64::from(precision.saturating_sub(scale).max(1)));
+            .clamp(
+                1,
+                u64::from(precision.saturating_sub(bounded_positive_scale).max(1)),
+            );
         10_u64
             .checked_pow(requested_integer_digits.saturating_sub(1) as u32)
-            .and_then(|integer_offset| integer_offset.checked_mul(10_u64.pow(scale)))
+            .and_then(|integer_offset| {
+                integer_offset.checked_mul(10_u64.pow(bounded_positive_scale))
+            })
             .filter(|offset| *offset < modulus)
             .unwrap_or(0)
     } else {
         0
     };
     let value_domain = modulus.saturating_sub(width_offset).max(1);
-    let captured_display_domain = if column.len_p95 > 0 {
-        let punctuation_width = u64::from(scale > 0);
+    let captured_display_domain = if column.len_p95 > 0
+        && (0..=i64::from(precision)).contains(&scale)
+    {
+        let punctuation_width = u64::from(bounded_positive_scale > 0);
         let integer_digits = column
             .len_p95
-            .saturating_sub(u64::from(scale))
+            .saturating_sub(u64::from(bounded_positive_scale))
             .saturating_sub(punctuation_width)
-            .clamp(1, u64::from(precision.saturating_sub(scale).max(1)));
+            .clamp(
+                1,
+                u64::from(precision.saturating_sub(bounded_positive_scale).max(1)),
+            );
         10_u64
-            .checked_pow(integer_digits.saturating_add(u64::from(scale)) as u32)
+            .checked_pow(integer_digits.saturating_add(u64::from(bounded_positive_scale)) as u32)
             .unwrap_or(modulus)
             .min(modulus)
             .saturating_sub(width_offset)
@@ -1820,9 +1856,12 @@ fn generated_numeric(
         seed % value_domain
     };
     let value = width_offset + bounded_seed % value_domain;
-    if scale == 0 {
+    if scale < 0 {
+        format!("{}{}", value, "0".repeat(scale.unsigned_abs() as usize))
+    } else if scale == 0 {
         value.to_string()
-    } else {
+    } else if scale <= i64::from(precision) {
+        let scale = scale as u32;
         let divisor = 10_u64.pow(scale);
         format!(
             "{}.{:0width$}",
@@ -1830,7 +1869,95 @@ fn generated_numeric(
             value % divisor,
             width = scale as usize
         )
+    } else {
+        let leading_fractional_zeros = (scale - i64::from(precision)) as usize;
+        format!(
+            "0.{}{:0width$}",
+            "0".repeat(leading_fractional_zeros),
+            value,
+            width = precision as usize
+        )
     }
+}
+
+/// IEEE-style float text for columns whose declared model is binary
+/// floating point. Documents without a numeric model use the decimal path.
+fn generated_binary_float(seed: u64) -> String {
+    format!("{:.6}", (seed % 10_000_000) as f64 / 97.0)
+}
+
+/// Extra bounds only when a declared decimal precision narrows the existing
+/// integer domain. Wide decimals still use a bounded 64-bit subset; this is not
+/// a claim to reproduce an arbitrary-precision source distribution.
+fn decimal_integer_domain(ty: &str, column: &BlueprintColumn) -> Option<(u128, u128)> {
+    if column.numeric_model != "integer" || column.numeric_precision_radix != "decimal" {
+        return None;
+    }
+    let precision = column.numeric_precision?;
+    if precision == 0 || precision >= 20 {
+        return None;
+    }
+    let decimal_max = 10_u128.pow(precision as u32) - 1;
+    let width = integer_bit_width(ty, column);
+    let (binary_max, binary_negative_count) = if column.numeric_unsigned {
+        ((1_u128 << width) - 1, 0)
+    } else {
+        ((1_u128 << (width - 1)) - 1, 1_u128 << (width - 1))
+    };
+    if decimal_max >= binary_max.max(binary_negative_count) {
+        return None;
+    }
+    Some((
+        decimal_max.min(binary_max) + 1,
+        decimal_max.min(binary_negative_count),
+    ))
+}
+
+fn generated_decimal_integer(
+    seed: u64,
+    column: &BlueprintColumn,
+    (positive_count, negative_count): (u128, u128),
+    distinct_count: Option<u64>,
+) -> String {
+    let ordinal = u128::from(seed) % (positive_count + negative_count);
+    // A single offset for the entire projected domain preserves cardinality.
+    // Choosing the offset per value creates collisions at a width boundary.
+    let width_offset = distinct_count
+        .filter(|count| *count > 0)
+        .and_then(|count| {
+            let desired_digits = column.len_avg.clamp(1, 19) as u32;
+            (desired_digits > decimal_width(count - 1))
+                .then(|| 10_u128.pow(desired_digits - 1))
+                .filter(|offset| offset + u128::from(count) <= positive_count)
+        })
+        .unwrap_or(0);
+    if ordinal < positive_count {
+        (width_offset + ordinal).to_string()
+    } else {
+        (-(ordinal as i128 - positive_count as i128) - 1).to_string()
+    }
+}
+
+/// Generation admission, not capture validation: an otherwise valid capture
+/// may request a scale whose projected distinct domain cannot fit its type.
+/// Run this once before emitting rows, not in the per-value hot path.
+pub(crate) fn validate_decimal_integer_generation(
+    table: &BlueprintTable,
+    column: &BlueprintColumn,
+    generated_rows: u64,
+) -> Result<()> {
+    let Some((positive_count, negative_count)) =
+        decimal_integer_domain(&normalized_type(&column.column_type), column)
+    else {
+        return Ok(());
+    };
+    let capacity = positive_count + negative_count;
+    if let Some(count) = projected_statistical_distinct_count(table, column, generated_rows) {
+        if u128::from(count) > capacity {
+            bail!("projected distinct count {count} exceeds declared decimal integer domain capacity {capacity}; reduce fixture scale or use sampled source data");
+        }
+    }
+    Ok(())
 }
 
 fn generated_integer(seed: u64, ty: &str, column: &BlueprintColumn) -> String {
@@ -1876,7 +2003,10 @@ fn generated_integer(seed: u64, ty: &str, column: &BlueprintColumn) -> String {
         if positive_value < positive_domain {
             positive_value.to_string()
         } else {
-            let negative_ordinal = u128::from(seed) - positive_domain;
+            // A seed beyond the full signed domain wraps within the negative
+            // half; without the modulus a measured distinct count larger than
+            // the declared width generated values the type cannot store.
+            let negative_ordinal = (u128::from(seed) - positive_domain) % positive_domain;
             (-(negative_ordinal as i128) - 1).to_string()
         }
     } else if bit_width == 64 {
@@ -1999,7 +2129,7 @@ fn generated_uuid(seed: u64) -> String {
 }
 
 fn generated_text(row_idx: u64, col_idx: u64, len: usize, entropy: f64) -> String {
-    const LOW: &[u8] = b"content node field value menu user status published path alias taxonomy body title site paragraph block view revision language default ";
+    const LOW: &[u8] = b"amber cedar cloud dune field grove hill lake meadow stone vale wind ";
     const HIGH: &[u8] =
         b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789     .,:;/-_";
     let alphabet = if entropy < 0.35 { LOW } else { HIGH };
@@ -2087,10 +2217,9 @@ fn generated_bool(seed: u64, entropy: f64) -> bool {
 }
 
 fn generated_date(seed: u64) -> String {
-    // Use one mixed-radix calendar index. The previous unrelated divisors
-    // (`28`, `29`, and `997`) aliased distinct seeds onto the same date and
-    // silently collapsed measured date cardinality. Keeping 28 days per
-    // month avoids invalid dates while preserving a large one-to-one domain.
+    // Use one mixed-radix calendar index so distinct seeds map to distinct
+    // dates. Keeping 28 days per month avoids invalid dates while preserving a
+    // large one-to-one domain.
     const DAYS_PER_YEAR: u64 = 12 * 28;
     const GENERATED_YEARS: u64 = 9_999 - 2_020 + 1;
     let ordinal = seed % (DAYS_PER_YEAR * GENERATED_YEARS);
@@ -2111,11 +2240,16 @@ fn generated_time(seed: u64, precision: u64, entropy: f64) -> String {
 }
 
 fn generated_timestamp(seed: u64, with_timezone: bool, precision: u64, entropy: f64) -> String {
+    // Bound the calendar index like `generated_date`: every engine rejects a
+    // year above 9999, so an unmeasured large seed must wrap to stay inside the
+    // valid year range.
+    const DAYS_PER_YEAR: u64 = 12 * 28;
+    const GENERATED_YEARS: u64 = 9_999 - 2_024 + 1;
     let second = seed % 60;
     let minute = (seed / 60) % 60;
     let hour = (seed / 3_600) % 24;
-    let day_ordinal = seed / 86_400;
-    let year = 2024 + day_ordinal / (12 * 28);
+    let day_ordinal = (seed / 86_400) % (DAYS_PER_YEAR * GENERATED_YEARS);
+    let year = 2024 + day_ordinal / DAYS_PER_YEAR;
     let month = (day_ordinal / 28) % 12 + 1;
     let day = day_ordinal % 28 + 1;
     let suffix = if with_timezone { "+00" } else { "" };
@@ -2409,7 +2543,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_biased_near_unique_lower_bound_does_not_collapse_at_scale() {
+    fn biased_near_unique_lower_bound_does_not_collapse_at_scale() {
         let table = BlueprintTable {
             rows: 100_000,
             ..Default::default()
@@ -2513,7 +2647,7 @@ mod tests {
     }
 
     #[test]
-    fn public_cardinality_permutation_is_a_bijection() {
+    fn cardinality_permutation_is_a_bijection() {
         let ordered = (0..997_u64).collect::<Vec<_>>();
         let permuted = (0..997_u64)
             .map(|index| entropy_permuted_cardinality_index(index, 997, 41, 1.0))
@@ -2547,13 +2681,330 @@ mod tests {
     #[test]
     fn numeric_generation_uses_captured_display_width() {
         let column = BlueprintColumn {
-            numeric_precision: 15,
-            numeric_scale: 2,
+            numeric_precision: Some(15),
+            numeric_scale: Some(2),
             len_avg: 8,
             ..Default::default()
         };
         assert_eq!(generated_numeric(0, &column, None, 0, 0.0), "10000.00");
         assert_eq!(generated_numeric(99, &column, None, 0, 0.0), "10000.99");
+    }
+
+    fn generated_value(column: &BlueprintColumn) -> String {
+        let table = BlueprintTable {
+            rows: 64,
+            ..Default::default()
+        };
+        let bytes = blueprint_row_value_for_generated_rows_with_entropy(
+            &table,
+            column,
+            64,
+            1,
+            7,
+            0,
+            SyntheticOptions::default(),
+            None,
+        )
+        .expect("value");
+        String::from_utf8(bytes).expect("utf8")
+    }
+
+    #[test]
+    fn numeric_model_governs_dispatch_over_column_type_aliases() {
+        // Oracle NUMBER(5,2): the alias says integer, the model says fixed
+        // decimal; the model must win at the primary entry point.
+        let number_decimal = BlueprintColumn {
+            column_type: "number".into(),
+            numeric_model: "fixed-decimal".into(),
+            numeric_precision: Some(5),
+            numeric_scale: Some(2),
+            numeric_precision_radix: "decimal".into(),
+            ..Default::default()
+        };
+        assert!(generated_value(&number_decimal).contains('.'));
+
+        // Negative scale through the generated-value path: NUMBER(3,-2)
+        // rounds to hundreds.
+        let negative_scale = BlueprintColumn {
+            column_type: "number".into(),
+            numeric_model: "fixed-decimal".into(),
+            numeric_precision: Some(3),
+            numeric_scale: Some(-2),
+            numeric_precision_radix: "decimal".into(),
+            ..Default::default()
+        };
+        let value = generated_value(&negative_scale);
+        assert!(value.ends_with("00") && !value.contains('.'), "{value}");
+
+        // Oracle FLOAT(p) is an exact decimal value model with binary
+        // precision. Two things must hold: the value is plain decimal text
+        // with no IEEE exponent form, and the 63 BINARY digits are never
+        // misread as a 63-decimal-digit domain.
+        let decimal_float = BlueprintColumn {
+            column_type: "float".into(),
+            numeric_model: "decimal-float".into(),
+            numeric_precision: Some(63),
+            numeric_precision_radix: "binary".into(),
+            ..Default::default()
+        };
+        let value = generated_value(&decimal_float);
+        assert!(
+            !value.contains(['e', 'E']) && value.trim_start_matches('-').len() <= 19,
+            "{value}"
+        );
+        assert!(value
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || ch == '.' || ch == '-'));
+
+        // A declared binary float reaches the IEEE-style formatter.
+        let binary_float = BlueprintColumn {
+            column_type: "double precision".into(),
+            numeric_model: "binary-float".into(),
+            numeric_precision_radix: "binary".into(),
+            ..Default::default()
+        };
+        assert!(generated_value(&binary_float).contains('.'));
+
+        // Integer model on the width-less NUMBER spelling: bounded by the
+        // declared precision, never the 64-bit fallback.
+        let narrow_integer = BlueprintColumn {
+            column_type: "number".into(),
+            numeric_model: "integer".into(),
+            numeric_precision: Some(3),
+            numeric_precision_radix: "decimal".into(),
+            ..Default::default()
+        };
+        let value: i64 = generated_value(&narrow_integer).parse().expect("integer");
+        assert!((-999..=999).contains(&value), "{value}");
+
+        // A bare "number" with no model uses integer dispatch.
+        let undeclared_model_number = BlueprintColumn {
+            column_type: "number".into(),
+            ..Default::default()
+        };
+        assert!(!generated_value(&undeclared_model_number).contains('.'));
+
+        // not-applicable never enters a numeric path even when the alias
+        // would: Oracle LONG is character data.
+        let long_text = BlueprintColumn {
+            column_type: "long".into(),
+            numeric_model: "not-applicable".into(),
+            len_avg: 12,
+            ..Default::default()
+        };
+        let text = generated_value(&long_text);
+        assert!(text.parse::<i64>().is_err(), "{text}");
+    }
+
+    #[test]
+    fn decimal_integer_values_respect_exact_precision_and_unsigned_bounds() {
+        let table = BlueprintTable {
+            rows: 1_000,
+            ..Default::default()
+        };
+        for precision in [1, 2, 3, 9, 18, 19, 38] {
+            for unsigned in [false, true] {
+                let column = BlueprintColumn {
+                    column_type: "number".into(),
+                    numeric_model: "integer".into(),
+                    numeric_precision: Some(precision),
+                    numeric_precision_radix: "decimal".into(),
+                    numeric_unsigned: unsigned,
+                    ..Default::default()
+                };
+                let limit = 10_i128.pow(precision as u32) - 1;
+                for row in 0..table.rows {
+                    let raw = blueprint_row_value(
+                        &table,
+                        &column,
+                        1,
+                        row,
+                        0,
+                        SyntheticOptions::default(),
+                    )
+                    .unwrap();
+                    let value: i128 = std::str::from_utf8(&raw).unwrap().parse().unwrap();
+                    assert!(
+                        value.abs() <= limit,
+                        "p={precision} unsigned={unsigned} row={row}: {value}"
+                    );
+                    assert!(!unsigned || value >= 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn decimal_integer_measured_domain_is_injective_across_sign_and_width_boundaries() {
+        for unsigned in [false, true] {
+            let capacity = if unsigned { 1_000 } else { 1_999 };
+            for count in [1, 10, 900, 1_000, capacity] {
+                let table = BlueprintTable {
+                    rows: count,
+                    ..Default::default()
+                };
+                let mut column = BlueprintColumn {
+                    column_type: "number".into(),
+                    numeric_model: "integer".into(),
+                    numeric_precision: Some(3),
+                    numeric_precision_radix: "decimal".into(),
+                    numeric_unsigned: unsigned,
+                    cardinality: Some(BlueprintCardinality {
+                        measured: true,
+                        sample_rows: count,
+                        non_null_rows: count,
+                        observed_distinct_count: count,
+                        estimated_distinct_count: count,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                };
+                for length in [0, 1, 3, 19] {
+                    column.len_avg = length;
+                    for entropy in [0.0, 0.5, 1.0] {
+                        let values = (0..count)
+                            .map(|row| {
+                                let raw = blueprint_row_value_for_generated_rows_with_entropy(
+                                    &table,
+                                    &column,
+                                    count,
+                                    1,
+                                    row,
+                                    0,
+                                    SyntheticOptions::default(),
+                                    Some(entropy),
+                                )
+                                .unwrap();
+                                let value: i128 =
+                                    std::str::from_utf8(&raw).unwrap().parse().unwrap();
+                                assert!((-999..=999).contains(&value));
+                                assert!(!unsigned || value >= 0);
+                                value
+                            })
+                            .collect::<BTreeSet<_>>();
+                        assert_eq!(
+                            values.len() as u64,
+                            count,
+                            "unsigned={unsigned} length={length} entropy={entropy}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn decimal_integer_extrema_and_binary_domain_intersection_are_exact() {
+        let mut column = BlueprintColumn {
+            column_type: "number".into(),
+            numeric_model: "integer".into(),
+            numeric_precision: Some(3),
+            numeric_precision_radix: "decimal".into(),
+            ..Default::default()
+        };
+        let domain = decimal_integer_domain("number", &column).unwrap();
+        assert_eq!(domain, (1_000, 999));
+        for (seed, expected) in [
+            (0, "0"),
+            (999, "999"),
+            (1_000, "-1"),
+            (1_998, "-999"),
+            (1_999, "0"),
+        ] {
+            assert_eq!(
+                generated_decimal_integer(seed, &column, domain, None),
+                expected
+            );
+        }
+        column.bit_width = 8;
+        assert!(decimal_integer_domain("number", &column).is_none());
+        column.numeric_precision = Some(2);
+        assert_eq!(decimal_integer_domain("number", &column), Some((100, 99)));
+        column.numeric_unsigned = true;
+        assert_eq!(decimal_integer_domain("number", &column), Some((100, 0)));
+    }
+
+    #[test]
+    fn undeclared_numeric_model_uses_integer_and_native_binary_paths() {
+        let table = BlueprintTable::default();
+        for (ty, bits) in [
+            ("number", 64),
+            ("long", 64),
+            ("bigint", 64),
+            ("int", 32),
+            ("smallint", 16),
+            ("tinyint", 8),
+        ] {
+            for precision in [None, Some(1), Some(3), Some(9)] {
+                for unsigned in [false, true] {
+                    let mut column = BlueprintColumn {
+                        column_type: ty.into(),
+                        numeric_precision: precision,
+                        numeric_unsigned: unsigned,
+                        ..Default::default()
+                    };
+                    for row in 0..128 {
+                        let seed = synthetic_seed(1, row, 0);
+                        let expected = if unsigned {
+                            (u128::from(seed) % (1_u128 << bits)).to_string()
+                        } else if bits == 64 {
+                            (seed as i64).to_string()
+                        } else {
+                            (i128::from(seed % (1_u64 << bits)) - (1_i128 << (bits - 1)))
+                                .to_string()
+                        };
+                        assert_eq!(
+                            blueprint_row_value(
+                                &table,
+                                &column,
+                                1,
+                                row,
+                                0,
+                                SyntheticOptions::default()
+                            )
+                            .unwrap(),
+                            expected.as_bytes()
+                        );
+                    }
+                    column.numeric_model = "integer".into();
+                    column.numeric_precision_radix = "binary".into();
+                    assert!(
+                        decimal_integer_domain(ty, &column).is_none(),
+                        "native optimized path must remain active"
+                    );
+                    column.numeric_precision_radix = "decimal".into();
+                    column.numeric_precision = Some(if bits == 64 { 20 } else { 10 });
+                    assert!(
+                        decimal_integer_domain(ty, &column).is_none(),
+                        "non-narrowing decimal metadata must keep the native path"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn numeric_generation_handles_oracle_negative_and_greater_than_precision_scale() {
+        let negative_scale = BlueprintColumn {
+            numeric_model: "fixed-decimal".into(),
+            numeric_precision: Some(3),
+            numeric_scale: Some(-2),
+            numeric_precision_radix: "decimal".into(),
+            ..Default::default()
+        };
+        assert_eq!(generated_numeric(1, &negative_scale, None, 0, 0.0), "100");
+
+        let fractional_only = BlueprintColumn {
+            numeric_model: "fixed-decimal".into(),
+            numeric_precision: Some(2),
+            numeric_scale: Some(5),
+            numeric_precision_radix: "decimal".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            generated_numeric(7, &fractional_only, None, 0, 0.0),
+            "0.00007"
+        );
     }
 
     #[test]
@@ -2780,7 +3231,7 @@ mod tests {
     }
 
     #[test]
-    fn skewed_locality_horizon_does_not_expand_with_fixture_scale() {
+    fn skewed_locality_horizon_does_not_expand_with_generated_rows() {
         let generate = |rows| {
             (0..rows)
                 .map(|row_idx| {
@@ -2918,6 +3369,74 @@ mod tests {
     }
 
     #[test]
+    fn generated_timestamps_stay_within_engine_accepted_years() {
+        for seed in [
+            0,
+            1,
+            86_400 * 336 * (9_999 - 2_024 + 1),
+            u64::MAX / 3,
+            u64::MAX - 1,
+            u64::MAX,
+        ] {
+            let value = generated_timestamp(seed, true, 6, 1.0);
+            let year = value
+                .split('-')
+                .next()
+                .and_then(|year| year.parse::<u64>().ok())
+                .unwrap_or_else(|| panic!("unparsable generated year in {value}"));
+            assert!(
+                (2_024..=9_999).contains(&year),
+                "seed {seed} generated out-of-domain timestamp {value}"
+            );
+        }
+        // Seeds inside the bounded domain retain their exact values.
+        assert_eq!(
+            generated_timestamp(86_400 * 336, false, 0, 0.0),
+            "2025-01-01 00:00:00"
+        );
+    }
+
+    #[test]
+    fn measured_integer_generation_respects_declared_signed_width() {
+        // A biased near-unique sample can estimate more distinct values than
+        // the declared type can store; the generated value must still fit.
+        let column = BlueprintColumn {
+            len_avg: 4,
+            cardinality: Some(BlueprintCardinality {
+                measured: true,
+                sample_rows: 250,
+                non_null_rows: 250,
+                observed_distinct_count: 249,
+                estimated_distinct_count: 3_458,
+                frequency_p50: 1,
+                frequency_p95: 1,
+                frequency_p99: 1,
+                frequency_max: 2,
+                sampled_with_bias: true,
+                bias_reason: "natural order".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        for seed in (0..4_096).chain([u64::from(u32::MAX), u64::MAX]) {
+            let tiny = generated_integer(seed, "tinyint", &column)
+                .parse::<i128>()
+                .expect("tinyint value parses");
+            assert!(
+                (-128..=127).contains(&tiny),
+                "seed {seed} generated out-of-width tinyint {tiny}"
+            );
+            let small = generated_integer(seed, "smallint", &column)
+                .parse::<i128>()
+                .expect("smallint value parses");
+            assert!(
+                (-32_768..=32_767).contains(&small),
+                "seed {seed} generated out-of-width smallint {small}"
+            );
+        }
+    }
+
+    #[test]
     fn dense_float32_vectors_preserve_binary_width_and_dimension() {
         let table = BlueprintTable::default();
         let column = BlueprintColumn {
@@ -2958,6 +3477,26 @@ mod tests {
         assert_eq!(values.len(), 2_352);
         assert!(values.contains("2020-01-01"));
         assert!(values.contains("2026-12-28"));
+    }
+
+    #[test]
+    fn deterministic_payloads_use_neutral_content() {
+        let utf8 = generated_utf8(0, 0, 128, 0.0);
+        assert!(utf8.starts_with("alpha beta gamma"));
+        assert!(!utf8.contains("customer"));
+
+        let text = generated_text(0, 0, 128, 0.0);
+        assert!(text.starts_with("amber cedar cloud"));
+        for application_term in ["node", "taxonomy", "paragraph", "revision"] {
+            assert!(!text
+                .split_ascii_whitespace()
+                .any(|word| word == application_term));
+        }
+
+        assert_eq!(
+            generated_binary(0, 12, 0.0),
+            vec![0x00, 0x55, 0xaa, 0xff, 0x00, 0x55, 0xaa, 0xff, 0x00, 0x55, 0xaa, 0xff]
+        );
     }
 
     #[test]
@@ -3012,8 +3551,8 @@ mod tests {
 
         let decimal = BlueprintColumn {
             column_type: "decimal".into(),
-            numeric_precision: 18,
-            numeric_scale: 5,
+            numeric_precision: Some(18),
+            numeric_scale: Some(5),
             ..Default::default()
         };
         let decimal_value =
@@ -3123,7 +3662,7 @@ mod tests {
 
     #[cfg(feature = "sampling")]
     #[test]
-    fn precompressed_profile_generates_an_incompressible_binary_workload() {
+    fn precompressed_profile_generates_incompressible_binary_data() {
         let table = BlueprintTable {
             rows: 64,
             table_bytes: 64 * 16 * 1024,
@@ -3157,7 +3696,7 @@ mod tests {
     }
 
     #[test]
-    fn structured_null_fraction_and_transport_provenance_are_respected() {
+    fn structured_null_fraction_and_compression_probe_provenance_are_respected() {
         let table = BlueprintTable {
             rows: 10,
             table_bytes: 100,
@@ -3192,7 +3731,7 @@ mod tests {
             }),
             ..never_null.clone()
         };
-        let transport = BlueprintColumn {
+        let probe_measured = BlueprintColumn {
             compression: Some(BlueprintCompression {
                 sample_encoding: crate::SAMPLE_ENCODING_TAG.into(),
                 ..storage_only.compression.clone().unwrap()
@@ -3204,13 +3743,13 @@ mod tests {
             default_entropy_for_ratio(3.0)
         );
         assert_eq!(
-            entropy_from_column(&transport),
+            entropy_from_column(&probe_measured),
             default_entropy_for_ratio(32.0)
         );
     }
 
     #[test]
-    fn table_transport_compression_is_used_when_column_measurement_is_absent() {
+    fn table_compression_probe_is_used_when_column_measurement_is_absent() {
         let table = BlueprintTable {
             compression: Some(BlueprintCompression {
                 measured: true,
@@ -3348,7 +3887,7 @@ mod tests {
     }
 
     #[test]
-    fn statistical_projection_scales_distinct_domain_with_fixture_rows() {
+    fn statistical_projection_scales_distinct_domain_with_generated_rows() {
         let table = BlueprintTable {
             rows: 100,
             ..Default::default()
@@ -3783,8 +4322,8 @@ mod tests {
 
         let column = BlueprintColumn {
             column_type: "decimal(19,4)".into(),
-            numeric_precision: 19,
-            numeric_scale: 4,
+            numeric_precision: Some(19),
+            numeric_scale: Some(4),
             ..Default::default()
         };
         let value = blueprint_row_value(

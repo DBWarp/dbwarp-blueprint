@@ -267,7 +267,9 @@ fn avro_blueprint_from_path_metadata(
     let schema = reader.writer_schema().clone();
     let mut table = BlueprintTable {
         storage_bytes: std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0),
-        schema: "avro".to_string(),
+        // Structured inputs have one anonymous logical namespace. Never
+        // serialize the source format name as a schema identifier.
+        schema: "schema-A".to_string(),
         source_partitions: 1,
         // apache-avro 0.21 parses the codec internally but exposes neither
         // the parsed codec nor reserved avro.* header metadata on Reader.
@@ -326,7 +328,7 @@ fn avro_blueprint_from_path_metadata(
     deadline.check("finishing Avro metadata")?;
     let mut tables = BTreeMap::new();
     tables.insert(STRUCTURED_TABLE_ID.to_string(), table);
-    Ok(BlueprintFile {
+    let mut blueprint = BlueprintFile {
         schema_version: SCHEMA_VERSION,
         engine: "avro".to_string(),
         source_kind: "avro".to_string(),
@@ -342,7 +344,9 @@ fn avro_blueprint_from_path_metadata(
         )),
         tables,
         ..Default::default()
-    })
+    };
+    blueprint.initialize_v7_structured_contract("avro-schema");
+    Ok(blueprint)
 }
 
 #[cfg(feature = "sampling")]
@@ -362,7 +366,9 @@ fn apply_avro_decoded_compression(
             (
                 name.clone(),
                 crate::type_tag_for_column(col),
-                col.numeric_scale,
+                col.numeric_scale
+                    .and_then(|scale| u64::try_from(scale).ok())
+                    .unwrap_or(0),
             )
         })
         .collect::<Vec<_>>();
@@ -437,7 +443,7 @@ fn apply_avro_decoded_compression(
             }
             column.len_avg = statistics.len_avg;
             column.len_p95 = statistics.len_p95;
-            column.null_fraction = Some(statistics.null_fraction);
+            column.null_fraction = Some(statistics.emitted_null_fraction(cardinality.as_ref()));
             column.length_sample_rows = statistics.sample_rows;
             column.length_p95_sample_rows = statistics.len_p95_sample_rows;
             column.length_sample_method = options.column_sample_method.clone();
@@ -667,8 +673,10 @@ fn avro_column_blueprint(schema: &Schema, nullable: bool, ordinal: u32) -> Bluep
     };
     match schema {
         Schema::Decimal(decimal) => {
-            column.numeric_precision = decimal.precision as u64;
-            column.numeric_scale = decimal.scale as u64;
+            column.numeric_model = "fixed-decimal".to_string();
+            column.numeric_precision = Some(decimal.precision as u64);
+            column.numeric_scale = Some(decimal.scale as i64);
+            column.numeric_precision_radix = "decimal".to_string();
         }
         Schema::Fixed(fixed) => column.declared_max_bytes = fixed.size as u64,
         Schema::Uuid => {
@@ -896,7 +904,12 @@ fn observe_avro_row(
             .map(|(idx, stats)| {
                 stats.push(
                     fields.get(idx).map(|(_name, value)| value),
-                    columns.get(idx).map_or(0, |column| column.numeric_scale),
+                    columns.get(idx).map_or(0, |column| {
+                        column
+                            .numeric_scale
+                            .and_then(|scale| u64::try_from(scale).ok())
+                            .unwrap_or(0)
+                    }),
                 )
             })
             .sum()
@@ -906,7 +919,12 @@ fn observe_avro_row(
             .map(|stats| {
                 stats.push(
                     Some(value),
-                    columns.first().map_or(0, |column| column.numeric_scale),
+                    columns.first().map_or(0, |column| {
+                        column
+                            .numeric_scale
+                            .and_then(|scale| u64::try_from(scale).ok())
+                            .unwrap_or(0)
+                    }),
                 )
             })
             .unwrap_or(0)
@@ -1266,8 +1284,8 @@ mod tests {
         )
         .unwrap();
         let decimal_column = avro_column_blueprint(&decimal, false, 1);
-        assert_eq!(decimal_column.numeric_precision, 18);
-        assert_eq!(decimal_column.numeric_scale, 5);
+        assert_eq!(decimal_column.numeric_precision, Some(18));
+        assert_eq!(decimal_column.numeric_scale, Some(5));
 
         let timestamp =
             Schema::parse_str(r#"{"type":"long","logicalType":"local-timestamp-micros"}"#).unwrap();
@@ -1430,6 +1448,38 @@ mod tests {
         let error = avro_blueprint_from_path_with_options_and_deadline(&path, &options, &deadline)
             .expect_err("an already-expired shared deadline must fail metadata");
         assert!(error.to_string().contains("deadline expired"));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(feature = "sampling")]
+    #[test]
+    fn incomplete_sample_near_quantization_boundary_stays_contract_valid() {
+        let schema = Schema::parse_str(
+            r#"{"type":"record","name":"event","fields":[{"name":"id","type":"long"}]}"#,
+        )
+        .unwrap();
+        let path = test_path("partial-5050");
+        let file = File::create(&path).unwrap();
+        let mut writer = Writer::new(&schema, file);
+        for row in 0..5_050_i64 {
+            writer
+                .append(Value::Record(vec![("id".into(), Value::Long(row))]))
+                .unwrap();
+        }
+        writer.flush().unwrap();
+        drop(writer);
+
+        let blueprint = avro_blueprint_from_path_with_options(
+            &path,
+            &DecodedCompressionOptions::enabled(5_000, "table-first", "column-first"),
+        )
+        .unwrap();
+        let table = &blueprint.tables[STRUCTURED_TABLE_ID];
+        let cardinality = table.cols["col-1"].cardinality.as_ref().unwrap();
+        assert_eq!(table.rows, 5_050);
+        assert_eq!(cardinality.sample_rows, 5_000);
+        crate::validate_blueprint_contract(&blueprint)
+            .expect("partial Avro samples must not exceed exact decoded rows");
         std::fs::remove_file(path).unwrap();
     }
 }

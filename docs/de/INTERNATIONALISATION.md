@@ -79,7 +79,7 @@ verwenden absichtlich unterschiedliche Schlüssel.
 
 Alle Kataloge sind in die Binärdatei einkompiliert. Beim Start prüft das Programm, ob jedes angegebene nicht englische Gebietsschema Folgendes exakt abdeckt:
 
-- den aktuellen Live-Clap-Hilfebaum;
+- jeder Hilfetext;
 - jeden stabilen DBP-Code und alle drei Diagnosefelder;
 - jeden stabilen Schlüssel für Eingabeaufforderungen, Fortschritt, Warnungen und Präsentationen;
 - jeden erforderlichen Platzhalter und jedes geschützte betriebliche Token.

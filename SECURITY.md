@@ -18,7 +18,8 @@ evidence needed to assess the report.
 
 | Mode | Runtime network use |
 |---|---|
-| Live `--connect` | One database-driver session to the named database endpoint. DNS resolution may contact the configured resolver. Integrated Kerberos/SSPI authentication may also contact configured identity infrastructure such as a KDC or domain controller. |
+| Live `--connect` for PostgreSQL, MySQL, or SQL Server | One database-driver session to the named database endpoint. DNS resolution may contact the configured resolver. Integrated Kerberos/SSPI authentication may also contact configured identity infrastructure such as a KDC or domain controller. |
+| Acknowledgement-gated Oracle preview | Starts only the operator-selected `--oracle-sqlplus` executable as a child process (including a bounded `-V` probe when available), then uses it for the catalogue session. The credential is sent on stdin, never in process arguments. The child receives an empty private directory as `TNS_ADMIN`; its environment is cleared, then only `PATH`, `SystemRoot`, `WINDIR`, `ORACLE_HOME`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `LIBPATH`, and `SHLIB_PATH` are forwarded when present. Fixed locale, time-zone, and private `TNS_ADMIN` values are set separately. |
 | `--batch-manifest` | One database-driver session for each database source in the manifest, processed sequentially. Local Parquet and Avro sources use no network. DNS and integrated-auth qualifications above still apply. |
 | `--from-toml`, `--from-parquet`, `--from-avro`, `--bundle-list`, `--bundle-extract`, `--bundle-pack` | No application-initiated network connection. Inputs on network-mounted filesystems remain an operating-system/storage concern. |
 
@@ -45,7 +46,7 @@ line or referenced by a batch/bundle input:
 |---|---|
 | `--user-file` | username source |
 | `--password-file` | password source |
-| `--anonymization-key-file` | optional customer-held HMAC key used by the binary or SQL fallback normalizer to preserve anonymous object labels across approved runs; mode must prevent group/other read on Unix |
+| `--anonymization-key-file` | optional HMAC key that you hold, used by the binary or SQL fallback normalizer to preserve anonymous object labels across approved runs; mode must prevent group/other read on Unix |
 | `--azure-token-file` | SQL Server Entra ID token source |
 | `--tls-ca` | trusted CA bundle |
 | `--tls-cert` | client TLS certificate |
@@ -161,7 +162,7 @@ operating system and never emits it, preventing an offline reader from checking
 candidate source names. Use `--anonymization-key-file` only when the same
 anonymous labels must survive across approved comparison runs. The file must
 contain exactly 32 raw bytes or 64 hexadecimal characters and must be protected
-like a credential. The audit records whether an ephemeral or customer-held key
+like a credential. The audit records whether an ephemeral key or one you supplied
 was used, never the key value.
 
 The stdlib-only `blueprint_format.py` normalizer used by the SQL fallback has

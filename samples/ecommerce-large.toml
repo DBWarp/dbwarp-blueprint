@@ -1,6 +1,6 @@
-# dbwarp-blueprint legacy schema v1 sample
-# Anonymous database Blueprint. Source object names and row values are excluded.
-# Review under your organization's data-classification policy before sharing.
+# dbwarp-blueprint schema v1 synthetic example
+# Synthetic example, not a capture of any real database.
+# The source_kind value below is illustrative.
 # https://github.com/DBWarp/dbwarp-blueprint
 
 schema_version = 1

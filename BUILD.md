@@ -1,6 +1,6 @@
 # Build dbwarp-blueprint from source
 
-This guide is for customers who prefer to build the tool themselves before running it against a database.
+Use this guide if you prefer to build the tool yourself before running it against a database.
 
 ## Quick build
 
@@ -92,19 +92,26 @@ Windows PowerShell:
 Get-FileHash .\dbwarp-blueprint-windows-x86_64.zip -Algorithm SHA256
 ```
 
+Each release also publishes a `dbwarp-blueprint-<platform>.binary.sha256` file
+for the extracted executable. See [Download binaries](binaries/README.md) for
+the verification command.
+
 ## Authentication-specific builds
 
 The default build supports password, token-file, token-env, and TLS flows;
 client-certificate mTLS is available for PostgreSQL and MySQL.
 
-SQL Server integrated authentication has platform-specific builds:
+SQL Server integrated authentication has platform-specific support:
 
 | Platform | Build command | Purpose |
 |---|---|---|
-| Linux | `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh` | Kerberos / GSSAPI |
-| Windows | GitHub release Windows binary, or `cargo build --release --features winauth` | Windows Integrated Auth / SSPI |
+| Linux | GitHub release Linux binary, or `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh` | Password, token and TLS authentication, plus Kerberos / GSSAPI when selected |
+| Windows | GitHub release Windows binary, or `cargo build --release --locked --features winauth` | Windows Integrated Auth / SSPI |
 
-Linux Kerberos requires the normal MIT Kerberos runtime libraries. If `kinit` works on the host, the required runtime pieces are usually already present.
+Linux release binaries do not require Kerberos libraries to start. They load
+the platform GSSAPI runtime only when `--auth-mode integrated` is selected. If
+`kinit` works, the required runtime pieces are usually already present. Source
+builds enable Kerberos/GSSAPI with `integrated-auth-gssapi` as shown above.
 
 ## Build without the script
 
@@ -130,7 +137,7 @@ cargo build --release --locked --features integrated-auth-gssapi
 
 `./build.sh` proves that the reviewed source builds; byte identity additionally
 requires the release's complete native build inputs. Check out the exact source
-revision recorded in `PROVENANCE.json`, use its target and feature list, the
+revision recorded in `PROVENANCE.json`, published with each release, use its target and feature list, the
 pinned Rust toolchain, the recorded native compiler/linker, the commit timestamp
 as `SOURCE_DATE_EPOCH`, and the release workflow's path-remapping and linker
 flags. Windows releases also use `clang-cl` and `/Brepro`.
@@ -143,17 +150,19 @@ SOURCE_BIN=target/release/dbwarp-blueprint \
   ./verify.sh /path/to/extracted/dbwarp-blueprint
 ```
 
-If the hashes differ, do not treat the binaries as equivalent. The release CI
-itself builds twice in separate target directories on the same runner and
-rejects a byte mismatch; `PROVENANCE.json` records the source revision, target,
+If the hashes differ, do not treat the binaries as equivalent. Each release is
+built twice and a byte mismatch fails the release. `PROVENANCE.json` records the source revision, target,
 features, toolchain, source-date epoch, native compiler, binary size, and hash
 needed to assess a local reproduction.
 
 ## Vendored dependencies
 
-The normal repository includes one small patched dependency under `vendor/mysql_async`
-so MySQL `--tls-ca` has the same restrictive trust semantics as the rest of
-the tool. All other dependency versions are pinned by `Cargo.lock`.
+The normal repository includes patched dependencies under `vendor/` so MySQL
+and SQL Server `--tls-ca` inputs have the same restrictive trust semantics as
+the rest of the tool, Linux integrated authentication loads GSSAPI only when
+requested, and Windows integrated authentication uses a maintained
+random-number dependency. All other dependency versions are pinned by
+`Cargo.lock`.
 
 Each GitHub Release publishes a separate `dbwarp-blueprint-source-vendored.tar.gz` bundle for security teams that want to inspect and build from every dependency source file offline.
 
@@ -163,7 +172,7 @@ cd dbwarp-blueprint-source-vendored
 DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh
 ```
 
-That bundle contains the patched `vendor/mysql_async`, a generated
+That bundle contains the patched dependencies under `vendor/`, a generated
 `vendor-crates/` tree for all other dependencies, and a generated
 `.cargo/config.toml` that redirects crates.io to the local vendor tree. In
 that mode, `build.sh` uses `cargo build --release --frozen --offline --locked`.

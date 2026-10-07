@@ -20,7 +20,8 @@ reproducción y la mínima evidencia segura necesaria para evaluar el informe.
 
 | Modo | Uso de la red durante la ejecución |
 |---|---|
-| `--connect` en vivo | Una sesión del controlador de base de datos con el punto de conexión indicado. La resolución DNS puede contactar con el solucionador configurado. La autenticación Kerberos/SSPI integrada también puede contactar con infraestructura de identidad configurada, como un KDC o un controlador de dominio. |
+| Conexión `--connect` en vivo para PostgreSQL, MySQL o SQL Server | Una sesión del controlador de base de datos con el punto de conexión indicado. La resolución DNS puede contactar con el solucionador configurado. La autenticación Kerberos/SSPI integrada también puede contactar con infraestructura de identidad configurada, como un KDC o un controlador de dominio. |
+| Vista previa de Oracle que requiere confirmación explícita | Inicia únicamente el ejecutable `--oracle-sqlplus` seleccionado por el operador como proceso hijo (incluida una prueba limitada `-V` cuando esté disponible) y lo utiliza para la sesión del catálogo. La credencial se envía por la entrada estándar, nunca en los argumentos del proceso. El proceso hijo recibe un directorio privado vacío como `TNS_ADMIN`; su entorno se borra y solo se reenvían `PATH`, `SystemRoot`, `WINDIR`, `ORACLE_HOME`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `LIBPATH` y `SHLIB_PATH` cuando están presentes. La configuración regional fija, la zona horaria y los valores privados de `TNS_ADMIN` se establecen por separado. |
 | `--batch-manifest` | Una sesión del controlador por cada origen de base de datos del manifiesto, procesados secuencialmente. Los orígenes Parquet y Avro locales no utilizan la red. Se siguen aplicando las salvedades anteriores sobre DNS y autenticación integrada. |
 | `--from-toml`, `--from-parquet`, `--from-avro`, `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Ninguna conexión de red iniciada por la aplicación. Las entradas en sistemas de archivos de red siguen dependiendo del sistema operativo y del almacenamiento. |
 
@@ -45,7 +46,7 @@ Durante la ejecución, la aplicación solo lee directamente las entradas selecci
 |---|---|
 | `--user-file` | fuente del nombre de usuario |
 | `--password-file` | fuente de la contraseña |
-| `--anonymization-key-file` | clave HMAC opcional custodiada por el cliente y utilizada por el binario o el normalizador de la alternativa SQL para conservar etiquetas anónimas de objetos entre ejecuciones aprobadas; en Unix, el modo no debe permitir la lectura al grupo ni a otros usuarios |
+| `--anonymization-key-file` | Clave HMAC opcional que usted posee, utilizada por el normalizador binario o SQL de respaldo para preservar las etiquetas anónimas de los objetos en ejecuciones aprobadas; el modo debe prevenir group/other de lectura en Unix. |
 | `--azure-token-file` | fuente del token de SQL Server Entra ID |
 | `--tls-ca` | paquete de CA de confianza |
 | `--tls-cert` | certificado TLS de cliente |
@@ -143,15 +144,7 @@ las longitudes de los prefijos devueltos. La información de procedencia del
 muestreo registra las limitaciones aplicables; una salida acotada no demuestra
 que se haya medido el valor completo.
 
-El orden de tablas, esquemas, índices y objetos no tabulares utiliza
-HMAC-SHA256 con separación por dominio. De forma predeterminada, la herramienta
-obtiene del sistema operativo una clave nueva local al proceso y nunca la emite,
-lo que impide que un lector sin conexión compruebe nombres de origen candidatos.
-Utilice `--anonymization-key-file` solo cuando las mismas etiquetas anónimas
-deban mantenerse entre ejecuciones de comparación aprobadas. El archivo debe
-contener exactamente 32 bytes sin procesar o 64 caracteres hexadecimales y debe
-protegerse como una credencial. La auditoría registra si se utilizó una clave
-efímera o custodiada por el cliente, nunca el valor de la clave.
+Tabla, esquema, índice y el ordenamiento de objetos que no son tablas utilizan HMAC-SHA256 con delimitadores de dominio. Por defecto, la herramienta obtiene una clave nueva y local del proceso del sistema operativo y nunca la emite, lo que impide que un lector externo verifique los nombres de origen propuestos. Utilice `--anonymization-key-file` solo cuando las mismas etiquetas anónimas deben persistir a través de ejecuciones de comparación aprobadas. El archivo debe contener exactamente 32 bytes sin procesar o 64 caracteres hexadecimales y debe estar protegido como una credencial. El registro de auditoría indica si se utilizó una clave efímera o una que usted proporcionó, pero nunca el valor de la clave.
 
 El normalizador `blueprint_format.py` de la alternativa SQL, basado solo en la biblioteca estándar, aplica el mismo contrato de ordenación con clave. Obtiene de forma predeterminada una clave aleatoria nueva del sistema operativo, salvo que se proporcione `--anonymization-key-file`, y añade tras la cabecera canónica un comentario fijo con el productor y el origen de la clave para que su salida no se confunda con la del recopilador Rust.
 

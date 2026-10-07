@@ -963,14 +963,7 @@ fn sync_batch_artifact_tree(path: &Path) -> Result<()> {
         );
     }
     if metadata.is_file() {
-        std::fs::File::open(path)
-            .and_then(|file| file.sync_all())
-            .with_context(|| {
-                format!(
-                    "DBP1113E durably syncing staged batch artifact {}",
-                    path.display()
-                )
-            })?;
+        sync_batch_artifact_file(path)?;
         return Ok(());
     }
     if !metadata.is_dir() {
@@ -1003,6 +996,20 @@ fn sync_batch_artifact_tree(path: &Path) -> Result<()> {
             )
         })?;
     Ok(())
+}
+
+fn sync_batch_artifact_file(path: &Path) -> Result<()> {
+    #[cfg(windows)]
+    let file = std::fs::OpenOptions::new().write(true).open(path);
+    #[cfg(not(windows))]
+    let file = std::fs::File::open(path);
+
+    file.and_then(|file| file.sync_all()).with_context(|| {
+        format!(
+            "DBP1113E durably syncing staged batch artifact {}",
+            path.display()
+        )
+    })
 }
 
 fn batch_output_is_owned(path: &Path) -> Result<bool> {
@@ -1131,6 +1138,7 @@ fn batch_child_cli(
     audit_log: PathBuf,
 ) -> Cli {
     Cli {
+        tls_mode_explicit: false,
         lang: parent.lang.clone(),
         color: parent.color,
         banner: false,
@@ -1143,6 +1151,13 @@ fn batch_child_cli(
         from_toml: None,
         from_parquet: None,
         from_avro: None,
+        from_oracle_basic: None,
+        oracle_basic_script_out: None,
+        oracle_basic_script_family: None,
+        acknowledge_oracle_preview: false,
+        oracle_sqlplus: None,
+        oracle_network_config_dir: None,
+        oracle_basic_capture_out: None,
         batch_manifest: None,
         out_dir: None,
         bundle_list: None,
@@ -1315,6 +1330,11 @@ fn blueprint_one_table_per_file(
         out.tables.insert(table_name, table);
     }
     recompute_blueprint_totals(&mut out)?;
+    out.initialize_v7_structured_contract(if kind == "parquet" {
+        "parquet-schema"
+    } else {
+        "avro-schema"
+    });
     Ok(out)
 }
 
@@ -1364,6 +1384,11 @@ fn blueprint_merge_same_schema(
         "structured-dataset-aggregate",
     ));
     recompute_blueprint_totals(&mut out)?;
+    out.initialize_v7_structured_contract(if kind == "parquet" {
+        "parquet-schema"
+    } else {
+        "avro-schema"
+    });
     Ok(out)
 }
 
@@ -1382,8 +1407,11 @@ fn structured_tables_compatible(
                 && left_col.native_type == right_col.native_type
                 && left_col.declared_max_chars == right_col.declared_max_chars
                 && left_col.declared_max_bytes == right_col.declared_max_bytes
+                && left_col.length_semantics == right_col.length_semantics
                 && left_col.numeric_precision == right_col.numeric_precision
                 && left_col.numeric_scale == right_col.numeric_scale
+                && left_col.numeric_model == right_col.numeric_model
+                && left_col.numeric_precision_radix == right_col.numeric_precision_radix
                 && left_col.numeric_unsigned == right_col.numeric_unsigned
                 && left_col.bit_width == right_col.bit_width
                 && left_col.datetime_precision == right_col.datetime_precision
@@ -1391,6 +1419,9 @@ fn structured_tables_compatible(
                 && left_col.collation == right_col.collation
                 && left_col.source_semantics == right_col.source_semantics
                 && left_col.style == right_col.style
+                && left_col.default_on_null == right_col.default_on_null
+                && left_col.invisible == right_col.invisible
+                && left_col.lob_storage == right_col.lob_storage
         })
     })
 }
@@ -1492,10 +1523,15 @@ fn merge_cardinality_observations(
     merged_table_rows: u64,
 ) -> Result<()> {
     let Some(incoming) = incoming else {
+        // A dataset-level aggregate cannot claim cardinality coverage for a
+        // member that supplied none. Once any member is missing, keep the
+        // merged block absent for the remainder of the fold.
+        *base = None;
         return Ok(());
     };
     let Some(current) = base.as_mut() else {
-        *base = Some(incoming);
+        // A prior member already made aggregate cardinality unavailable.
+        // Do not silently restore it from a later subset.
         return Ok(());
     };
 

@@ -6,7 +6,7 @@
 
 `dbwarp-blueprint` prend en charge à la fois les fichiers Blueprint à source unique et les répertoires de bundles multisources.
 
-Utilisez un seul fichier `blueprint.toml` lorsque le client partage une base de données, un sous-ensemble de tables, un fichier Parquet ou un fichier Avro. Utilisez un bundle lorsque le client possède plusieurs bases de données, plusieurs jeux de données de fichiers structurés ou souhaite disposer d'un seul paquet de revue pour l'ensemble de son parc.
+Utilisez un seul `blueprint.toml` lorsque vous partagez une seule base de données, un sous-ensemble de tables, un fichier Parquet ou un fichier Avro. Utilisez un ensemble lorsque vous avez plusieurs bases de données, plusieurs ensembles de données de fichiers structurés, ou que vous souhaitez un seul ensemble de révisions pour l'ensemble de votre infrastructure.
 
 ## Organisation du bundle
 
@@ -27,7 +27,7 @@ customer-blueprint-bundle/
 
 `bundle.toml` contient les métadonnées au niveau des sources et les chemins relatifs vers les fichiers Blueprint enfants. Il s'agit de la forme de travail privilégiée, car chaque source reste vérifiable, auditable et réexécutable indépendamment.
 
-Pour une transmission vérifiée séparément, regroupez le répertoire dans un seul fichier TOML intégré :
+Pour partager un ensemble de fichiers sous forme d'un seul fichier, compressez le répertoire dans un seul fichier TOML intégré :
 
 ```bash
 dbwarp-blueprint \
@@ -45,13 +45,7 @@ chaque Blueprint enfant avec `blueprint_path` ; un bundle empaqueté l'intègre
 sous `blueprint`. Les outils d'écriture n'émettent que ces identifiants
 canoniques.
 
-Les lecteurs acceptent également les schémas de bundle v1 et v2. Ces contrats
-servent uniquement à la compatibilité en entrée : tout ancien bundle accepté
-est normalisé en v3 et n'est jamais réémis avec les anciens identifiants. Comme
-les anciens bundles ne précisent pas si les sources sont indépendantes,
-répliquées ou shardées, leur relation devient `unknown` et les totaux entre
-sources sont supprimés. Les chemins enfants doivent rester relatifs et confinés
-au répertoire du bundle après canonicalisation.
+Un ensemble de versions v1 ou v2 est toujours lu et est normalisé en version v3. Ces versions n'enregistrent pas si les sources sont indépendantes, des répliques ou des fragments, de sorte que leur relation devient `unknown` et les totaux agrégés inter-sources sont supprimés. Les chemins enfants doivent être relatifs et doivent rester à l'intérieur du répertoire de l'ensemble après la normalisation.
 
 Le bundle v3 distingue les sources physiques des jeux de données logiques.
 Chaque source possède `dataset_relationship`, `dataset_group` et
@@ -78,7 +72,7 @@ sous-ensemble de shards comme le jeu complet.
 
 ## Manifeste de lot
 
-Créez un manifeste appartenant au client :
+Créez un manifeste :
 
 ```toml
 [defaults]
@@ -190,7 +184,7 @@ Pour les sources Parquet et Avro :
 - `single_file` exige exactement un fichier résolu et le conserve sous la forme d'une table logique unique.
 - `one_table_per_file` associe chaque fichier à une table distincte portant un libellé anonyme dans un fichier Blueprint enfant unique.
 - `merge_same_schema` fusionne de nombreux fichiers en une table logique lorsque le nombre de colonnes correspond.
-- `partitioned_dataset` utilise actuellement le même comportement de fusion que `merge_same_schema` ; il réserve la distinction sémantique à la découverte des partitions de style Hive.
+- `partitioned_dataset` se comporte comme `merge_same_schema`.
 
 Le contrôle de fusion est volontairement prudent. Il exige une disposition de
 colonnes anonymisée identique, les mêmes types canoniques et natifs, la même
@@ -251,9 +245,9 @@ Les clés de sélecteur prises en charge sont :
 
 Les sélecteurs peuvent être transmis sous la forme d'une chaîne unique séparée par des virgules ou au moyen d'options `--select` répétées. Les valeurs contradictoires pour une même clé sont refusées.
 
-## Transmission en aval
+## Complexité des artefacts dans les ensembles.
 
-Un bundle est une entrée Blueprint portable et vérifiable. Avant de l'accepter, un consommateur en aval doit valider le contrat du bundle et les versions de schéma, appliquer les sélecteurs enregistrés et conserver les identifiants de source lorsqu'il combine plusieurs enfants afin d'éviter toute collision entre identifiants de table. Les commandes et règles de compatibilité des autres produits DBWarp relèvent de leur documentation examinée séparément et ne sont volontairement pas reproduites ici.
+La complexité des artefacts reste une propriété de chaque Blueprint enfant. Elle n'est jamais additionnée, moyennée ou attribuée à un niveau de groupe : les sources peuvent utiliser différents moteurs, versions d'analyseur, dialectes, profils de grammaire, portées et populations d'évaluation, de sorte qu'un agrégat n'aurait pas de signification justifiable. Comparez chaque source indépendamment.
 
 ## Limite de confidentialité et de revue
 
@@ -265,7 +259,7 @@ Un bundle n'assouplit pas le modèle de confidentialité :
   déduire les comptages, les longueurs et les fractions NULL, même sans mesure
   de compression ;
 - les échantillons décodés restent en mémoire ;
-- les métadonnées du bundle utilisent les identifiants de source et balises choisis par le client ;
+- les métadonnées du lot utilisent les identifiants et les balises que vous avez choisis ;
 - aucune commande de bundle n'envoie de télémétrie ni ne téléverse de fichier.
 
-Le client peut supprimer toute Blueprint enfant ou toute entrée de source avant de partager le bundle.
+Vous pouvez supprimer n'importe quelle entrée Blueprint enfant ou source avant de partager le groupe.

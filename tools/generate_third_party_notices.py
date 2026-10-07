@@ -191,6 +191,34 @@ def render_notices(records: list[dict[str, object]], total: int) -> str:
         "`vendor/mysql_async/`; the same licence texts are also present in the "
         "generated third-party bundle.",
         "",
+        "### tiberius",
+        "",
+        "DBWarp Blueprint uses a modified `tiberius` 0.13.0. The patch adds a "
+        "rustls configuration that trusts only the explicitly supplied CA set, "
+        "preserving the restrictive `--tls-ca` contract, and exposes a Kerberos "
+        "runtime-availability check used before integrated authentication. The "
+        "Apache-2.0 and MIT "
+        "texts and the required modification notice are in `vendor/tiberius/`; "
+        "the same licence texts are also present in the generated third-party "
+        "bundle.",
+        "",
+        "### libgssapi-sys",
+        "",
+        "Linux integrated authentication uses a modified `libgssapi-sys` 0.3.4. "
+        "The patch loads the platform GSSAPI runtime only when integrated "
+        "authentication is selected, so other operations do not require a "
+        "Kerberos library at process startup. The MIT text and the required "
+        "modification notice are in `vendor/libgssapi-sys/`; the same licence "
+        "text is also present in the generated third-party bundle.",
+        "",
+        "### winauth",
+        "",
+        "Windows integrated authentication uses a modified `winauth` 0.0.5. "
+        "Its `rand` dependency is updated to a maintained release. The "
+        "Apache-2.0 and MIT texts and the required modification notice are in "
+        "`vendor/winauth/`; the same licence texts are also present in the "
+        "generated third-party bundle.",
+        "",
         "### mimalloc",
         "",
         "The binary links the mimalloc allocator through the `mimalloc` and "
@@ -232,6 +260,15 @@ def validate_required_licences(root: Path) -> list[str]:
     mysql_notice = ROOT / "vendor" / "mysql_async" / "MODIFICATIONS.md"
     if not mysql_notice.is_file():
         failures.append("vendor/mysql_async/MODIFICATIONS.md is missing")
+    tiberius_notice = ROOT / "vendor" / "tiberius" / "MODIFICATIONS.md"
+    if not tiberius_notice.is_file():
+        failures.append("vendor/tiberius/MODIFICATIONS.md is missing")
+    libgssapi_notice = ROOT / "vendor" / "libgssapi-sys" / "MODIFICATIONS.md"
+    if not libgssapi_notice.is_file():
+        failures.append("vendor/libgssapi-sys/MODIFICATIONS.md is missing")
+    winauth_notice = ROOT / "vendor" / "winauth" / "MODIFICATIONS.md"
+    if not winauth_notice.is_file():
+        failures.append("vendor/winauth/MODIFICATIONS.md is missing")
     ring = root / "crates" / "ring-0.17.14"
     required_ring = {
         "LICENSE",

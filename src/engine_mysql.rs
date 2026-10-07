@@ -1,4 +1,4 @@
-//! MySQL engine — catalog reader (Tier 1) + compression sampler (Tier 2).
+//! MySQL engine: catalog reader (Tier 1) + compression sampler (Tier 2).
 //!
 //! Connects via `mysql_async` (rustls TLS feature). Reads
 //! information_schema only in Tier 1. Tier 2 additionally runs
@@ -9,7 +9,7 @@
 //!
 //! Anonymization + rounding identical to engine_pg.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -19,8 +19,8 @@ use mysql_async::{OptsBuilder, Pool, SslOpts, Value};
 use zeroize::Zeroizing;
 
 use crate::artifacts::{
-    self, ArtifactDetail, CaptureCompleteness, RawArtifact, RawExternalPrerequisite,
-    RawLanguageAnalysis,
+    self, ArtifactDetail, CaptureCompleteness, RawArtifact, RawArtifactRequirement,
+    RawExternalPrerequisite, RawLanguageAnalysis,
 };
 use crate::audit::AuditLog;
 use crate::engine_common::{
@@ -42,7 +42,7 @@ use crate::tls::{TlsMode, TlsParams};
 use crate::topology::{sort_dedup, sort_topology, warn_incomplete_dataset_scope};
 
 /// MySQL `binary` charset id from `INFORMATION_SCHEMA.COLLATIONS` /
-/// the wire protocol — when this charset is set on a column, the
+/// the wire protocol: when this charset is set on a column, the
 /// bytes are not text in any encoding, they're raw binary.
 const MYSQL_CHARSET_BINARY: u16 = 63;
 const STYLE_PEEK_BYTES: usize = 4096;
@@ -68,9 +68,9 @@ fn normalized_mysql_version(raw: &str) -> String {
 }
 
 /// Distinguishes UTF-8 charsets from non-UTF-8 (latin1, cp1251, big5,
-/// sjis, etc.) so the row-frame TypeTag is semantically correct.
-/// Tagging non-UTF-8 charset bytes as `TextUtf8` weakens future
-/// estimator work that relies on the tag to identify text encoding.
+/// sjis, etc.) so the compression-probe TypeTag is semantically correct.
+/// Tagging non-UTF-8 charset bytes as `TextUtf8` would mislabel the
+/// encoding of the measured bytes.
 /// List sourced from MySQL's INFORMATION_SCHEMA.COLLATIONS where
 /// character_set_name = 'utf8mb3' or
 /// 'utf8mb4' or 'utf8'.
@@ -93,13 +93,13 @@ fn is_mysql_utf8_charset(id: u16) -> bool {
     )
 }
 
-/// Classify a MySQL Value + column metadata into a row-frame
+/// Classify a MySQL Value + column metadata into a compression-probe
 /// (TypeTag, payload bytes).
 ///
 /// MySQL's text protocol returns most values as `Value::Bytes` with
 /// the textual decimal / ISO-style representation in the column's
 /// charset. The Int / UInt / Float / Double / Date / Time variants
-/// are reserved for the binary protocol (prepared statements) — we
+/// are reserved for the binary protocol (prepared statements): we
 /// handle them defensively for completeness, but in this code path
 /// (`conn.query(...)`, text protocol) they shouldn't occur.
 fn encode_mysql_cell(col_type: MyColumnType, charset: u16, value: &Value) -> (TypeTag, Vec<u8>) {
@@ -201,6 +201,36 @@ fn normalized_mysql_type(data_type: &str, bit_width: u64) -> String {
         | "multipolygon" | "geometrycollection" => "binary".to_string(),
         _ => "user-defined".to_string(),
     }
+}
+
+fn mysql_blueprint_numeric_contract(
+    column_type: &str,
+    precision: u64,
+    scale: u64,
+) -> (String, Option<u64>, Option<i64>, String) {
+    let (model, declared_precision, declared_scale, radix) = match column_type {
+        "integer" => (
+            "integer",
+            (precision > 0).then_some(precision),
+            None,
+            "decimal",
+        ),
+        "numeric" if precision > 0 => (
+            "fixed-decimal",
+            Some(precision),
+            Some(scale as i64),
+            "decimal",
+        ),
+        "float" | "double" => ("binary-float", None, None, "binary"),
+        "numeric" | "user-defined" => ("unknown", None, None, ""),
+        _ => ("not-applicable", None, None, ""),
+    };
+    (
+        model.to_string(),
+        declared_precision,
+        declared_scale,
+        radix.to_string(),
+    )
 }
 
 fn mysql_numeric_semantics(data_type: &str, column_type: &str) -> (bool, u64) {
@@ -431,7 +461,7 @@ pub async fn run(
         0,
     );
 
-    // RTT probe — 5× SELECT 1 for customer-side observed round-trip
+    // RTT probe: 5× SELECT 1 for customer-side observed round-trip
     // statistics. Captured BEFORE catalog queries so timings aren't
     // skewed by cache warmup.
     let network_probe = if opts.rtt_probe {
@@ -469,24 +499,63 @@ pub async fn run(
     audit.record_query("SELECT VERSION()", elapsed_ms(started), 1);
     let engine_version = normalized_mysql_version(&raw_version);
     let schemas = resolve_mysql_schemas(&mut conn, &opts.schemas, audit).await?;
+    let source_environment = capture_mysql_source_environment(&mut conn, audit).await;
     let topology_evidence = probe_mysql_topology(&mut conn, &raw_version, audit).await;
 
     // Tables.
     let started = Instant::now();
-    let mut tables_in: Vec<TableRow> = conn
-        .query_map(
-            r#"
+    let table_schema_predicate = schemas.and_sql("t.TABLE_SCHEMA");
+    // Repeat the resolved selector inside each aggregate. Applying it only to
+    // the outer table list would still permit the server to scan and group
+    // partition/constraint metadata for every visible schema before joining.
+    let partition_schema_predicate = schemas.and_sql("TABLE_SCHEMA");
+    let check_schema_predicate = schemas.and_sql("CONSTRAINT_SCHEMA");
+    let table_sql = format!(
+        r#"
             SELECT t.TABLE_SCHEMA  AS schema_name,
                    t.TABLE_NAME    AS table_name,
-                   COALESCE(t.TABLE_ROWS, 0)  AS rows_estimate,
-                   COALESCE(t.DATA_LENGTH, 0) AS data_length,
-                   COALESCE(t.INDEX_LENGTH, 0) AS index_length,
-                   COALESCE(t.ENGINE, '') AS storage_engine
+                   t.TABLE_ROWS  AS rows_estimate,
+                   t.DATA_LENGTH AS data_length,
+                   t.INDEX_LENGTH AS index_length,
+                   COALESCE(t.ENGINE, '') AS storage_engine,
+                   COALESCE(p.partition_method, '') AS partition_method,
+                   COALESCE(p.subpartition_method, '') AS subpartition_method,
+                   COALESCE(p.partition_count, 0) AS partition_count,
+                   p.partition_rows_max AS partition_rows_max,
+                   COALESCE(ch.check_count, 0) AS check_count
             FROM information_schema.TABLES t
+            LEFT JOIN (
+                SELECT TABLE_SCHEMA,
+                       TABLE_NAME,
+                       COALESCE(MAX(PARTITION_METHOD), '') AS partition_method,
+                       COALESCE(MAX(SUBPARTITION_METHOD), '') AS subpartition_method,
+                       COUNT(CASE WHEN PARTITION_NAME IS NOT NULL
+                                  THEN 1 END) AS partition_count,
+                       MAX(CASE WHEN PARTITION_NAME IS NOT NULL
+                                THEN TABLE_ROWS END) AS partition_rows_max
+                FROM information_schema.PARTITIONS
+                WHERE 1 = 1
+                  {partition_schema_predicate}
+                GROUP BY TABLE_SCHEMA, TABLE_NAME
+            ) p ON p.TABLE_SCHEMA = t.TABLE_SCHEMA AND p.TABLE_NAME = t.TABLE_NAME
+            LEFT JOIN (
+                SELECT CONSTRAINT_SCHEMA AS TABLE_SCHEMA,
+                       TABLE_NAME,
+                       COUNT(*) AS check_count
+                FROM information_schema.TABLE_CONSTRAINTS
+                WHERE CONSTRAINT_TYPE = 'CHECK'
+                  {check_schema_predicate}
+                GROUP BY CONSTRAINT_SCHEMA, TABLE_NAME
+            ) ch ON ch.TABLE_SCHEMA = t.TABLE_SCHEMA AND ch.TABLE_NAME = t.TABLE_NAME
             WHERE t.TABLE_TYPE = 'BASE TABLE'
               AND t.TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys')
+              {table_schema_predicate}
             ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
-            "#,
+            "#
+    );
+    let mut tables_in: Vec<TableRow> = conn
+        .query_map(
+            table_sql,
             |(
                 schema_name,
                 table_name,
@@ -494,33 +563,53 @@ pub async fn run(
                 data_length,
                 index_length,
                 storage_engine,
-            ): (String, String, u64, u64, u64, String)| TableRow {
+                partition_method,
+                subpartition_method,
+                partition_count,
+                partition_rows_max,
+                check_count,
+            ): (
+                String,
+                String,
+                Option<u64>,
+                Option<u64>,
+                Option<u64>,
+                String,
+                String,
+                String,
+                u64,
+                Option<u64>,
+                u64,
+            )| TableRow {
                 schema_name,
                 table_name,
                 rows_estimate,
                 data_length,
                 index_length,
                 storage_engine,
+                partition_method,
+                subpartition_method,
+                partition_count,
+                partition_rows_max,
+                check_count,
             },
         )
         .await
         .context("listing tables from information_schema")?;
-    tables_in.retain(|table| schemas.includes(&table.schema_name));
     audit.record_query(
-        "SELECT TABLE_SCHEMA,TABLE_NAME,TABLE_ROWS,DATA_LENGTH,INDEX_LENGTH,ENGINE FROM information_schema.TABLES",
+        "SELECT table, partition, and CHECK metadata from information_schema",
         elapsed_ms(started),
         tables_in.len() as u64,
     );
     let mut sizing = classify_mysql_topology(&topology_evidence, &tables_in);
     sizing.qualify_table_statistics(&mut tables_in, audit);
     schemas.qualify_dataset_scope(&mut sizing.dataset_scope);
-    warn_incomplete_dataset_scope(&sizing.dataset_scope, audit);
 
     // Columns.
     let started = Instant::now();
-    let cols_in: Vec<ColumnRow> = conn
-        .query_map(
-            r#"
+    let column_schema_predicate = schemas.and_sql("c.TABLE_SCHEMA");
+    let column_sql = format!(
+        r#"
             SELECT c.TABLE_SCHEMA AS schema_name,
                    c.TABLE_NAME   AS table_name,
                    c.ORDINAL_POSITION AS ordinal,
@@ -537,8 +626,13 @@ pub async fn run(
                           COALESCE(c.COLLATION_NAME, '')) AS character_metadata
             FROM information_schema.COLUMNS c
             WHERE c.TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys')
+              {column_schema_predicate}
             ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION
-            "#,
+            "#
+    );
+    let cols_in: Vec<ColumnRow> = conn
+        .query_map(
+            column_sql,
             |(
                 schema_name,
                 table_name,
@@ -573,8 +667,7 @@ pub async fn run(
                 let (character_set_name, collation_name) = character_metadata
                     .split_once('\u{1f}')
                     .unwrap_or((character_metadata.as_str(), ""));
-                let (numeric_unsigned, bit_width) =
-                    mysql_numeric_semantics(&data_type, &column_type);
+                let (numeric_unsigned, bit_width) = mysql_numeric_semantics(data_type, column_type);
                 ColumnRow {
                     schema_name,
                     table_name,
@@ -620,8 +713,10 @@ pub async fn run(
         .context("detecting MySQL functional-index metadata support")?
         .unwrap_or(0)
         > 0;
+    let index_schema_predicate = schemas.and_sql("s.TABLE_SCHEMA");
     let index_sql = if supports_index_expression {
-        r#"
+        format!(
+            r#"
             SELECT s.TABLE_SCHEMA  AS schema_name,
                    s.TABLE_NAME    AS table_name,
                    s.INDEX_NAME    AS index_name,
@@ -634,10 +729,13 @@ pub async fn run(
                    CASE WHEN s.EXPRESSION IS NULL THEN 0 ELSE 1 END AS is_expression
             FROM information_schema.STATISTICS s
             WHERE s.TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys')
+              {index_schema_predicate}
             ORDER BY s.TABLE_SCHEMA, s.TABLE_NAME, s.INDEX_NAME, s.SEQ_IN_INDEX
         "#
+        )
     } else {
-        r#"
+        format!(
+            r#"
             SELECT s.TABLE_SCHEMA  AS schema_name,
                    s.TABLE_NAME    AS table_name,
                    s.INDEX_NAME    AS index_name,
@@ -650,10 +748,12 @@ pub async fn run(
                    0 AS is_expression
             FROM information_schema.STATISTICS s
             WHERE s.TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys')
+              {index_schema_predicate}
             ORDER BY s.TABLE_SCHEMA, s.TABLE_NAME, s.INDEX_NAME, s.SEQ_IN_INDEX
         "#
+        )
     };
-    let idx_in: Vec<IndexRow> = conn
+    let (idx_in, indexes_complete): (Vec<IndexRow>, bool) = match conn
         .query_map(
             index_sql,
             |(
@@ -695,18 +795,29 @@ pub async fn run(
             },
         )
         .await
-        .context("listing indexes from information_schema")?;
-    audit.record_query(
-        "SELECT ... FROM information_schema.STATISTICS",
-        elapsed_ms(started),
-        idx_in.len() as u64,
-    );
+    {
+        Ok(indexes) => (indexes, true),
+        Err(_) => {
+            audit.record_query_failure(
+                "SELECT ... FROM information_schema.STATISTICS",
+                elapsed_ms(started),
+            );
+            (Vec::new(), false)
+        }
+    };
+    if indexes_complete {
+        audit.record_query(
+            "SELECT ... FROM information_schema.STATISTICS",
+            elapsed_ms(started),
+            idx_in.len() as u64,
+        );
+    }
 
     // FKs.
     let started = Instant::now();
-    let fks_in: Vec<FkRow> = conn
-        .query_map(
-            r#"
+    let fk_schema_predicate = schemas.and_sql("k.TABLE_SCHEMA");
+    let fk_sql = format!(
+        r#"
             SELECT k.TABLE_SCHEMA           AS from_schema,
                    k.TABLE_NAME             AS from_table,
                    k.REFERENCED_TABLE_SCHEMA AS to_schema,
@@ -725,8 +836,13 @@ pub async fn run(
              AND rc.TABLE_NAME = k.TABLE_NAME
             WHERE k.REFERENCED_TABLE_NAME IS NOT NULL
               AND k.TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys')
+              {fk_schema_predicate}
             ORDER BY k.TABLE_SCHEMA, k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION
-            "#,
+            "#
+    );
+    let (fks_in, relationships_complete): (Vec<FkRow>, bool) = match conn
+        .query_map(
+            fk_sql,
             |(
                 from_schema,
                 from_table,
@@ -766,31 +882,23 @@ pub async fn run(
             },
         )
         .await
-        .context("listing FKs from information_schema")?;
-    audit.record_query(
-        "SELECT ... FROM information_schema.KEY_COLUMN_USAGE (FK list)",
-        elapsed_ms(started),
-        fks_in.len() as u64,
-    );
-
-    let artifact_capture = if opts.artifact_detail == ArtifactDetail::None {
-        None
-    } else {
-        let (mut raw, completeness) = capture_artifacts(
-            &mut conn,
-            opts.artifact_detail,
-            &raw_version,
-            &schemas,
-            audit,
-        )
-        .await;
-        raw.retain(|item| {
-            item.schema_identity
-                .as_deref()
-                .is_none_or(|schema| schemas.includes(schema))
-        });
-        Some((raw, completeness))
+    {
+        Ok(foreign_keys) => (foreign_keys, true),
+        Err(_) => {
+            audit.record_query_failure(
+                "SELECT ... FROM information_schema.KEY_COLUMN_USAGE (FK list)",
+                elapsed_ms(started),
+            );
+            (Vec::new(), false)
+        }
     };
+    if relationships_complete {
+        audit.record_query(
+            "SELECT ... FROM information_schema.KEY_COLUMN_USAGE (FK list)",
+            elapsed_ms(started),
+            fks_in.len() as u64,
+        );
+    }
 
     // ----- Anonymize + build -----
     let mut tables_sorted = tables_in.clone();
@@ -802,17 +910,11 @@ pub async fn run(
             format::table_id(i + 1),
         );
     }
-    let mut schema_seen: Vec<String> = tables_sorted
-        .iter()
-        .map(|t| t.schema_name.clone())
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    schema_seen.sort_by_key(|s| format::schema_hash(s));
-    let mut schema_id_by_name: BTreeMap<String, String> = BTreeMap::new();
-    for (i, name) in schema_seen.iter().enumerate() {
-        schema_id_by_name.insert(name.clone(), format::schema_id(i + 1));
-    }
+    let mut schema_id_by_name = artifacts::schema_ids_for_capture(
+        tables_sorted.iter().map(|table| table.schema_name.as_str()),
+        &[],
+        ArtifactDetail::None,
+    );
 
     // Group columns by qualified name.
     let mut cols_by_qual: BTreeMap<(String, String), Vec<ColumnRow>> = BTreeMap::new();
@@ -868,6 +970,12 @@ pub async fn run(
                         tracing_eprintln(detail.clone());
                         audit.record_warning("DBP1406W", detail);
                         break;
+                    }
+                    // FEDERATED tables can issue network reads against a
+                    // remote server. They are inventory evidence only: never
+                    // follow that link while sampling a customer database.
+                    if t.is_external() {
+                        continue;
                     }
                     let qual = (t.schema_name.clone(), t.table_name.clone());
                     let table_id = id_by_qual
@@ -995,6 +1103,7 @@ pub async fn run(
                                     null_fractions,
                                     cardinalities,
                                     payload_profiles,
+                                    complete_source_rows: pending.complete_source_rows,
                                 },
                             );
                         }
@@ -1012,6 +1121,10 @@ pub async fn run(
     // Build BlueprintFile.
     let mut tables_out: BTreeMap<String, BlueprintTable> = BTreeMap::new();
     let mut totals = Totals::default();
+    let mut statistics_availability = BTreeMap::new();
+    let mut bounded_row_count_tables = BTreeSet::new();
+    let mut used_catalog_row_count = false;
+    let mut row_count_still_unavailable = false;
     for t in &tables_sorted {
         let qual = (t.schema_name.clone(), t.table_name.clone());
         let tid = id_by_qual.get(&qual).cloned().unwrap_or_default();
@@ -1078,6 +1191,12 @@ pub async fn run(
                 } else {
                     String::new()
                 };
+                let (numeric_model, numeric_precision, numeric_scale, numeric_precision_radix) =
+                    mysql_blueprint_numeric_contract(
+                        &c.col_type,
+                        c.numeric_precision,
+                        c.numeric_scale,
+                    );
                 col_map.insert(
                     format::col_id(c.ordinal),
                     BlueprintColumn {
@@ -1095,8 +1214,10 @@ pub async fn run(
                             c.char_octet_length,
                             opts.length_fidelity,
                         ),
-                        numeric_precision: c.numeric_precision,
-                        numeric_scale: c.numeric_scale,
+                        numeric_model,
+                        numeric_precision,
+                        numeric_scale,
+                        numeric_precision_radix,
                         numeric_unsigned: c.numeric_unsigned,
                         bit_width: c.bit_width,
                         datetime_precision: c.datetime_precision,
@@ -1141,11 +1262,65 @@ pub async fn run(
         // MySQL row counts as statistical estimates.
         let stats_freshness = String::new();
 
+        let external = t.is_external();
+        let complete_source_rows = compression_sample
+            .as_ref()
+            .and_then(|sample| sample.complete_source_rows);
+        if complete_source_rows.is_some() && !external {
+            bounded_row_count_tables.insert(tid.clone());
+        } else if t.rows_estimate.is_some() && !external {
+            used_catalog_row_count = true;
+        } else if !external {
+            row_count_still_unavailable = true;
+        }
+        let partitioning = mysql_partitioning(
+            &t.partition_method,
+            &t.subpartition_method,
+            t.partition_count,
+        );
+        let serialized_rows = if external {
+            0
+        } else {
+            complete_source_rows
+                .unwrap_or_else(|| format::round_estimated_rows(t.rows_estimate.unwrap_or(0)))
+        };
         let table_blueprint = BlueprintTable {
-            rows: format::round_rows(t.rows_estimate),
-            table_bytes: format::round_bytes(t.data_length),
-            index_bytes: format::round_bytes(t.index_length),
+            rows: serialized_rows,
+            table_bytes: if external {
+                0
+            } else {
+                format::round_bytes(t.data_length.unwrap_or(0))
+            },
+            index_bytes: if external {
+                0
+            } else {
+                format::round_bytes(t.index_length.unwrap_or(0))
+            },
             schema: schema_anon,
+            object_kind: if external {
+                "external-table"
+            } else {
+                "ordinary-table"
+            }
+            .to_string(),
+            storage_organization: mysql_storage_organization(&t.storage_engine).to_string(),
+            partitioning: partitioning.to_string(),
+            segment_state: if external { "unavailable" } else { "created" }.to_string(),
+            partition_count: (!matches!(partitioning, "none" | "unknown"))
+                .then_some(t.partition_count),
+            partition_rows_max: if !matches!(partitioning, "none" | "unknown") {
+                t.partition_rows_max.and_then(|rows| {
+                    format::round_partition_rows_max(
+                        rows,
+                        serialized_rows,
+                        complete_source_rows.is_some(),
+                    )
+                })
+            } else {
+                None
+            },
+            counted_in_totals: external.then_some(false),
+            check_count: Some(t.check_count),
             has_clustered_index: false,
             stats_freshness,
             cols: col_map,
@@ -1153,11 +1328,43 @@ pub async fn run(
             compression: compression_sample.map(|sample| sample.table),
             ..BlueprintTable::default()
         };
+        statistics_availability.insert(
+            tid.clone(),
+            (
+                complete_source_rows.is_some() || t.rows_estimate.is_some(),
+                t.data_length.is_some() && t.index_length.is_some(),
+            ),
+        );
         accumulate_table_totals(&mut totals, &table_blueprint)?;
         tables_out.insert(tid, table_blueprint);
     }
-    totals.table_count = tables_out.len() as u64;
-
+    if !bounded_row_count_tables.is_empty() {
+        let intrinsically_incomplete =
+            mysql_row_scope_intrinsically_incomplete(&sizing.dataset_scope);
+        if !intrinsically_incomplete {
+            sizing.dataset_scope.row_count_method = if used_catalog_row_count {
+                "mixed-catalog-and-bounded-read"
+            } else {
+                "bounded-complete-read"
+            }
+            .to_string();
+            if !row_count_still_unavailable {
+                sizing.dataset_scope.row_count_completeness = "complete".to_string();
+                sizing
+                    .dataset_scope
+                    .limitations
+                    .retain(|item| item != "row-count-evidence-incomplete");
+            }
+            if !used_catalog_row_count {
+                sizing
+                    .dataset_scope
+                    .limitations
+                    .retain(|item| item != "row-counts-statistical");
+            }
+        }
+        crate::topology::sort_dedup(&mut sizing.dataset_scope.limitations);
+    }
+    warn_incomplete_dataset_scope(&sizing.dataset_scope, audit);
     // FKs.
     let mut fk_edges: BTreeMap<String, Vec<FkEdge>> = BTreeMap::new();
     // Constraint identity is retained only while collecting. The emitted Blueprint
@@ -1228,6 +1435,43 @@ pub async fn run(
         });
     }
 
+    let artifact_capture = if opts.artifact_detail == ArtifactDetail::None {
+        None
+    } else {
+        let (mut raw, completeness) = capture_artifacts(
+            &mut conn,
+            opts.artifact_detail,
+            &raw_version,
+            &schemas,
+            audit,
+        )
+        .await;
+        raw.retain(|item| {
+            item.schema_identity
+                .as_deref()
+                .is_none_or(|schema| schemas.includes(schema))
+        });
+        schema_id_by_name = artifacts::schema_ids_for_capture(
+            tables_sorted.iter().map(|table| table.schema_name.as_str()),
+            &raw,
+            opts.artifact_detail,
+        );
+        for table in &tables_sorted {
+            let key = (table.schema_name.clone(), table.table_name.clone());
+            let table_id = id_by_qual
+                .get(&key)
+                .expect("table id assigned before schema remap");
+            tables_out
+                .get_mut(table_id)
+                .expect("table emitted before schema remap")
+                .schema = schema_id_by_name
+                .get(&table.schema_name)
+                .expect("table schema included in anonymous schema map")
+                .clone();
+        }
+        Some((raw, completeness))
+    };
+
     let table_artifact_ids: BTreeMap<String, String> = id_by_qual
         .iter()
         .map(|((schema, table), id)| {
@@ -1237,15 +1481,19 @@ pub async fn run(
             )
         })
         .collect();
-    let artifact_inventory = artifact_capture.map(|(raw_artifacts, completeness)| {
-        artifacts::build_inventory(
-            opts.artifact_detail,
-            raw_artifacts,
-            &schema_id_by_name,
-            &table_artifact_ids,
-            completeness,
-        )
-    });
+    let artifact_inventory = artifact_capture
+        .map(|(raw_artifacts, completeness)| {
+            artifacts::build_inventory(
+                opts.artifact_detail,
+                raw_artifacts,
+                &schema_id_by_name,
+                &table_artifact_ids,
+                &schemas,
+                completeness,
+                audit,
+            )
+        })
+        .transpose()?;
 
     let mut blueprint = BlueprintFile {
         schema_version: SCHEMA_VERSION,
@@ -1275,24 +1523,232 @@ pub async fn run(
         network: network_probe,
         database_topology: Some(sizing.topology),
         dataset_scope: Some(sizing.dataset_scope),
+        structure_scope: None,
+        source_environment: Some(source_environment),
+        statistics_evidence: None,
+        activity_snapshot: None,
         tables: tables_out,
         fk_edges,
         artifact_inventory,
     };
     crate::statistics::enrich_relational_statistics(&mut blueprint);
+    blueprint.initialize_v7_database_contract();
+    if !indexes_complete {
+        crate::topology::mark_structure_unavailable(
+            blueprint
+                .structure_scope
+                .as_mut()
+                .context("schema-v7 MySQL structure scope is missing")?,
+            crate::topology::StructureFamily::Index,
+            "mysql-information-schema-indexes",
+            audit,
+        );
+    }
+    if !relationships_complete {
+        crate::topology::mark_structure_unavailable(
+            blueprint
+                .structure_scope
+                .as_mut()
+                .context("schema-v7 MySQL structure scope is missing")?,
+            crate::topology::StructureFamily::Relationship,
+            "mysql-information-schema-foreign-keys",
+            audit,
+        );
+    }
+    qualify_v7_statistics(
+        &mut blueprint,
+        &statistics_availability,
+        &bounded_row_count_tables,
+    )?;
     drop(conn);
     pool.disconnect().await.ok();
     Ok(blueprint)
+}
+
+fn mysql_row_scope_intrinsically_incomplete(scope: &format::DatasetScope) -> bool {
+    scope.limitations.iter().any(|limitation| {
+        matches!(
+            limitation.as_str(),
+            "external-data-unmeasured"
+                | "shard-membership-incomplete"
+                | "distributed-row-count-unavailable"
+        )
+    })
+}
+
+fn qualify_v7_statistics(
+    blueprint: &mut BlueprintFile,
+    availability: &BTreeMap<String, (bool, bool)>,
+    bounded_row_count_tables: &BTreeSet<String>,
+) -> Result<()> {
+    let dataset = blueprint
+        .dataset_scope
+        .as_ref()
+        .context("schema-v7 MySQL statistics require dataset_scope")?;
+    let catalog_row_available = matches!(
+        dataset.row_count_method.as_str(),
+        "mysql-table-statistics" | "mixed-catalog-and-bounded-read"
+    );
+    let size_available = dataset.size_method == "mysql-information-schema";
+    let distributed = dataset.layout == "distributed";
+    let mut saw_table_unavailable = false;
+    for (table_id, table) in &mut blueprint.tables {
+        let evidence = table
+            .statistics
+            .as_mut()
+            .context("schema-v7 MySQL table statistics are missing")?;
+        if table.object_kind == "external-table" {
+            evidence.row_count_method = "unknown".to_string();
+            evidence.row_count_quality = "unavailable".to_string();
+            evidence.statistics_state = "not-applicable".to_string();
+            evidence.refresh_age_band = "not-applicable".to_string();
+            evidence.modification_ratio_band = "not-applicable".to_string();
+            evidence.sample_fraction_band = "not-applicable".to_string();
+            evidence.statistics_scope = "selected-object".to_string();
+            evidence.size_method = "unknown".to_string();
+            evidence.size_quality = "unavailable".to_string();
+            evidence.size_scope = "unknown".to_string();
+            evidence.size_accounting = "unknown".to_string();
+            evidence.size_visibility = "unavailable".to_string();
+            continue;
+        }
+        let (table_row_available, table_size_available) = availability
+            .get(table_id)
+            .copied()
+            .unwrap_or((false, false));
+        saw_table_unavailable |= !table_row_available || !table_size_available;
+        let bounded_complete_read = bounded_row_count_tables.contains(table_id);
+        if bounded_complete_read {
+            evidence.row_count_method = "bounded-complete-read".to_string();
+            evidence.row_count_quality = "exact-read".to_string();
+            evidence.sample_fraction_band = "full".to_string();
+        } else if !table_row_available {
+            evidence.row_count_method = "unknown".to_string();
+            evidence.row_count_quality = "unavailable".to_string();
+        } else {
+            evidence.row_count_method = "mysql-table-statistics".to_string();
+            evidence.row_count_quality = if catalog_row_available {
+                "cached-engine-estimate"
+            } else {
+                "unavailable"
+            }
+            .to_string();
+        }
+        evidence.statistics_scope = if distributed {
+            "local-member"
+        } else {
+            "global"
+        }
+        .to_string();
+        if !table_size_available {
+            evidence.size_method = "unknown".to_string();
+        }
+        evidence.size_quality = if size_available && table_size_available {
+            "cached-engine-estimate"
+        } else {
+            "unavailable"
+        }
+        .to_string();
+        evidence.size_scope = if !table_size_available {
+            "unknown"
+        } else if distributed {
+            "local-member"
+        } else {
+            "table-and-lob"
+        }
+        .to_string();
+        evidence.size_accounting = if size_available && table_size_available {
+            "allocated-segment"
+        } else {
+            "unknown"
+        }
+        .to_string();
+        evidence.size_visibility = if !table_size_available {
+            "unavailable"
+        } else if !size_available {
+            "unknown"
+        } else if distributed {
+            "partial"
+        } else {
+            "full"
+        }
+        .to_string();
+    }
+    let mut limitations = vec![
+        "cached-statistics-expiry-unknown",
+        "modification-evidence-unavailable",
+        "optimizer-statistics-not-row-counter",
+        "refresh-age-unavailable",
+    ];
+    if dataset.row_count_completeness != "complete" || !size_available || saw_table_unavailable {
+        limitations.push("statistics-partial");
+    }
+    crate::statistics::rebuild_statistics_evidence(
+        blueprint,
+        "partial",
+        &["mysql-information-schema-tables"],
+        &[],
+        &[],
+        &limitations,
+    )
 }
 
 #[derive(Debug, Clone)]
 struct TableRow {
     schema_name: String,
     table_name: String,
-    rows_estimate: u64,
-    data_length: u64,
-    index_length: u64,
+    rows_estimate: Option<u64>,
+    data_length: Option<u64>,
+    index_length: Option<u64>,
     storage_engine: String,
+    partition_method: String,
+    subpartition_method: String,
+    partition_count: u64,
+    partition_rows_max: Option<u64>,
+    check_count: u64,
+}
+
+impl TableRow {
+    fn is_external(&self) -> bool {
+        self.storage_engine.eq_ignore_ascii_case("FEDERATED")
+    }
+}
+
+fn mysql_storage_organization(storage_engine: &str) -> &'static str {
+    if storage_engine.eq_ignore_ascii_case("FEDERATED") {
+        "external"
+    } else if storage_engine.eq_ignore_ascii_case("InnoDB") {
+        "clustered"
+    } else if storage_engine.eq_ignore_ascii_case("MEMORY")
+        || storage_engine.eq_ignore_ascii_case("HEAP")
+        || storage_engine.eq_ignore_ascii_case("MyISAM")
+    {
+        "heap"
+    } else {
+        "unknown"
+    }
+}
+
+fn mysql_partitioning(
+    method: &str,
+    subpartition_method: &str,
+    partition_count: u64,
+) -> &'static str {
+    if partition_count == 0 {
+        return "none";
+    }
+    if !subpartition_method.trim().is_empty() {
+        return "composite";
+    }
+    match method.trim().to_ascii_uppercase().as_str() {
+        "RANGE" | "RANGE COLUMNS" => "range",
+        "LIST" | "LIST COLUMNS" => "list",
+        "HASH" => "hash",
+        "LINEAR HASH" => "linear-hash",
+        "KEY" => "key",
+        "LINEAR KEY" => "linear-key",
+        _ => "unknown",
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1327,9 +1783,9 @@ impl MysqlSizingAssessment {
     fn qualify_table_statistics(&mut self, tables: &mut [TableRow], audit: &mut AuditLog) {
         if self.suppress_table_statistics {
             for table in tables {
-                table.rows_estimate = 0;
-                table.data_length = 0;
-                table.index_length = 0;
+                table.rows_estimate = None;
+                table.data_length = None;
+                table.index_length = None;
             }
         }
         if self.distributed_size_unavailable {
@@ -1383,11 +1839,13 @@ fn classify_mysql_topology(
         local_role: "unknown".to_string(),
         visibility: "partial".to_string(),
         member_count: 1,
+        member_count_scope: "unknown".to_string(),
         identifiers_redacted: true,
         role_counts: BTreeMap::from([("unknown".to_string(), 1)]),
         features: Vec::new(),
         catalogs_read,
         catalogs_unreadable,
+        catalogs_not_applicable: Vec::new(),
     };
 
     if evidence.group_catalog_readable && evidence.group_member_count > 0 {
@@ -1449,6 +1907,13 @@ fn classify_mysql_topology(
             "NDB" | "NDBCLUSTER"
         )
     });
+    let has_external = tables.iter().any(TableRow::is_external);
+    let has_missing_rows = tables
+        .iter()
+        .any(|table| !table.is_external() && table.rows_estimate.is_none());
+    let has_missing_sizes = tables.iter().any(|table| {
+        !table.is_external() && (table.data_length.is_none() || table.index_length.is_none())
+    });
     let distributed = evidence.vitess_gateway || has_ndb;
     if evidence.vitess_gateway {
         topology.deployment = "sharded".to_string();
@@ -1471,7 +1936,7 @@ fn classify_mysql_topology(
     }
     sort_topology(&mut topology);
 
-    let dataset_scope = if distributed {
+    let mut dataset_scope = if distributed {
         let layout = if evidence.vitess_gateway {
             "sharded"
         } else {
@@ -1529,6 +1994,28 @@ fn classify_mysql_topology(
             limitations,
         }
     };
+
+    if has_external {
+        dataset_scope.row_count_completeness = "incomplete".to_string();
+        dataset_scope.size_completeness = "incomplete".to_string();
+        dataset_scope
+            .limitations
+            .push("external-data-unmeasured".to_string());
+        sort_dedup(&mut dataset_scope.limitations);
+    }
+    if !distributed && has_missing_rows {
+        dataset_scope.row_count_completeness = "incomplete".to_string();
+        dataset_scope
+            .limitations
+            .push("row-count-evidence-incomplete".to_string());
+    }
+    if !distributed && has_missing_sizes {
+        dataset_scope.size_completeness = "incomplete".to_string();
+        dataset_scope
+            .limitations
+            .push("size-evidence-incomplete".to_string());
+    }
+    sort_dedup(&mut dataset_scope.limitations);
 
     MysqlSizingAssessment {
         topology,
@@ -1685,6 +2172,46 @@ async fn probe_rtt(conn: &mut mysql_async::Conn, audit: &mut AuditLog) -> Result
         5,
     );
     Ok(percentiles)
+}
+
+async fn capture_mysql_source_environment(
+    conn: &mut mysql_async::Conn,
+    audit: &mut AuditLog,
+) -> dbwarp_blueprint_core::SourceEnvironment {
+    let started = Instant::now();
+    match conn
+        .query_first::<u64, _>("SELECT @@innodb_buffer_pool_size")
+        .await
+    {
+        Ok(memory_bytes) => {
+            audit.record_query(
+                "SELECT @@innodb_buffer_pool_size",
+                elapsed_ms(started),
+                u64::from(memory_bytes.is_some()),
+            );
+            crate::environment::database_source_environment(
+                None,
+                "unknown",
+                memory_bytes,
+                "database-buffer-cache",
+                "connected-instance",
+                vec!["mysql-capacity-variables".to_string()],
+                Vec::new(),
+            )
+        }
+        Err(_) => {
+            audit.record_query_failure("SELECT @@innodb_buffer_pool_size", elapsed_ms(started));
+            crate::environment::database_source_environment(
+                None,
+                "unknown",
+                None,
+                "unknown",
+                "unknown",
+                Vec::new(),
+                vec!["mysql-capacity-variables".to_string()],
+            )
+        }
+    }
 }
 
 async fn resolve_mysql_schemas(
@@ -1916,6 +2443,7 @@ struct CompressionSample {
     null_fractions: Vec<Option<f64>>,
     cardinalities: Vec<Option<format::BlueprintCardinality>>,
     payload_profiles: Vec<String>,
+    complete_source_rows: Option<u64>,
 }
 
 include!("engine_mysql_sampling.rs");

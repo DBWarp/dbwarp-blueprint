@@ -6,16 +6,11 @@
 
 Typowe awarie `dbwarp-blueprint` i zalecane dalsze działania.
 
-Awarie pod kontrolą operatora zaczynają się teraz od stabilnego kodu komunikatu `DBPnnnnS`, na przykład `DBP1001E`.
-Używaj tego kodu podczas przeszukiwania dokumentacji lub otwierania zgłoszenia do pomocy technicznej. Zobacz [Kody komunikatów operatorskich](MESSAGES.md).
+Błędy rozpoczynają się od stabilnego kodu komunikatu `DBPnnnnS`, na przykład `DBP1001E`. Użyj tego kodu podczas wyszukiwania w dokumentacji lub zgłaszania problemu. Zobacz [Kody komunikatów dla operatorów](MESSAGES.md).
 
 ## Budowanie ze źródeł kończy się statusem 2 lub 3
 
-`build.sh` kończy się statusem 2, gdy zainstalowany `rustc` nie odpowiada
-wersji przypiętej w `rust-toolchain.toml`, a dostęp do sieci nie został jawnie
-zatwierdzony. Zainstaluj dokładnie tę wersję Rust albo — po sprawdzeniu granicy
-pobierania — pozwól skryptowi pobrać przypięty i zweryfikowany sumą kontrolną
-program rozruchowy:
+`build.sh` kończy działanie z kodem stanu 2, gdy zainstalowana wersja `rustc` nie odpowiada wersji określonej w `rust-toolchain.toml` i dostęp do sieci nie został wyraźnie zatwierdzony. Zainstaluj dokładnie tę wersję Rust, lub, po przeanalizowaniu zakresu pobierania, pozwól skryptowi pobrać jego zoptymalizowaną, zweryfikowaną sumą kontrolną wersję początkową:
 
 ```bash
 ALLOW_NETWORK=1 ./build.sh
@@ -102,15 +97,23 @@ systemu operacyjnego, gdy pominięto `--tls-ca`. Dostarczony plik `.pem` lub
 Sterownik sprawdza nazwę hosta połączenia zarówno w trybie `verify-ca`, jak i
 `verify-full`.
 
-## Poziom 2 wymaga zgody
+## Wymagana zgoda
 
-Objaw:
+Objaw podczas pracy z aktywną bazą danych, gdy na pytanie o potwierdzenie nie
+udzielono odpowiedzi `y` ani `yes`:
 
 ```text
---measure-compression requires --yes
+DBP1701E aborted (no consent)
 ```
 
-Rozwiązanie:
+Objaw podczas żądania próbkowania kompresji pliku strukturalnego bez `--yes`:
+
+```text
+DBP1006E ... --measure-compression requires --yes (consent flag)
+```
+
+Rozwiązanie: sprawdź podsumowanie wstępne, odpowiedz `yes` na pytanie albo
+uruchom ponownie z `--yes` w trybie nieinteraktywnym:
 
 ```bash
 --measure-compression --yes
@@ -147,11 +150,11 @@ Sekcje kompresji pojawiają się tylko wtedy, gdy podano obie flagi:
 --measure-compression --yes
 ```
 
-Blueprinty wyłącznie katalogowe są prawidłowe, ale dalsze oszacowania kompresji będą wywnioskowane.
+Blueprinty zawierające tylko katalog są poprawne, ale oszacowania kompresji będą wnioskowane na podstawie typów kolumn.
 
 ## Niektóre próbki kompresji są oznaczone jako obciążone
 
-Niektóre silniki nie zapewniają jednolitego próbkowania tabel we wszystkich przypadkach, a małe tabele mogą wymagać mechanizmu awaryjnego `LIMIT`. Plik Blueprint zapisuje `sampled_with_bias` oraz `bias_reason`, aby estymator i recenzent mogli to uwzględnić.
+Niektóre silniki nie zapewniają jednolitego pobierania próbek tabel we wszystkich przypadkach, a dla małych tabel może być konieczne użycie mechanizmu zastępczego `LIMIT`. Plik Blueprint rejestruje `sampled_with_bias` i `bias_reason`, aby osoba przeglądająca mogła to uwzględnić.
 
 Obciążone próbki nadal są użyteczne; mają jedynie mniejszą wartość niż próbki jednolite.
 
@@ -169,7 +172,6 @@ Nie dołączaj flag bazy danych na żywo do `--from-toml`. Narzędzie odrzuca mi
 
 Zwykły plik Blueprint jest niewielki. Zawiera metadane strukturalne, zaokrąglone liczby, indeksy, strukturę grafu FK oraz opcjonalne podsumowania kompresji. Nie powinien zawierać wartości wierszy ani identyfikatorów.
 
-Jeżeli potrzebujesz reprezentatywnej bazy danych do benchmarku, przekaż zatwierdzony plik `blueprint.toml` do osobno zweryfikowanych narzędzi dalszego etapu, autoryzowanych dla tego zadania.
 
 ## Trzeba udowodnić, że nie nastąpiło przesyłanie danych
 

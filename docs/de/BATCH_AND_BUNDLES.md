@@ -6,7 +6,7 @@
 
 `dbwarp-blueprint` unterstützt sowohl Blueprint-Dateien für eine einzelne Quelle als auch Bundle-Verzeichnisse mit mehreren Quellen.
 
-Verwenden Sie eine einzelne Datei `blueprint.toml`, wenn der Kunde eine Datenbank, eine Teilmenge von Tabellen, eine Parquet-Datei oder eine Avro-Datei weitergibt. Verwenden Sie ein Bundle, wenn der Kunde mehrere Datenbanken oder mehrere strukturierte Dateidatensätze besitzt oder ein einziges Prüfpaket für eine gesamte Datenbanklandschaft wünscht.
+Verwenden Sie ein einzelnes `blueprint.toml`, wenn Sie eine Datenbank, einen Tabellenteil, eine Parquet-Datei oder eine Avro-Datei gemeinsam nutzen. Verwenden Sie ein Bundle, wenn Sie mehrere Datenbanken, mehrere strukturierte Datensätze oder ein einzelnes Überprüfungspaket für ein gesamtes System wünschen.
 
 ## Bundle-Aufbau
 
@@ -27,7 +27,7 @@ customer-blueprint-bundle/
 
 `bundle.toml` enthält Metadaten auf Quellenebene und relative Pfade zu untergeordneten Blueprint-Dateien. Dies ist die bevorzugte Arbeitsform, da jede Quelle unabhängig prüfbar, auditierbar und erneut ausführbar bleibt.
 
-Packen Sie das Verzeichnis für eine separat geprüfte Übergabe in ein einziges eingebettetes TOML:
+Um ein Bundle als eine Datei zu teilen, packen Sie das Verzeichnis in eine einzige, eingebettete TOML-Datei:
 
 ```bash
 dbwarp-blueprint \
@@ -45,13 +45,7 @@ Aktuelle Bundles verwenden `schema_version = 3` und
 bettet ihn unter `blueprint` ein. Writer geben ausschließlich diese kanonischen
 Bezeichner aus.
 
-Reader akzeptieren zusätzlich die Bundle-Schemata v1 und v2. Diese Verträge
-dienen ausschließlich der Eingabekompatibilität: Ein akzeptiertes altes Bundle
-wird auf v3 normalisiert und nie mit früheren Bezeichnern ausgegeben. Da alte
-Bundles nicht angeben, ob Quellen unabhängig, Replikate oder Shards sind, wird
-ihre Beziehung `unknown` und die quellenübergreifenden Summen werden
-unterdrückt. Untergeordnete Pfade müssen relativ sein und nach der
-Kanonisierung innerhalb des Bundle-Verzeichnisses bleiben.
+Ein Bundle der Versionen v1 oder v2 wird weiterhin gelesen und auf Version v3 normalisiert. Diese Versionen speichern nicht, ob die Quellen unabhängig, Replikate oder Shards sind, daher wird ihre Beziehung als `unknown` gekennzeichnet und aggregierte Gesamtergebnisse über verschiedene Quellen hinweg werden unterdrückt. Kindpfade müssen relativ sein und müssen nach der Kanonisierung innerhalb des Bundle-Verzeichnisses verbleiben.
 
 Bundle v3 trennt physische Erfassungsquellen von logischen Datensätzen. Jede
 Quelle besitzt `dataset_relationship`, `dataset_group` und
@@ -78,7 +72,7 @@ Replikaten oder die Darstellung einer Teilmenge von Shards als Gesamtdatensatz.
 
 ## Batch-Manifest
 
-Erstellen Sie ein kundeneigenes Manifest:
+Erstellen Sie ein Manifest:
 
 ```toml
 [defaults]
@@ -190,7 +184,7 @@ Für Parquet- und Avro-Quellen:
 - `single_file` erfordert genau eine aufgelöste Datei und behandelt sie als eine logische Tabelle.
 - `one_table_per_file` ordnet jede Datei einer eigenen anonym bezeichneten Tabelle in einer untergeordneten Blueprint-Datei zu.
 - `merge_same_schema` führt viele Dateien zu einer logischen Tabelle zusammen, wenn ihre Spaltenanzahlen übereinstimmen.
-- `partitioned_dataset` verwendet derzeit dasselbe Zusammenführungsverhalten wie `merge_same_schema`; der Wert reserviert die semantische Unterscheidung für die Erkennung von Partitionen im Hive-Stil.
+- `partitioned_dataset` verhält sich wie `merge_same_schema`.
 
 Die Zusammenführungsprüfung ist absichtlich konservativ. Sie erfordert eine
 übereinstimmende anonymisierte Spaltenanordnung, kanonische und native Typen,
@@ -250,9 +244,9 @@ Unterstützte Selektorschlüssel sind:
 
 Selektoren können als eine durch Kommas getrennte Zeichenfolge oder als wiederholte Flags `--select` übergeben werden. Widersprüchliche Werte für denselben Schlüssel werden abgelehnt.
 
-## Nachgelagerte Übergabe
+## Komplexität von Artefakten in Bundles.
 
-Ein Bundle ist eine portable, prüfbare Blueprint-Eingabe. Bevor ein nachgelagerter Verbraucher es akzeptiert, muss er den Bundle-Vertrag und die Schemaversionen validieren, die aufgezeichneten Selektoren anwenden und beim Kombinieren mehrerer Kinder die Quellen-IDs bewahren, damit Tabellen-IDs nicht kollidieren können. Befehle und Kompatibilitätsregeln für andere DBWarp-Produkte gehören in deren separat geprüfte Dokumentation und werden hier bewusst nicht dupliziert.
+Die Komplexität der einzelnen Artefakte bleibt eine Eigenschaft jedes einzelnen Blueprint. Sie wird niemals summiert, gemittelt oder einer Bündel-Ebene zugeordnet: Quellen können unterschiedliche Engines, Analyzer-Versionen, Dialekte, Grammatikprofile, Bereiche und Bewertungsgruppen verwenden, sodass eine Aggregation keine sinnvolle Aussage hätte. Vergleichen Sie jede Quelle unabhängig voneinander.
 
 ## Datenschutz- und Prüfgrenze
 
@@ -263,7 +257,7 @@ Ein Bundle lockert das Datenschutzmodell nicht:
   Avro-Erfassung durchläuft dagegen immer die Containerdatensätze, um Anzahlen,
   Längen und NULL-Anteile abzuleiten, auch ohne Komprimierungsmessung;
 - dekodierte Stichproben verbleiben im Arbeitsspeicher;
-- Bundle-Metadaten verwenden vom Kunden gewählte Quellen-IDs und Tags;
+- Die Metadaten des Bundles verwenden die von Ihnen gewählten Quell-IDs und -Tags;
 - kein Bundle-Befehl sendet Telemetrie oder lädt Dateien hoch.
 
-Der Kunde kann vor der Weitergabe des Bundles jeden untergeordneten Blueprint oder jeden Quelleneintrag entfernen.
+Sie können jeden untergeordneten Blueprint oder Eintrag in der Quelle entfernen, bevor Sie das Bundle freigeben.

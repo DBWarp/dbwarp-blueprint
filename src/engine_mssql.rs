@@ -1,4 +1,4 @@
-//! SQL Server (TDS) engine — catalog reader (Tier 1) + compression sampler (Tier 2).
+//! SQL Server (TDS) engine: catalog reader (Tier 1) + compression sampler (Tier 2).
 //!
 //! Connects via `tiberius` (TDS 7.3, rustls TLS feature). Reads sys.* views
 //! only in Tier 1. Tier 2 additionally runs `SELECT ... ORDER BY <pk>
@@ -7,11 +7,11 @@
 //! and is flagged as biased).
 //!
 //! Auth modes (selected by `--auth-mode`):
-//!   * `sql-auth`     — classic username + password. Always available.
-//!   * `entra-token`  — Microsoft Entra ID (Azure AD) OAuth access token.
+//!   * `sql-auth`    : classic username + password. Always available.
+//!   * `entra-token` : Microsoft Entra ID (Azure AD) OAuth access token.
 //!                      Always available; consumed via the same Secret
 //!                      wrapper as a password.
-//!   * `integrated`   — Kerberos (Linux) / SSPI (Windows). Available only
+//!   * `integrated`  : Kerberos (Linux) / SSPI (Windows). Available only
 //!                      when the binary is built with the
 //!                      `integrated-auth-gssapi` feature (Linux) or
 //!                      `winauth` feature (Windows). Vanilla builds
@@ -19,7 +19,7 @@
 //!
 //! See AUTH.md for the full per-mode customer-pasteable recipes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -29,8 +29,8 @@ use tokio_util::compat::TokioAsyncWriteCompatExt;
 use zeroize::Zeroizing;
 
 use crate::artifacts::{
-    self, ArtifactDetail, CaptureCompleteness, RawArtifact, RawExternalPrerequisite,
-    RawLanguageAnalysis,
+    self, ArtifactDetail, CaptureCompleteness, RawArtifact, RawArtifactRequirement,
+    RawDefinitionSpan, RawExternalPrerequisite, RawLanguageAnalysis,
 };
 use crate::audit::AuditLog;
 use crate::engine_common::{
@@ -143,8 +143,18 @@ pub enum MssqlAuthMode {
     /// SSPI (Windows: winauth feature). Only constructible when the
     /// matching feature is compiled in; main.rs's
     /// `resolve_mssql_auth_mode` enforces this by erroring before
-    /// the dispatch ever sees an Integrated value on a vanilla build.
+    /// the dispatch ever sees an Integrated value on a default build.
     Integrated,
+}
+
+fn preserve_blueprint_timeout_policy(config: &mut Config) {
+    // Tiberius 0.13 introduced independent 15-second handshake and 30-second
+    // per-response defaults. Blueprint already bounds the entire operation by
+    // --max-wall-secs and records that one deadline in its audit. Keep that
+    // single deadline authoritative so a driver-local timer cannot terminate a
+    // valid capture early or report a different timeout contract.
+    config.handshake_timeout(None);
+    config.command_timeout(None);
 }
 
 pub async fn run(
@@ -167,19 +177,20 @@ pub async fn run(
     );
 
     let mut config = Config::new();
+    preserve_blueprint_timeout_policy(&mut config);
     config.host(&params.host);
     config.port(params.port);
     config.database(&params.database);
 
     // Auth dispatch:
     //   SqlAuth     → AuthMethod::sql_server(user, password)
-    //   EntraToken  → AuthMethod::aad_token(token)  — Microsoft Entra ID
+    //   EntraToken  → AuthMethod::aad_token(token) : Microsoft Entra ID
     //                  (Azure AD) OAuth access token. Customer generates
     //                  the token externally with `az account
     //                  get-access-token --resource https://database.windows.net/`.
     //                  The token IS the credential; the username field
     //                  in the URI is ignored by tiberius for AAD.
-    //   Integrated  → AuthMethod::Integrated — Kerberos on Linux
+    //   Integrated  → AuthMethod::Integrated: Kerberos on Linux
     //                  (integrated-auth-gssapi feature) or SSPI on
     //                  Windows (winauth feature). Vanilla builds reject
     //                  `--auth-mode integrated` upstream in main.rs.
@@ -198,7 +209,7 @@ pub async fn run(
             // `/tmp/krb5cc_<uid>`) on Linux via libgssapi, or the
             // current Windows session via SSPI. The customer must run
             // `kinit user@REALM` before calling us. We never read or
-            // store the credential ourselves — `secret` is unused on
+            // store the credential ourselves: `secret` is unused on
             // this arm.
             #[cfg(any(
                 all(unix, feature = "integrated-auth-gssapi"),
@@ -212,7 +223,7 @@ pub async fn run(
 
                 // Platform-specific credential-source recording. On
                 // Windows, SSPI consults the LSASS-managed logon
-                // session — there is no file we read. On Linux,
+                // session: there is no file we read. On Linux,
                 // libgssapi consults a TGT cache file (KRB5CCNAME or
                 // the libgssapi default). Be honest about which
                 // applies.
@@ -228,7 +239,7 @@ pub async fn run(
                 {
                     audit.connection.auth = "integrated-gssapi".to_string();
                     let krb5_cc = std::env::var("KRB5CCNAME").unwrap_or_else(|_| {
-                        "(libgssapi default — see krb5.conf default_ccache_name; usually /tmp/krb5cc_<uid>)"
+                        "(libgssapi default: see krb5.conf default_ccache_name; usually /tmp/krb5cc_<uid>)"
                             .to_string()
                     });
                     audit.files_read_local.push(format!(
@@ -247,10 +258,9 @@ pub async fn run(
             {
                 let _ = secret;
                 anyhow::bail!(
-                    "MssqlAuthMode::Integrated reached the engine on a build without \
-                     integrated-auth-gssapi (Linux) or winauth (Windows). This is a \
-                     bug — main.rs's resolve_mssql_auth_mode should have rejected this \
-                     mode before dispatch. Rebuild with the appropriate feature."
+                    "DBP1604E integrated SQL Server authentication is unavailable in \
+                     this build; use a build with integrated-auth-gssapi on Linux or \
+                     winauth on Windows"
                 );
             }
         }
@@ -280,7 +290,9 @@ pub async fn run(
     if opts.tls.skip_verify {
         config.trust_cert();
     } else if let Some(ca) = &opts.tls.ca_bundle {
-        config.trust_cert_ca(ca.to_string_lossy().to_string());
+        // `--tls-ca` is restrictive: trust exactly the supplied CA bundle,
+        // rather than silently retaining the platform's public roots.
+        config.trust_cert_ca_only(ca.to_string_lossy().to_string());
         audit.connection.tls_ca_only = true;
     }
 
@@ -377,7 +389,7 @@ pub async fn run(
         }
     }
 
-    // RTT probe — 5× SELECT 1 for customer-side observed round-trip
+    // RTT probe: 5× SELECT 1 for customer-side observed round-trip
     // statistics. Captured BEFORE catalog queries so timings aren't
     // skewed by cache warmup.
     let network_probe = if opts.rtt_probe {
@@ -424,23 +436,43 @@ pub async fn run(
     );
 
     let schemas = resolve_mssql_schemas(&mut client, &opts.schemas, audit).await?;
+    let source_environment = capture_mssql_source_environment(
+        &mut client,
+        audit,
+        mssql_source_environment_requested(opts.artifact_detail),
+    )
+    .await;
 
     let topology_evidence = probe_mssql_topology(&mut client, &schemas, audit).await;
     let mut sizing = classify_mssql_topology(&topology_evidence);
     schemas.qualify_dataset_scope(&mut sizing.dataset_scope);
     crate::topology::sort_topology(&mut sizing.topology);
     crate::topology::sort_dedup(&mut sizing.dataset_scope.limitations);
-    crate::topology::warn_incomplete_dataset_scope(&sizing.dataset_scope, audit);
-
-    // Tables + sizes — sys.tables joined with dm_db_partition_stats /
+    // Tables + sizes: sys.tables joined with dm_db_partition_stats /
     // sys.allocation_units to split heap-vs-secondary-index pages.
     // index_id IN (0,1) = heap or clustered index leaf = "table" data;
     // index_id  > 1     = nonclustered indexes = "index" data.
-    let mut tables_in = list_tables(&mut client, audit).await?;
-    tables_in.retain(|table| schemas.includes(&table.schema_name));
-    let cols_in = list_columns(&mut client, audit).await?;
-    let idx_in = list_indexes(&mut client, audit).await?;
-    let fks_in = list_foreign_keys(&mut client, audit).await?;
+    let tables_in = list_tables(&mut client, audit, &schemas).await?;
+    apply_table_counter_completeness(&mut sizing.dataset_scope, &tables_in);
+    if tables_in.iter().any(|table| table.is_memory_optimized) {
+        sizing.dataset_scope.row_count_completeness = "incomplete".to_string();
+        sizing.dataset_scope.size_completeness = "incomplete".to_string();
+        sizing
+            .dataset_scope
+            .limitations
+            .push("memory-optimized-data-unmeasured".to_string());
+        crate::topology::sort_dedup(&mut sizing.dataset_scope.limitations);
+    }
+    let cols_in = list_columns(&mut client, audit, &schemas).await?;
+    let (idx_in, indexes_complete) = match list_indexes(&mut client, audit, &schemas).await {
+        Ok(indexes) => (indexes, true),
+        Err(_) => (Vec::new(), false),
+    };
+    let (fks_in, relationships_complete) =
+        match list_foreign_keys(&mut client, audit, &schemas).await {
+            Ok(foreign_keys) => (foreign_keys, true),
+            Err(_) => (Vec::new(), false),
+        };
 
     // Anonymize tables.
     let mut tables_sorted = tables_in.clone();
@@ -452,17 +484,19 @@ pub async fn run(
             format::table_id(i + 1),
         );
     }
-    let mut schema_seen: Vec<String> = tables_sorted
+    let id_by_object_id: BTreeMap<i32, String> = tables_sorted
         .iter()
-        .map(|t| t.schema_name.clone())
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
+        .filter_map(|table| {
+            id_by_qual
+                .get(&(table.schema_name.clone(), table.table_name.clone()))
+                .map(|id| (table.object_id, id.clone()))
+        })
         .collect();
-    schema_seen.sort_by_key(|s| format::schema_hash(s));
-    let mut schema_id_by_name: BTreeMap<String, String> = BTreeMap::new();
-    for (i, name) in schema_seen.iter().enumerate() {
-        schema_id_by_name.insert(name.clone(), format::schema_id(i + 1));
-    }
+    let mut schema_id_by_name = artifacts::schema_ids_for_capture(
+        tables_sorted.iter().map(|table| table.schema_name.as_str()),
+        &[],
+        ArtifactDetail::None,
+    );
 
     // Group columns by qualified name.
     let mut cols_by_qual: BTreeMap<(String, String), Vec<ColumnRow>> = BTreeMap::new();
@@ -522,7 +556,34 @@ pub async fn run(
                         audit.record_warning("DBP1406W", detail);
                         break;
                     }
-                    if t.row_count == 0 {
+                    if !mssql_sampling_allowed(
+                        t.is_external,
+                        t.is_memory_optimized,
+                        t.security_policy_catalog_complete,
+                        t.has_security_filter,
+                    ) {
+                        let qual = (t.schema_name.clone(), t.table_name.clone());
+                        let table_id = id_by_qual
+                            .get(&qual)
+                            .map(String::as_str)
+                            .unwrap_or("table-unknown");
+                        // External tables may issue network reads through an
+                        // external data source. Inventory their shape, but do
+                        // not follow that link during sampling. Partition
+                        // counters do not measure memory-optimized rowstores,
+                        // and a security predicate (or an unreadable security
+                        // catalog) makes visible rows an unsafe population.
+                        if t.has_security_filter {
+                            warn_active_security_filter(table_id, audit);
+                        } else if !t.security_policy_catalog_complete
+                            && !t.is_external
+                            && !t.is_memory_optimized
+                        {
+                            warn_security_policy_visibility_unavailable(table_id, audit);
+                        }
+                        continue;
+                    }
+                    if t.row_count == Some(0) {
                         // sys.partitions.rows is an engine-maintained counter,
                         // unlike planner estimates that may use zero for
                         // unknown. It is safe to avoid all row/style reads.
@@ -610,6 +671,7 @@ pub async fn run(
                                     null_fractions: pending.null_fractions,
                                     cardinalities: pending.cardinalities,
                                     payload_profiles: pending.payload_profiles,
+                                    complete_source_rows: pending.complete_source_rows,
                                 },
                             );
                         }
@@ -626,6 +688,11 @@ pub async fn run(
 
     // Build BlueprintFile.
     let mut tables_out: BTreeMap<String, BlueprintTable> = BTreeMap::new();
+    let mut statistics_availability = BTreeMap::new();
+    let mut bounded_row_count_tables = BTreeSet::new();
+    let mut positive_sub_bucket_counter_tables = BTreeSet::new();
+    let mut used_catalog_row_count = false;
+    let mut row_count_still_unavailable = false;
     let mut totals = Totals::default();
     for t in &tables_sorted {
         let qual = (t.schema_name.clone(), t.table_name.clone());
@@ -635,6 +702,21 @@ pub async fn run(
             .cloned()
             .unwrap_or_else(|| "schema-?".to_string());
         let compression_sample = compression_by_qual.remove(&qual);
+        let complete_source_rows = compression_sample
+            .as_ref()
+            .and_then(|sample| sample.complete_source_rows);
+        if complete_source_rows.is_some() {
+            bounded_row_count_tables.insert(tid.clone());
+        } else if t.row_count.is_some() && !t.is_external && !t.is_memory_optimized {
+            used_catalog_row_count = true;
+            if t.row_count
+                .is_some_and(|rows| mssql_partition_counter_evidence(rows).1 == "engine-estimate")
+            {
+                positive_sub_bucket_counter_tables.insert(tid.clone());
+            }
+        } else if !t.is_external && !t.is_memory_optimized {
+            row_count_still_unavailable = true;
+        }
 
         let mut col_map: BTreeMap<String, BlueprintColumn> = BTreeMap::new();
         let col_to_ord: BTreeMap<String, u32> = match cols_by_qual.get(&qual) {
@@ -692,6 +774,8 @@ pub async fn run(
                 } else {
                     0
                 };
+                let (numeric_model, numeric_precision, numeric_scale, numeric_precision_radix) =
+                    mssql_numeric_contract(&c.col_type, c.numeric_precision, c.numeric_scale);
                 col_map.insert(
                     format::col_id(c.ordinal),
                     BlueprintColumn {
@@ -702,8 +786,10 @@ pub async fn run(
                         native_type: c.native_type.clone(),
                         declared_max_chars: c.declared_max_chars,
                         declared_max_bytes: c.declared_max_bytes,
-                        numeric_precision: c.numeric_precision,
-                        numeric_scale: c.numeric_scale,
+                        numeric_model,
+                        numeric_precision,
+                        numeric_scale,
+                        numeric_precision_radix,
                         datetime_precision: c.datetime_precision,
                         charset: c.charset.clone(),
                         collation: c.collation.clone(),
@@ -771,11 +857,103 @@ pub async fn run(
             );
         }
 
+        let mut table_features = Vec::new();
+        if t.is_memory_optimized {
+            table_features.push("memory-optimized".to_string());
+        }
+        match t.temporal_type {
+            1 => table_features.push("temporal-history".to_string()),
+            2 => table_features.push("temporal-current".to_string()),
+            _ => {}
+        }
+        if t.is_node {
+            table_features.push("graph-node".to_string());
+        }
+        if t.is_edge {
+            table_features.push("graph-edge".to_string());
+        }
+        table_features.sort();
+        table_features.dedup();
+        let mut table_limitations = if t.temporal_type == 2
+            && t.history_table_id.is_some()
+            && t.temporal_history_outside_scope
+        {
+            vec!["temporal-history-outside-selected-scope".to_string()]
+        } else if t.temporal_type == 2
+            && t.history_table_id.is_some()
+            && t.temporal_history_visibility_unknown
+        {
+            vec!["temporal-history-visibility-unknown".to_string()]
+        } else {
+            Vec::new()
+        };
+        if t.has_security_filter && !t.is_external && !t.is_memory_optimized {
+            table_limitations.push("row-security-filter-active".to_string());
+        } else if !t.security_policy_catalog_complete && !t.is_external && !t.is_memory_optimized {
+            table_limitations.push("row-security-visibility-unknown".to_string());
+        }
+        crate::topology::sort_dedup(&mut table_limitations);
+        let serialized_rows = if t.is_external {
+            0
+        } else {
+            complete_source_rows
+                .unwrap_or_else(|| mssql_partition_counter_evidence(t.row_count.unwrap_or(0)).0)
+        };
         let table_blueprint = BlueprintTable {
-            rows: format::round_rows(t.row_count),
-            table_bytes: format::round_bytes(t.table_bytes),
-            index_bytes: format::round_bytes(t.index_bytes),
+            rows: serialized_rows,
+            table_bytes: if t.is_external {
+                0
+            } else {
+                format::round_bytes(t.table_bytes.unwrap_or(0))
+            },
+            index_bytes: if t.is_external {
+                0
+            } else {
+                format::round_bytes(t.index_bytes.unwrap_or(0))
+            },
             schema: schema_anon,
+            object_kind: if t.is_external {
+                "external-table"
+            } else {
+                "ordinary-table"
+            }
+            .to_string(),
+            storage_organization: mssql_storage_organization(
+                t.is_external,
+                t.is_memory_optimized,
+                t.has_clustered_index,
+            )
+            .to_string(),
+            partitioning: if t.partitioned { "range" } else { "none" }.to_string(),
+            segment_state: if t.is_external {
+                "unavailable"
+            } else {
+                "created"
+            }
+            .to_string(),
+            table_features,
+            partition_count: t.partitioned.then_some(t.partition_count),
+            partition_rows_max: if t.partitioned {
+                t.partition_rows_max.and_then(|rows| {
+                    format::round_partition_rows_max(
+                        rows,
+                        serialized_rows,
+                        complete_source_rows.is_some(),
+                    )
+                })
+            } else {
+                None
+            },
+            temporal_history: if t.temporal_type == 2 {
+                t.history_table_id
+                    .and_then(|object_id| id_by_object_id.get(&object_id).cloned())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            },
+            table_limitations,
+            counted_in_totals: (t.is_external || t.is_memory_optimized).then_some(false),
+            check_count: Some(t.check_count),
             // SQL Server: table data lives in the clustered index leaf
             // (or heap if no clustered index). The split table_bytes /
             // index_bytes already reflects that.
@@ -786,11 +964,42 @@ pub async fn run(
             compression: compression_sample.map(|sample| sample.table),
             ..BlueprintTable::default()
         };
+        statistics_availability.insert(
+            tid.clone(),
+            (
+                (complete_source_rows.is_some() || t.row_count.is_some())
+                    && !t.is_external
+                    && !t.is_memory_optimized,
+                t.table_bytes.is_some()
+                    && t.index_bytes.is_some()
+                    && !t.is_external
+                    && !t.is_memory_optimized,
+            ),
+        );
         accumulate_table_totals(&mut totals, &table_blueprint)?;
         tables_out.insert(tid, table_blueprint);
     }
-    totals.table_count = tables_out.len() as u64;
-
+    if !bounded_row_count_tables.is_empty() {
+        let intrinsically_incomplete =
+            mssql_row_scope_intrinsically_incomplete(&sizing.dataset_scope);
+        if !intrinsically_incomplete {
+            sizing.dataset_scope.row_count_method = if used_catalog_row_count {
+                "mixed-catalog-and-bounded-read"
+            } else {
+                "bounded-complete-read"
+            }
+            .to_string();
+            if !row_count_still_unavailable {
+                sizing.dataset_scope.row_count_completeness = "complete".to_string();
+                sizing
+                    .dataset_scope
+                    .limitations
+                    .retain(|item| item != "row-count-evidence-incomplete");
+            }
+        }
+        crate::topology::sort_dedup(&mut sizing.dataset_scope.limitations);
+    }
+    crate::topology::warn_incomplete_dataset_scope(&sizing.dataset_scope, audit);
     // FK edges.
     let mut fk_edges: BTreeMap<String, Vec<FkEdge>> = BTreeMap::new();
     let mut fk_groups: BTreeMap<(String, String, String, String, i32), Vec<FkRow>> =
@@ -867,6 +1076,43 @@ pub async fn run(
         });
     }
 
+    let artifact_capture = if opts.artifact_detail == ArtifactDetail::None {
+        None
+    } else {
+        let (mut raw, completeness) = capture_artifacts(
+            &mut client,
+            opts.artifact_detail,
+            &engine_version,
+            &schemas,
+            audit,
+        )
+        .await;
+        raw.retain(|item| {
+            item.schema_identity
+                .as_deref()
+                .is_none_or(|schema| schemas.includes(schema))
+        });
+        schema_id_by_name = artifacts::schema_ids_for_capture(
+            tables_sorted.iter().map(|table| table.schema_name.as_str()),
+            &raw,
+            opts.artifact_detail,
+        );
+        for table in &tables_sorted {
+            let key = (table.schema_name.clone(), table.table_name.clone());
+            let table_id = id_by_qual
+                .get(&key)
+                .expect("table id assigned before schema remap");
+            tables_out
+                .get_mut(table_id)
+                .expect("table emitted before schema remap")
+                .schema = schema_id_by_name
+                .get(&table.schema_name)
+                .expect("table schema included in anonymous schema map")
+                .clone();
+        }
+        Some((raw, completeness))
+    };
+
     let table_artifact_ids: BTreeMap<String, String> = id_by_qual
         .iter()
         .map(|((schema, table), id)| {
@@ -876,30 +1122,19 @@ pub async fn run(
             )
         })
         .collect();
-    let artifact_inventory = if opts.artifact_detail == ArtifactDetail::None {
-        None
-    } else {
-        let (mut raw_artifacts, completeness) = capture_artifacts(
-            &mut client,
-            opts.artifact_detail,
-            &engine_version,
-            &schemas,
-            audit,
-        )
-        .await;
-        raw_artifacts.retain(|item| {
-            item.schema_identity
-                .as_deref()
-                .is_none_or(|schema| schemas.includes(schema))
-        });
-        Some(artifacts::build_inventory(
-            opts.artifact_detail,
-            raw_artifacts,
-            &schema_id_by_name,
-            &table_artifact_ids,
-            completeness,
-        ))
-    };
+    let artifact_inventory = artifact_capture
+        .map(|(raw_artifacts, completeness)| {
+            artifacts::build_inventory(
+                opts.artifact_detail,
+                raw_artifacts,
+                &schema_id_by_name,
+                &table_artifact_ids,
+                &schemas,
+                completeness,
+                audit,
+            )
+        })
+        .transpose()?;
 
     let mut blueprint = BlueprintFile {
         schema_version: SCHEMA_VERSION,
@@ -920,22 +1155,247 @@ pub async fn run(
         network: network_probe,
         database_topology: Some(sizing.topology),
         dataset_scope: Some(sizing.dataset_scope),
+        structure_scope: None,
+        source_environment: Some(source_environment),
+        statistics_evidence: None,
+        activity_snapshot: None,
         tables: tables_out,
         fk_edges,
         artifact_inventory,
     };
     crate::statistics::enrich_relational_statistics(&mut blueprint);
+    blueprint.initialize_v7_database_contract();
+    if !indexes_complete {
+        crate::topology::mark_structure_unavailable(
+            blueprint
+                .structure_scope
+                .as_mut()
+                .context("schema-v7 SQL Server structure scope is missing")?,
+            crate::topology::StructureFamily::Index,
+            "sqlserver-indexes",
+            audit,
+        );
+    }
+    if !relationships_complete {
+        crate::topology::mark_structure_unavailable(
+            blueprint
+                .structure_scope
+                .as_mut()
+                .context("schema-v7 SQL Server structure scope is missing")?,
+            crate::topology::StructureFamily::Relationship,
+            "sqlserver-foreign-keys",
+            audit,
+        );
+    }
+    qualify_v7_statistics(
+        &mut blueprint,
+        &statistics_availability,
+        &bounded_row_count_tables,
+        &positive_sub_bucket_counter_tables,
+    )?;
     Ok(blueprint)
+}
+
+fn qualify_v7_statistics(
+    blueprint: &mut BlueprintFile,
+    availability: &BTreeMap<String, (bool, bool)>,
+    bounded_row_count_tables: &BTreeSet<String>,
+    positive_sub_bucket_counter_tables: &BTreeSet<String>,
+) -> Result<()> {
+    let dataset = blueprint
+        .dataset_scope
+        .as_ref()
+        .context("schema-v7 SQL Server statistics require dataset_scope")?;
+    let catalog_row_available = matches!(
+        dataset.row_count_method.as_str(),
+        "sqlserver-partition-counter" | "mixed-catalog-and-bounded-read"
+    );
+    let size_available = dataset.size_method == "sqlserver-partition-pages";
+    let mut emitted_statistical_counter = false;
+    let mut saw_unavailable = false;
+    for (table_id, table) in &mut blueprint.tables {
+        let evidence = table
+            .statistics
+            .as_mut()
+            .context("schema-v7 SQL Server table statistics are missing")?;
+        let memory_optimized = table
+            .table_features
+            .binary_search(&"memory-optimized".to_string())
+            .is_ok();
+        if table.object_kind == "external-table" || memory_optimized {
+            evidence.row_count_method = "unknown".to_string();
+            evidence.row_count_quality = "unavailable".to_string();
+            evidence.statistics_state = if table.object_kind == "external-table" {
+                "not-applicable"
+            } else {
+                "unknown"
+            }
+            .to_string();
+            evidence.refresh_age_band = if table.object_kind == "external-table" {
+                "not-applicable"
+            } else {
+                "unknown"
+            }
+            .to_string();
+            evidence.modification_ratio_band = if table.object_kind == "external-table" {
+                "not-applicable"
+            } else {
+                "unknown"
+            }
+            .to_string();
+            evidence.sample_fraction_band = if table.object_kind == "external-table" {
+                "not-applicable"
+            } else {
+                "unknown"
+            }
+            .to_string();
+            evidence.statistics_scope = "selected-object".to_string();
+            evidence.size_method = "unknown".to_string();
+            evidence.size_quality = "unavailable".to_string();
+            evidence.size_scope = "unknown".to_string();
+            evidence.size_accounting = "unknown".to_string();
+            evidence.size_visibility = "unavailable".to_string();
+            saw_unavailable = true;
+            continue;
+        }
+        let (table_row_available, table_size_available) = availability
+            .get(table_id)
+            .copied()
+            .unwrap_or((false, false));
+        saw_unavailable |= !table_row_available || !table_size_available;
+        let bounded_complete_read = bounded_row_count_tables.contains(table_id);
+        if bounded_complete_read {
+            evidence.row_count_method = "bounded-complete-read".to_string();
+            evidence.row_count_quality = "exact-read".to_string();
+            evidence.sample_fraction_band = "full".to_string();
+        } else if !table_row_available {
+            evidence.row_count_method = "unknown".to_string();
+            evidence.row_count_quality = "unavailable".to_string();
+        } else {
+            evidence.row_count_method = "sqlserver-partition-counter".to_string();
+            evidence.row_count_quality = if catalog_row_available {
+                if positive_sub_bucket_counter_tables.contains(table_id) {
+                    emitted_statistical_counter = true;
+                    "engine-estimate"
+                } else {
+                    "engine-counter"
+                }
+            } else {
+                "unavailable"
+            }
+            .to_string();
+        }
+        evidence.statistics_scope = "global".to_string();
+        if !table_size_available {
+            evidence.size_method = "unknown".to_string();
+        }
+        evidence.size_quality = if size_available && table_size_available {
+            "engine-counter"
+        } else {
+            "unavailable"
+        }
+        .to_string();
+        evidence.size_scope = "table-and-lob".to_string();
+        evidence.size_accounting = if size_available && table_size_available {
+            "allocated-segment"
+        } else {
+            "unknown"
+        }
+        .to_string();
+        evidence.size_visibility = if size_available && table_size_available {
+            "full"
+        } else {
+            "unknown"
+        }
+        .to_string();
+    }
+    let dataset = blueprint
+        .dataset_scope
+        .as_mut()
+        .context("schema-v7 SQL Server statistics require dataset_scope")?;
+    dataset
+        .limitations
+        .retain(|item| item != "row-counts-statistical");
+    if emitted_statistical_counter {
+        // Emit the aggregate marker only when the corresponding per-table
+        // evidence is still present after the statistics checks. Intrinsically incomplete scopes
+        // can downgrade every candidate to unavailable; retaining a
+        // statistical marker then would no longer be derivable from the
+        // per-object evidence it summarizes.
+        dataset
+            .limitations
+            .push("row-counts-statistical".to_string());
+    }
+    crate::topology::sort_dedup(&mut dataset.limitations);
+    let mut limitations = vec![
+        "modification-evidence-unavailable",
+        "optimizer-statistics-not-row-counter",
+        "refresh-age-unavailable",
+    ];
+    if dataset.row_count_completeness != "complete" || !size_available || saw_unavailable {
+        limitations.push("statistics-partial");
+    }
+    crate::statistics::rebuild_statistics_evidence(
+        blueprint,
+        "partial",
+        &["sqlserver-partition-stats"],
+        &[],
+        &[],
+        &limitations,
+    )
 }
 
 #[derive(Debug, Clone)]
 struct TableRow {
+    object_id: i32,
     schema_name: String,
     table_name: String,
-    row_count: u64,
-    table_bytes: u64,
-    index_bytes: u64,
+    row_count: Option<u64>,
+    table_bytes: Option<u64>,
+    index_bytes: Option<u64>,
     has_clustered_index: bool,
+    is_external: bool,
+    is_memory_optimized: bool,
+    temporal_type: i32,
+    history_table_id: Option<i32>,
+    temporal_history_outside_scope: bool,
+    temporal_history_visibility_unknown: bool,
+    is_node: bool,
+    is_edge: bool,
+    partitioned: bool,
+    partition_count: u64,
+    partition_rows_max: Option<u64>,
+    check_count: u64,
+    /// True when an enabled SQL Server FILTER predicate is visible for this
+    /// table. A short TOP result is then only the principal's visible subset.
+    has_security_filter: bool,
+    /// True only when the connected principal can see every security policy in
+    /// the database, which is required to prove that no hidden policy targets
+    /// this table. SELECT on the table itself is not sufficient.
+    security_policy_catalog_complete: bool,
+}
+
+fn apply_table_counter_completeness(dataset: &mut format::DatasetScope, tables: &[TableRow]) {
+    let measured_tables = tables
+        .iter()
+        .filter(|table| !table.is_external && !table.is_memory_optimized)
+        .collect::<Vec<_>>();
+    let rows_complete = measured_tables
+        .iter()
+        .all(|table| table.row_count.is_some());
+    let sizes_complete = measured_tables
+        .iter()
+        .all(|table| table.table_bytes.is_some() && table.index_bytes.is_some());
+    if !rows_complete {
+        dataset.row_count_completeness = "incomplete".to_string();
+    }
+    if !sizes_complete {
+        dataset.size_completeness = "incomplete".to_string();
+    }
+    if !rows_complete || !sizes_complete {
+        dataset.limitations.push("statistics-partial".to_string());
+        crate::topology::sort_dedup(&mut dataset.limitations);
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1021,6 +1481,254 @@ struct FkRow {
     on_update: String,
     on_delete: String,
     validated: bool,
+}
+
+fn mssql_storage_organization(
+    is_external: bool,
+    is_memory_optimized: bool,
+    has_clustered_index: bool,
+) -> &'static str {
+    if is_external {
+        "external"
+    } else if is_memory_optimized {
+        // Memory-optimized rowstores are neither disk heaps nor clustered
+        // indexes.  The independent feature identifies the known fact while
+        // the storage organization stays conservative.
+        "unknown"
+    } else if has_clustered_index {
+        "clustered"
+    } else {
+        "heap"
+    }
+}
+
+fn mssql_partition_counter_evidence(rows: u64) -> (u64, &'static str) {
+    // Zero remains reserved for a counter that actually proved emptiness.
+    // A known-positive sub-bucket value uses the first non-zero privacy
+    // bucket and degrades its quality to engine-estimate, so readers do not
+    // mistake the serialized 100 for an exact counter or for proven emptiness.
+    let quality = if (1..50).contains(&rows) {
+        "engine-estimate"
+    } else {
+        "engine-counter"
+    };
+    (format::round_estimated_rows(rows), quality)
+}
+
+async fn capture_mssql_source_environment(
+    client: &mut Client<tokio_util::compat::Compat<TcpStream>>,
+    audit: &mut AuditLog,
+    requested: bool,
+) -> dbwarp_blueprint_core::SourceEnvironment {
+    let edition_started = Instant::now();
+    let engine_edition = match client
+        .simple_query("SELECT CONVERT(bigint, SERVERPROPERTY('EngineEdition')) AS engine_edition")
+        .await
+    {
+        Ok(stream) => match stream.into_row().await {
+            Ok(Some(row)) => {
+                audit.record_query(
+                    "SELECT SERVERPROPERTY('EngineEdition')",
+                    elapsed_ms(edition_started),
+                    1,
+                );
+                row.get::<i64, _>("engine_edition")
+            }
+            _ => {
+                audit.record_query_failure(
+                    "SELECT SERVERPROPERTY('EngineEdition')",
+                    elapsed_ms(edition_started),
+                );
+                None
+            }
+        },
+        Err(_) => {
+            audit.record_query_failure(
+                "SELECT SERVERPROPERTY('EngineEdition')",
+                elapsed_ms(edition_started),
+            );
+            None
+        }
+    };
+
+    if !requested {
+        return mssql_source_environment_not_requested(engine_edition);
+    }
+
+    let capacity = if mssql_os_capacity_probe_allowed(engine_edition) {
+        let capacity_started = Instant::now();
+        match client
+            .simple_query(
+                "SELECT CONVERT(bigint, cpu_count) AS cpu_count, \
+                        CONVERT(bigint, physical_memory_kb) AS physical_memory_kb \
+                 FROM sys.dm_os_sys_info",
+            )
+            .await
+        {
+            Ok(stream) => match stream.into_row().await {
+                Ok(Some(row)) => {
+                    audit.record_query(
+                        "SELECT banded capacity source values FROM sys.dm_os_sys_info",
+                        elapsed_ms(capacity_started),
+                        1,
+                    );
+                    Some((
+                        row.get::<i64, _>("cpu_count")
+                            .map(|value| value.max(0) as u64),
+                        row.get::<i64, _>("physical_memory_kb")
+                            .and_then(|value| (value.max(0) as u64).checked_mul(1024)),
+                    ))
+                }
+                _ => {
+                    audit.record_query_failure(
+                        "SELECT banded capacity source values FROM sys.dm_os_sys_info",
+                        elapsed_ms(capacity_started),
+                    );
+                    None
+                }
+            },
+            Err(_) => {
+                audit.record_query_failure(
+                    "SELECT banded capacity source values FROM sys.dm_os_sys_info",
+                    elapsed_ms(capacity_started),
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let capacity_attempted = mssql_os_capacity_probe_allowed(engine_edition);
+    let (cpu_count, memory_bytes, catalogs_read, catalogs_unreadable) = match capacity {
+        Some((cpu, memory)) => (
+            cpu,
+            memory,
+            vec!["sqlserver-os-sys-info".to_string()],
+            Vec::new(),
+        ),
+        None if capacity_attempted => (
+            None,
+            None,
+            Vec::new(),
+            vec!["sqlserver-os-sys-info".to_string()],
+        ),
+        None => (None, None, Vec::new(), Vec::new()),
+    };
+    let mut environment = crate::environment::database_source_environment(
+        cpu_count,
+        "operating-system-visible",
+        memory_bytes,
+        "operating-system-visible",
+        "connected-instance",
+        catalogs_read,
+        catalogs_unreadable,
+    );
+    qualify_mssql_engine_edition(&mut environment, engine_edition);
+    if matches!(engine_edition, Some(5 | 6 | 8 | 11)) {
+        environment
+            .catalogs_not_applicable
+            .push("sqlserver-os-sys-info".to_string());
+        environment.catalogs_not_applicable.sort();
+        environment.catalogs_not_applicable.dedup();
+    }
+    environment
+}
+
+fn mssql_os_capacity_probe_allowed(engine_edition: Option<i64>) -> bool {
+    matches!(engine_edition, Some(1..=4))
+}
+
+fn mssql_source_environment_requested(detail: ArtifactDetail) -> bool {
+    matches!(detail, ArtifactDetail::Graph | ArtifactDetail::Analyzed)
+}
+
+fn mssql_source_environment_not_requested(
+    engine_edition: Option<i64>,
+) -> dbwarp_blueprint_core::SourceEnvironment {
+    let mut environment = dbwarp_blueprint_core::SourceEnvironment::unknown_database();
+    environment.evidence_origin = "database-endpoint".to_string();
+    qualify_mssql_engine_edition(&mut environment, engine_edition);
+    environment
+}
+
+fn mssql_sampling_allowed(
+    is_external: bool,
+    is_memory_optimized: bool,
+    security_policy_catalog_complete: bool,
+    has_security_filter: bool,
+) -> bool {
+    !is_external && !is_memory_optimized && security_policy_catalog_complete && !has_security_filter
+}
+
+fn warn_security_policy_visibility_unavailable(table_id: &str, audit: &mut AuditLog) {
+    let detail = crate::i18n::format(
+        "engine.security_policy_visibility_unavailable",
+        &[
+            ("code", "DBP1424W".to_string()),
+            ("table", table_id.to_string()),
+        ],
+    );
+    eprintln!("dbwarp-blueprint: {detail}");
+    audit.record_warning("DBP1424W", detail);
+}
+
+fn warn_active_security_filter(table_id: &str, audit: &mut AuditLog) {
+    let detail = crate::i18n::format(
+        "engine.security_policy_filter_active",
+        &[
+            ("code", "DBP1425W".to_string()),
+            ("table", table_id.to_string()),
+        ],
+    );
+    eprintln!("dbwarp-blueprint: {detail}");
+    audit.record_warning("DBP1425W", detail);
+}
+
+fn mssql_row_scope_intrinsically_incomplete(scope: &format::DatasetScope) -> bool {
+    scope.limitations.iter().any(|limitation| {
+        matches!(
+            limitation.as_str(),
+            "external-data-unmeasured"
+                | "external-table-visibility-unknown"
+                | "memory-optimized-data-unmeasured"
+        )
+    })
+}
+
+fn qualify_mssql_engine_edition(
+    environment: &mut dbwarp_blueprint_core::SourceEnvironment,
+    engine_edition: Option<i64>,
+) {
+    match engine_edition {
+        Some(5 | 6 | 8 | 11) => {
+            environment
+                .catalogs_read
+                .push("sqlserver-engine-edition".to_string());
+            environment.hosting_model = "managed-service".to_string();
+            environment.infrastructure_location = "cloud".to_string();
+        }
+        Some(1..=4) => {
+            environment
+                .catalogs_read
+                .push("sqlserver-engine-edition".to_string());
+            environment.hosting_model = "self-managed".to_string();
+        }
+        Some(_) => environment
+            .catalogs_read
+            .push("sqlserver-engine-edition".to_string()),
+        None => {
+            environment
+                .catalogs_unreadable
+                .push("sqlserver-engine-edition".to_string());
+            if environment.capacity_visibility == "full" {
+                environment.capacity_visibility = "partial".to_string();
+            }
+        }
+    }
+    environment.catalogs_read.sort();
+    environment.catalogs_read.dedup();
+    environment.catalogs_unreadable.sort();
+    environment.catalogs_unreadable.dedup();
 }
 
 async fn resolve_mssql_schemas(
@@ -1224,8 +1932,10 @@ fn classify_mssql_topology(evidence: &MssqlTopologyEvidence) -> MssqlSizingAsses
         }
         .to_string(),
         member_count: 1,
+        member_count_scope: "unknown".to_string(),
         identifiers_redacted: true,
         role_counts: BTreeMap::from([("unknown".to_string(), 1)]),
+        catalogs_not_applicable: Vec::new(),
         features: Vec::new(),
         catalogs_read: Vec::new(),
         catalogs_unreadable: Vec::new(),
@@ -1325,26 +2035,27 @@ fn classify_mssql_topology(evidence: &MssqlTopologyEvidence) -> MssqlSizingAsses
     }
     crate::topology::sort_dedup(&mut limitations);
 
-    let external_scope_complete =
+    let external_inventory_complete = evidence.external_table_catalog_readable;
+    let external_data_complete =
         evidence.external_table_catalog_readable && evidence.external_table_count == 0;
     MssqlSizingAssessment {
         topology,
         dataset_scope: format::DatasetScope {
             contract: dbwarp_blueprint_core::DATASET_SCOPE_CONTRACT.to_string(),
             layout: "full-copy".to_string(),
-            table_inventory_completeness: if external_scope_complete {
+            table_inventory_completeness: if external_inventory_complete {
                 "complete"
             } else {
                 "incomplete"
             }
             .to_string(),
-            row_count_completeness: if external_scope_complete {
+            row_count_completeness: if external_data_complete {
                 "complete"
             } else {
                 "incomplete"
             }
             .to_string(),
-            size_completeness: if external_scope_complete {
+            size_completeness: if external_data_complete {
                 "complete"
             } else {
                 "incomplete"
@@ -1360,23 +2071,100 @@ fn classify_mssql_topology(evidence: &MssqlTopologyEvidence) -> MssqlSizingAsses
 async fn list_tables(
     client: &mut Client<tokio_util::compat::Compat<TcpStream>>,
     audit: &mut AuditLog,
+    schemas: &SchemaSelection,
 ) -> Result<Vec<TableRow>> {
-    let sql = r#"
+    let schema_predicate = schemas.and_sql("SCHEMA_NAME(t.schema_id)");
+    let base_table_schema_predicate = schemas.and_sql("SCHEMA_NAME(t.schema_id)");
+    let external_table_schema_predicate = schemas.and_sql("SCHEMA_NAME(et.schema_id)");
+    let sql = format!(
+        r#"
+        WITH table_objects AS (
+            SELECT t.object_id,
+                   t.schema_id,
+                   t.name,
+                   t.is_ms_shipped,
+                   t.is_memory_optimized,
+                   t.temporal_type,
+                   NULLIF(t.history_table_id, 0) AS history_table_id,
+                   SCHEMA_NAME(history.schema_id) AS history_schema_name,
+                   t.is_node,
+                   t.is_edge,
+                   CAST(CASE WHEN et.object_id IS NULL THEN 0 ELSE 1 END AS bit) AS is_external
+            FROM sys.tables t
+            LEFT JOIN sys.external_tables et ON et.object_id = t.object_id
+            LEFT JOIN sys.tables history ON history.object_id = NULLIF(t.history_table_id, 0)
+            WHERE 1 = 1
+              {base_table_schema_predicate}
+            UNION ALL
+            SELECT et.object_id,
+                   et.schema_id,
+                   et.name,
+                   CAST(0 AS bit),
+                   CAST(0 AS bit),
+                   CONVERT(int, 0),
+                   CONVERT(int, NULL),
+                   CONVERT(nvarchar(128), NULL),
+                   CAST(0 AS bit),
+                   CAST(0 AS bit),
+                   CAST(1 AS bit)
+            FROM sys.external_tables et
+            WHERE NOT EXISTS (
+                SELECT 1 FROM sys.tables t WHERE t.object_id = et.object_id
+            )
+              {external_table_schema_predicate}
+        )
         SELECT
+            t.object_id              AS object_id,
             SCHEMA_NAME(t.schema_id) AS schema_name,
             t.name                   AS table_name,
-            COALESCE(SUM(CASE WHEN p.index_id IN (0,1) THEN p.row_count ELSE 0 END), 0) AS row_count,
-            COALESCE(SUM(CASE WHEN p.index_id IN (0,1) THEN p.used_page_count ELSE 0 END) * 8 * 1024, 0) AS table_bytes,
-            COALESCE(SUM(CASE WHEN p.index_id  > 1     THEN p.used_page_count ELSE 0 END) * 8 * 1024, 0) AS index_bytes,
-            CAST(MAX(CASE WHEN p.index_id = 1 THEN 1 ELSE 0 END) AS BIT) AS has_clustered_index
-        FROM sys.tables t
+            CASE WHEN COUNT(p.object_id) = 0 THEN NULL
+                 ELSE SUM(CASE WHEN p.index_id IN (0,1) THEN p.row_count ELSE 0 END) END AS row_count,
+            CASE WHEN COUNT(p.object_id) = 0 THEN NULL
+                 ELSE SUM(CASE WHEN p.index_id IN (0,1) THEN p.used_page_count ELSE 0 END) * 8 * 1024 END AS table_bytes,
+            CASE WHEN COUNT(p.object_id) = 0 THEN NULL
+                 ELSE SUM(CASE WHEN p.index_id > 1 THEN p.used_page_count ELSE 0 END) * 8 * 1024 END AS index_bytes,
+            CAST(MAX(CASE WHEN p.index_id = 1 THEN 1 ELSE 0 END) AS bit) AS has_clustered_index,
+            CAST(MAX(CONVERT(int, t.is_external)) AS bit) AS is_external,
+            CAST(MAX(CONVERT(int, t.is_memory_optimized)) AS bit) AS is_memory_optimized,
+            MAX(t.temporal_type) AS temporal_type,
+            MAX(t.history_table_id) AS history_table_id,
+            MAX(t.history_schema_name) AS history_schema_name,
+            CAST(MAX(CONVERT(int, t.is_node)) AS bit) AS is_node,
+            CAST(MAX(CONVERT(int, t.is_edge)) AS bit) AS is_edge,
+            CAST(MAX(CASE WHEN p.index_id IN (0,1) AND ps.data_space_id IS NOT NULL
+                          THEN 1 ELSE 0 END) AS bit) AS is_partitioned,
+            COUNT_BIG(DISTINCT CASE WHEN p.index_id IN (0,1) THEN p.partition_number END) AS partition_count,
+            MAX(CASE WHEN p.index_id IN (0,1) THEN p.row_count END) AS partition_rows_max,
+            (SELECT COUNT_BIG(*) FROM sys.check_constraints checks
+              WHERE checks.parent_object_id = t.object_id) AS check_count,
+            CAST(CASE WHEN EXISTS (
+                SELECT 1
+                  FROM sys.security_predicates predicate
+                  JOIN sys.security_policies policy
+                    ON policy.object_id = predicate.object_id
+                 WHERE predicate.target_object_id = t.object_id
+                   AND predicate.predicate_type = 0
+                   AND policy.is_enabled = 1
+            ) THEN 1 ELSE 0 END AS bit) AS has_security_filter,
+            CAST(CASE WHEN
+                COALESCE(HAS_PERMS_BY_NAME(
+                    DB_NAME(), 'DATABASE', 'VIEW DEFINITION'), 0) = 1
+                OR COALESCE(HAS_PERMS_BY_NAME(
+                    DB_NAME(), 'DATABASE', 'ALTER ANY SECURITY POLICY'), 0) = 1
+                THEN 1 ELSE 0 END AS bit) AS security_policy_catalog_complete
+        FROM table_objects t
         LEFT JOIN sys.dm_db_partition_stats p ON p.object_id = t.object_id
+        LEFT JOIN sys.indexes base_index
+               ON base_index.object_id = p.object_id AND base_index.index_id = p.index_id
+        LEFT JOIN sys.partition_schemes ps ON ps.data_space_id = base_index.data_space_id
         WHERE t.is_ms_shipped = 0
+          {schema_predicate}
         GROUP BY t.object_id, t.schema_id, t.name
         ORDER BY schema_name, table_name
-    "#;
+    "#
+    );
     let started = Instant::now();
-    let stream = client.simple_query(sql).await?;
+    let stream = client.simple_query(&sql).await?;
     let rows = stream.into_first_result().await?;
     audit.record_query(
         "SELECT FROM sys.tables JOIN dm_db_partition_stats (table list)",
@@ -1385,29 +2173,114 @@ async fn list_tables(
     );
     let mut out = Vec::with_capacity(rows.len());
     for r in rows {
-        let schema_name: &str = r.get("schema_name").unwrap_or("");
-        let table_name: &str = r.get("table_name").unwrap_or("");
-        let row_count: i64 = r.get("row_count").unwrap_or(0);
-        let table_bytes: i64 = r.get("table_bytes").unwrap_or(0);
-        let index_bytes: i64 = r.get("index_bytes").unwrap_or(0);
-        let has_clust: bool = r.get("has_clustered_index").unwrap_or(false);
+        let object_id: i32 = r.get("object_id").context("decoding table object id")?;
+        let schema_name: &str = r.get("schema_name").context("decoding table schema")?;
+        let table_name: &str = r.get("table_name").context("decoding table name")?;
+        let row_count: Option<i64> = r.get("row_count");
+        let table_bytes: Option<i64> = r.get("table_bytes");
+        let index_bytes: Option<i64> = r.get("index_bytes");
+        let has_clust: bool = r
+            .get("has_clustered_index")
+            .context("decoding clustered-index state")?;
+        let is_external: bool = r
+            .get("is_external")
+            .context("decoding external-table state")?;
+        let is_memory_optimized: bool = r
+            .get("is_memory_optimized")
+            .context("decoding memory-optimized state")?;
+        let temporal_type: i32 = r
+            .get("temporal_type")
+            .context("decoding temporal-table state")?;
+        let history_table_id: Option<i32> = r.get("history_table_id");
+        let history_schema_name: Option<&str> = r.get("history_schema_name");
+        let is_node: bool = r.get("is_node").context("decoding graph-node state")?;
+        let is_edge: bool = r.get("is_edge").context("decoding graph-edge state")?;
+        let partitioned: bool = r
+            .get("is_partitioned")
+            .context("decoding partitioned-table state")?;
+        let partition_count: i64 = r
+            .get("partition_count")
+            .context("decoding partition count")?;
+        let partition_rows_max: Option<i64> = r.get("partition_rows_max");
+        let check_count: i64 = r
+            .get("check_count")
+            .context("decoding CHECK constraint count")?;
+        let has_security_filter: bool = r
+            .get("has_security_filter")
+            .context("decoding row-security filter state")?;
+        let security_policy_catalog_complete: bool = r
+            .get("security_policy_catalog_complete")
+            .context("decoding row-security metadata visibility")?;
         out.push(TableRow {
+            object_id,
             schema_name: schema_name.to_string(),
             table_name: table_name.to_string(),
-            row_count: row_count.max(0) as u64,
-            table_bytes: table_bytes.max(0) as u64,
-            index_bytes: index_bytes.max(0) as u64,
+            row_count: decode_optional_nonnegative(row_count, "table row count")?,
+            table_bytes: decode_optional_nonnegative(table_bytes, "table byte count")?,
+            index_bytes: decode_optional_nonnegative(index_bytes, "index byte count")?,
             has_clustered_index: has_clust,
+            is_external,
+            is_memory_optimized,
+            temporal_type,
+            history_table_id,
+            temporal_history_outside_scope: temporal_type == 2
+                && history_table_id.is_some()
+                && history_schema_name.is_some_and(|schema| !schemas.includes(schema)),
+            temporal_history_visibility_unknown: temporal_type == 2
+                && history_table_id.is_some()
+                && history_schema_name.is_none(),
+            is_node,
+            is_edge,
+            partitioned,
+            partition_count: decode_nonnegative(partition_count, "partition count")?,
+            partition_rows_max: decode_optional_nonnegative(
+                partition_rows_max,
+                "largest partition row count",
+            )?,
+            check_count: decode_nonnegative(check_count, "CHECK constraint count")?,
+            has_security_filter,
+            security_policy_catalog_complete,
         });
     }
     Ok(out)
 }
 
+fn decode_optional_nonnegative(value: Option<i64>, field: &str) -> Result<Option<u64>> {
+    value
+        .map(|value| {
+            u64::try_from(value)
+                .with_context(|| format!("{field} was negative instead of absent or zero"))
+        })
+        .transpose()
+}
+
+fn decode_nonnegative(value: i64, field: &str) -> Result<u64> {
+    u64::try_from(value).with_context(|| format!("{field} was negative"))
+}
+
 async fn list_columns(
     client: &mut Client<tokio_util::compat::Compat<TcpStream>>,
     audit: &mut AuditLog,
+    schemas: &SchemaSelection,
 ) -> Result<Vec<ColumnRow>> {
-    let sql = r#"
+    let schema_predicate = schemas.and_sql("SCHEMA_NAME(t.schema_id)");
+    let base_table_schema_predicate = schemas.and_sql("SCHEMA_NAME(t.schema_id)");
+    let external_table_schema_predicate = schemas.and_sql("SCHEMA_NAME(et.schema_id)");
+    let sql = format!(
+        r#"
+        WITH table_objects AS (
+            SELECT t.object_id, t.schema_id, t.name, t.is_ms_shipped
+            FROM sys.tables t
+            WHERE 1 = 1
+              {base_table_schema_predicate}
+            UNION ALL
+            SELECT et.object_id, et.schema_id, et.name, CAST(0 AS bit)
+            FROM sys.external_tables et
+            WHERE NOT EXISTS (
+                SELECT 1 FROM sys.tables t WHERE t.object_id = et.object_id
+            )
+              {external_table_schema_predicate}
+        )
         SELECT
             SCHEMA_NAME(t.schema_id) AS schema_name,
             t.name                   AS table_name,
@@ -1420,14 +2293,16 @@ async fn list_columns(
             c.collation_name         AS collation_name,
             CONVERT(int, COLLATIONPROPERTY(c.collation_name, 'CodePage')) AS code_page,
             c.is_nullable            AS is_nullable
-        FROM sys.tables t
+        FROM table_objects t
         JOIN sys.columns c ON c.object_id = t.object_id
         JOIN sys.types ty ON ty.user_type_id = c.user_type_id
         WHERE t.is_ms_shipped = 0
+          {schema_predicate}
         ORDER BY schema_name, table_name, c.column_id
-    "#;
+    "#
+    );
     let started = Instant::now();
-    let stream = client.simple_query(sql).await?;
+    let stream = client.simple_query(&sql).await?;
     let rows = stream.into_first_result().await?;
     audit.record_query(
         "SELECT FROM sys.columns JOIN sys.types (column list)",
@@ -1539,6 +2414,48 @@ fn format_mssql_type(name: &str, max_length: i16, precision: u8, scale: u8) -> S
     }
 }
 
+fn mssql_numeric_contract(
+    column_type: &str,
+    precision: u64,
+    scale: u64,
+) -> (String, Option<u64>, Option<i64>, String) {
+    let fixed_decimal = column_type == "numeric"
+        || column_type.starts_with("numeric(")
+        || column_type.starts_with("decimal(");
+    let (model, declared_precision, declared_scale, radix) = if column_type == "integer" {
+        (
+            "integer",
+            (precision > 0).then_some(precision),
+            None,
+            "decimal",
+        )
+    } else if fixed_decimal && precision > 0 {
+        (
+            "fixed-decimal",
+            Some(precision),
+            Some(scale as i64),
+            "decimal",
+        )
+    } else if column_type == "float" {
+        (
+            "binary-float",
+            (precision > 0).then_some(precision),
+            None,
+            "binary",
+        )
+    } else if fixed_decimal || column_type == "user-defined" {
+        ("unknown", None, None, "")
+    } else {
+        ("not-applicable", None, None, "")
+    };
+    (
+        model.to_string(),
+        declared_precision,
+        declared_scale,
+        radix.to_string(),
+    )
+}
+
 fn normalized_index_method(method: &str) -> String {
     match method.trim().to_ascii_lowercase().as_str() {
         "heap"
@@ -1556,8 +2473,11 @@ fn normalized_index_method(method: &str) -> String {
 async fn list_indexes(
     client: &mut Client<tokio_util::compat::Compat<TcpStream>>,
     audit: &mut AuditLog,
+    schemas: &SchemaSelection,
 ) -> Result<Vec<IndexRow>> {
-    let sql = r#"
+    let schema_predicate = schemas.and_sql("SCHEMA_NAME(t.schema_id)");
+    let sql = format!(
+        r#"
         SELECT
             SCHEMA_NAME(t.schema_id) AS schema_name,
             t.name                   AS table_name,
@@ -1577,11 +2497,30 @@ async fn list_indexes(
         WHERE t.is_ms_shipped = 0
           AND i.index_id > 0   -- skip heap pseudo-index
           AND i.name IS NOT NULL
+          {schema_predicate}
         ORDER BY schema_name, table_name, i.name, ic.is_included_column, ic.key_ordinal, ic.index_column_id
-    "#;
+    "#
+    );
     let started = Instant::now();
-    let stream = client.simple_query(sql).await?;
-    let rows = stream.into_first_result().await?;
+    let rows = match client.simple_query(&sql).await {
+        Ok(stream) => match stream.into_first_result().await {
+            Ok(rows) => rows,
+            Err(error) => {
+                audit.record_query_failure(
+                    "SELECT FROM sys.indexes JOIN sys.index_columns JOIN sys.columns (index list)",
+                    elapsed_ms(started),
+                );
+                return Err(error.into());
+            }
+        },
+        Err(error) => {
+            audit.record_query_failure(
+                "SELECT FROM sys.indexes JOIN sys.index_columns JOIN sys.columns (index list)",
+                elapsed_ms(started),
+            );
+            return Err(error.into());
+        }
+    };
     audit.record_query(
         "SELECT FROM sys.indexes JOIN sys.index_columns JOIN sys.columns (index list)",
         elapsed_ms(started),
@@ -1620,8 +2559,11 @@ async fn list_indexes(
 async fn list_foreign_keys(
     client: &mut Client<tokio_util::compat::Compat<TcpStream>>,
     audit: &mut AuditLog,
+    schemas: &SchemaSelection,
 ) -> Result<Vec<FkRow>> {
-    let sql = r#"
+    let schema_predicate = schemas.and_sql("SCHEMA_NAME(ft.schema_id)");
+    let sql = format!(
+        r#"
         SELECT
             SCHEMA_NAME(ft.schema_id)        AS from_schema,
             ft.name                          AS from_table,
@@ -1642,11 +2584,30 @@ async fn list_foreign_keys(
         JOIN sys.columns c ON c.object_id = fc.parent_object_id AND c.column_id = fc.parent_column_id
         JOIN sys.columns rc ON rc.object_id = fc.referenced_object_id AND rc.column_id = fc.referenced_column_id
         WHERE ft.is_ms_shipped = 0
+          {schema_predicate}
         ORDER BY from_schema, from_table, fk.object_id, pos
-    "#;
+    "#
+    );
     let started = Instant::now();
-    let stream = client.simple_query(sql).await?;
-    let rows = stream.into_first_result().await?;
+    let rows = match client.simple_query(&sql).await {
+        Ok(stream) => match stream.into_first_result().await {
+            Ok(rows) => rows,
+            Err(error) => {
+                audit.record_query_failure(
+                    "SELECT FROM sys.foreign_keys JOIN sys.foreign_key_columns (FK list)",
+                    elapsed_ms(started),
+                );
+                return Err(error.into());
+            }
+        },
+        Err(error) => {
+            audit.record_query_failure(
+                "SELECT FROM sys.foreign_keys JOIN sys.foreign_key_columns (FK list)",
+                elapsed_ms(started),
+            );
+            return Err(error.into());
+        }
+    };
     audit.record_query(
         "SELECT FROM sys.foreign_keys JOIN sys.foreign_key_columns (FK list)",
         elapsed_ms(started),
@@ -1688,14 +2649,14 @@ fn normalize_mssql_fk_action(value: &str) -> String {
 }
 
 /// Render a single MSSQL ColumnData as (TypeTag, payload bytes) for
-/// the row-frame encoder. The key load-bearing decision is for
+/// the compression-probe encoder. The key load-bearing decision is for
 /// `String` values: nvarchar/nchar/ntext columns are stored on the
 /// wire (and on disk) as UTF-16LE, so we re-encode the Rust String
-/// back to UTF-16LE before tagging — that preserves the byte-doubling
+/// back to UTF-16LE before tagging: that preserves the byte-doubling
 /// distribution that drives the (significantly higher) zstd ratios
 /// MSSQL nvarchar exhibits in production.
 ///
-/// (Var)Char columns use the database collation — typically a
+/// (Var)Char columns use the database collation: typically a
 /// single-byte SBCS like CP1252, but tiberius converts to UTF-8 on
 /// receive. We tag those `TextUtf8` and accept that ratios may differ
 /// slightly from the actual SBCS wire bytes; for ASCII-heavy content
@@ -1733,7 +2694,7 @@ fn encode_mssql_cell(col_type: ColumnType, data: &ColumnData<'_>) -> (TypeTag, V
         ),
         ColumnData::Numeric(Some(n)) => {
             // tiberius's `Display` for Numeric falls back to `Debug` =
-            // "Numeric { value: 12345, scale: 2 }" — that constant
+            // "Numeric { value: 12345, scale: 2 }": that constant
             // prefix repeats per row and is *extremely* zstd-compressible,
             // structurally inflating compression ratios for any table
             // with NUMERIC/DECIMAL columns. Format the value/scale
@@ -1797,11 +2758,11 @@ fn encode_mssql_cell(col_type: ColumnType, data: &ColumnData<'_>) -> (TypeTag, V
 }
 
 /// Format a tiberius Numeric (value: i128, scale: u8) as canonical
-/// decimal text — e.g. `Numeric { value: 12345, scale: 2 }` →
-/// "123.45". Used by the Tier-2 row-frame encoder so NUMERIC/DECIMAL
+/// decimal text: e.g. `Numeric { value: 12345, scale: 2 }` →
+/// "123.45". Used by the Tier-2 compression-probe encoder so NUMERIC/DECIMAL
 /// columns contribute realistic byte distributions to the
-/// compression sample (the tiberius Display-via-Debug fallback was
-/// producing structurally inflated ratios on numeric-heavy tables).
+/// compression sample (tiberius's Display fallback uses Debug, which would
+/// inflate ratios on numeric-heavy tables).
 fn format_tiberius_numeric(n: &tiberius::numeric::Numeric) -> String {
     let v = n.value();
     let scale = n.scale() as usize;
@@ -1936,6 +2897,7 @@ struct CompressionSample {
     null_fractions: Vec<Option<f64>>,
     cardinalities: Vec<Option<format::BlueprintCardinality>>,
     payload_profiles: Vec<String>,
+    complete_source_rows: Option<u64>,
 }
 
 include!("engine_mssql_sampling.rs");

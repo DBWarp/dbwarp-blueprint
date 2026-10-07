@@ -6,13 +6,11 @@
 
 常见的 `dbwarp-blueprint` 故障及后续处理方法。
 
-由运维人员处理的故障现在会以稳定的 `DBPnnnnS` 消息代码开头，例如 `DBP1001E`。搜索文档或创建支持工单时请使用该代码。请参阅[运维消息代码](MESSAGES.md)。
+故障通常以一个稳定的 `DBPnnnnS` 错误代码开始，例如 `DBP1001E`。在搜索文档或提交问题时，请使用该代码。参见 [操作员错误代码](MESSAGES.md)。
 
 ## 从源代码构建以状态 2 或 3 退出
 
-当已安装的 `rustc` 与 `rust-toolchain.toml` 中固定的版本不一致，并且未明确批准
-网络访问时，`build.sh` 会以状态 2 退出。请安装该确切 Rust 版本；或者在审阅下载
-边界后，允许脚本下载其固定且经过校验和验证的引导程序：
+`build.sh` 在以下情况下会以状态码 2 退出：已安装的 `rustc` 版本与 `rust-toolchain.toml` 中指定的版本不匹配，并且网络访问尚未明确允许。请安装该确切的 Rust 版本，或者，在审查下载范围后，允许脚本获取其指定的、经过校验和验证的启动程序：
 
 ```bash
 ALLOW_NETWORK=1 ./build.sh
@@ -89,15 +87,22 @@ chmod 600 /etc/dbwarp/client.key
 
 对于 SQL Server 的证书验证模式，省略 `--tls-ca` 时会使用操作系统信任存储区。提供的 `.pem` 或 `.crt` 文件必须只包含一个 CA 证书，并替换这些根证书。驱动在 `verify-ca` 和 `verify-full` 两种模式下都会检查连接主机名。
 
-## Tier 2 要求明确同意
+## 需要同意
 
-症状：
+实时数据库运行中未在确认提示中回答 `y` 或 `yes` 时的症状：
 
 ```text
---measure-compression requires --yes
+DBP1701E aborted (no consent)
 ```
 
-修复方法：
+为结构化文件请求压缩采样但未提供 `--yes` 时的症状：
+
+```text
+DBP1006E ... --measure-compression requires --yes (consent flag)
+```
+
+修复方法：查看运行前摘要，然后在提示中回答 `yes`；对于非交互式运行，
+请使用 `--yes` 重新运行：
 
 ```bash
 --measure-compression --yes
@@ -134,11 +139,11 @@ chmod 600 /etc/dbwarp/client.key
 --measure-compression --yes
 ```
 
-仅目录 Blueprint 是有效的，但下游压缩估算将通过推断获得。
+仅包含目录信息的 Blueprint 是有效的，但压缩估算值将根据列类型进行推断。
 
 ## 某些压缩样本被标记为有偏
 
-某些引擎并非在所有情况下都提供均匀表采样，小表可能需要回退到 `LIMIT`。Blueprint 文件会记录 `sampled_with_bias` 和 `bias_reason`，以便估算器和审查人员将其纳入考量。
+某些引擎在所有情况下可能无法提供统一的表采样，因此对于小型表可能需要使用 `LIMIT` 作为备用方案。Blueprint 文件会记录 `sampled_with_bias` 和 `bias_reason`，以便审查人员可以考虑到这些因素。
 
 有偏样本仍然有用，只是证据力度不如均匀样本。
 
@@ -156,7 +161,6 @@ chmod 600 /etc/dbwarp/client.key
 
 正常的 Blueprint 文件很紧凑。它包含结构元数据、舍入后的计数、索引、FK 图结构和可选压缩摘要，不应包含行值或标识符。
 
-如果需要具有代表性的基准测试数据库，请将已批准的 `blueprint.toml` 交给为该项目授权且经过独立审查的下游工具。
 
 ## 需要证明未发生上传
 

@@ -2,6 +2,67 @@
 mod tests {
     use super::*;
 
+    #[test]
+    fn unpopulated_materialized_views_are_not_sampled() {
+        assert!(!pg_sampling_allowed("m", false, false));
+        assert!(pg_sampling_allowed("m", true, false));
+        assert!(!pg_sampling_allowed("p", true, false));
+        assert!(!pg_sampling_allowed("f", true, false));
+        assert!(pg_sampling_allowed("r", true, false));
+        assert!(!pg_sampling_allowed("r", true, true));
+    }
+
+    #[test]
+    fn numeric_contract_distinguishes_numeric_and_non_numeric_columns() {
+        assert_eq!(
+            pg_blueprint_numeric_contract("numeric"),
+            (
+                "unconstrained-decimal".to_string(),
+                None,
+                None,
+                "decimal".to_string()
+            )
+        );
+        assert_eq!(
+            pg_blueprint_numeric_contract("double precision"),
+            ("binary-float".to_string(), None, None, "binary".to_string())
+        );
+        // The declared spelling is the KNOWN case: fixed-decimal with its
+        // facets parsed, where an earlier mapping said "unknown" and never
+        // populated precision or scale at all.
+        assert_eq!(
+            pg_blueprint_numeric_contract("numeric(10,2)"),
+            (
+                "fixed-decimal".to_string(),
+                Some(10),
+                Some(2),
+                "decimal".to_string()
+            )
+        );
+        assert_eq!(
+            pg_blueprint_numeric_contract("numeric(7)"),
+            (
+                "fixed-decimal".to_string(),
+                Some(7),
+                Some(0),
+                "decimal".to_string()
+            )
+        );
+        assert_eq!(
+            pg_blueprint_numeric_contract("numeric(3,-2)"),
+            (
+                "fixed-decimal".to_string(),
+                Some(3),
+                Some(-2),
+                "decimal".to_string()
+            )
+        );
+        assert_eq!(
+            pg_blueprint_numeric_contract("text").0,
+            "not-applicable"
+        );
+    }
+
     fn ordinary_pg_evidence(in_recovery: bool, peer_count: u64) -> PgTopologyEvidence {
         PgTopologyEvidence {
             base_readable: true,
@@ -49,6 +110,280 @@ mod tests {
             .dataset_scope
             .limitations
             .contains(&"row-counts-statistical".to_string()));
+    }
+
+    #[test]
+    fn complete_reads_cannot_erase_external_or_distributed_row_gaps() {
+        let mut scope = classify_pg_topology(&ordinary_pg_evidence(false, 0)).dataset_scope;
+        assert!(!pg_row_scope_intrinsically_incomplete(&scope));
+        scope.limitations.push("external-data-unmeasured".to_string());
+        assert!(pg_row_scope_intrinsically_incomplete(&scope));
+        scope.limitations.clear();
+        scope.limitations.push("local-member-only".to_string());
+        assert!(pg_row_scope_intrinsically_incomplete(&scope));
+        scope.limitations.clear();
+        scope
+            .limitations
+            .push("distributed-row-count-unavailable".to_string());
+        assert!(pg_row_scope_intrinsically_incomplete(&scope));
+        scope.limitations.clear();
+        scope
+            .limitations
+            .push("row-count-evidence-incomplete".to_string());
+        assert!(!pg_row_scope_intrinsically_incomplete(&scope));
+        scope
+            .limitations
+            .push("logical-partition-root-unmeasured".to_string());
+        assert!(pg_row_scope_intrinsically_incomplete(&scope));
+    }
+
+    #[test]
+    fn logical_partition_root_downgrades_dataset_rows_and_sizes() {
+        let mut assessment = classify_pg_topology(&ordinary_pg_evidence(false, 0));
+        let root = TableRow {
+            oid: 1,
+            schema_name: "app".to_string(),
+            table_name: "events".to_string(),
+            relkind: "p".to_string(),
+            relpersistence: "p".to_string(),
+            relispopulated: true,
+            has_subclasses: true,
+            parent_oid: None,
+            partition_strategy: "r".to_string(),
+            partition_count: 2,
+            partition_key_cols: vec![1],
+            partition_key_has_expression: false,
+            check_count: 0,
+            reltuples: Some(0.0),
+            table_bytes: Some(0),
+            index_bytes: Some(0),
+            stats_freshness: "fresh".to_string(),
+            sampling_empty_proven: false,
+            sampling_allowed: false,
+            row_security_active: false,
+            sampling_blocked_by_ancestor_row_security: false,
+        };
+        assessment.record_table_capture(
+            &PgTableCapture {
+                tables: vec![root],
+                distributed_size_complete: false,
+            },
+            &mut AuditLog::default(),
+        );
+        assert_eq!(assessment.dataset_scope.row_count_completeness, "incomplete");
+        assert_eq!(assessment.dataset_scope.size_completeness, "incomplete");
+        assert!(assessment
+            .dataset_scope
+            .limitations
+            .contains(&"row-count-evidence-incomplete".to_string()));
+        assert!(assessment
+            .dataset_scope
+            .limitations
+            .contains(&"logical-partition-root-unmeasured".to_string()));
+        assert!(assessment
+            .dataset_scope
+            .limitations
+            .contains(&"size-evidence-incomplete".to_string()));
+    }
+
+    #[test]
+    fn never_analyzed_table_downgrades_row_coverage_and_table_provenance() {
+        let mut assessment = classify_pg_topology(&ordinary_pg_evidence(false, 0));
+        let table = TableRow {
+            oid: 1,
+            schema_name: "app".to_string(),
+            table_name: "events".to_string(),
+            relkind: "r".to_string(),
+            relpersistence: "p".to_string(),
+            relispopulated: true,
+            has_subclasses: false,
+            parent_oid: None,
+            partition_strategy: String::new(),
+            partition_count: 0,
+            partition_key_cols: Vec::new(),
+            partition_key_has_expression: false,
+            check_count: 0,
+            reltuples: None,
+            table_bytes: Some(0),
+            index_bytes: Some(0),
+            stats_freshness: "never_analyzed".to_string(),
+            sampling_empty_proven: false,
+            sampling_allowed: true,
+            row_security_active: false,
+            sampling_blocked_by_ancestor_row_security: false,
+        };
+        assessment.record_table_capture(
+            &PgTableCapture {
+                tables: vec![table],
+                distributed_size_complete: false,
+            },
+            &mut AuditLog::default(),
+        );
+        assert_eq!(assessment.dataset_scope.row_count_completeness, "incomplete");
+        assert!(assessment
+            .dataset_scope
+            .limitations
+            .contains(&"row-count-evidence-incomplete".to_string()));
+
+        let mut blueprint = BlueprintFile {
+            schema_version: SCHEMA_VERSION,
+            engine: "postgresql".to_string(),
+            dataset_scope: Some(assessment.dataset_scope),
+            tables: BTreeMap::from([(
+                "table-001".to_string(),
+                BlueprintTable {
+                    object_kind: "ordinary-table".to_string(),
+                    storage_organization: "heap".to_string(),
+                    partitioning: "none".to_string(),
+                    segment_state: "created".to_string(),
+                    statistics: Some(dbwarp_blueprint_core::TableStatisticsEvidence {
+                        statistics_state: "never-analyzed".to_string(),
+                        ..dbwarp_blueprint_core::TableStatisticsEvidence::unknown_database(
+                            "postgres-planner-estimate",
+                            "postgres-local-relation-size",
+                        )
+                    }),
+                    ..BlueprintTable::default()
+                },
+            )]),
+            ..BlueprintFile::default()
+        };
+        qualify_v7_statistics(&mut blueprint, &BTreeSet::new()).unwrap();
+        let evidence = blueprint.tables["table-001"].statistics.as_ref().unwrap();
+        assert_eq!(evidence.row_count_method, "unknown");
+        assert_eq!(evidence.row_count_quality, "unavailable");
+        assert!(blueprint
+            .statistics_evidence
+            .as_ref()
+            .unwrap()
+            .limitations
+            .contains(&"statistics-stale".to_string()));
+    }
+
+    #[test]
+    fn row_security_does_not_hide_missing_postgres_row_evidence() {
+        let mut assessment = classify_pg_topology(&ordinary_pg_evidence(false, 0));
+        let table = TableRow {
+            oid: 1,
+            schema_name: "app".to_string(),
+            table_name: "secured_events".to_string(),
+            relkind: "r".to_string(),
+            relpersistence: "p".to_string(),
+            relispopulated: true,
+            has_subclasses: false,
+            parent_oid: None,
+            partition_strategy: String::new(),
+            partition_count: 0,
+            partition_key_cols: Vec::new(),
+            partition_key_has_expression: false,
+            check_count: 0,
+            // VACUUM can create a reltuples value without establishing
+            // ANALYZE statistics. Presence alone must not erase the
+            // per-table never-analyzed downgrade.
+            reltuples: Some(0.0),
+            table_bytes: Some(0),
+            index_bytes: Some(0),
+            stats_freshness: "never_analyzed".to_string(),
+            sampling_empty_proven: false,
+            sampling_allowed: false,
+            row_security_active: true,
+            sampling_blocked_by_ancestor_row_security: false,
+        };
+        assert!(!pg_catalog_row_estimate_available(&table));
+        assessment.record_table_capture(
+            &PgTableCapture {
+                tables: vec![table],
+                distributed_size_complete: false,
+            },
+            &mut AuditLog::default(),
+        );
+        assert_eq!(assessment.dataset_scope.row_count_completeness, "incomplete");
+        assert!(assessment
+            .dataset_scope
+            .limitations
+            .contains(&"row-count-evidence-incomplete".to_string()));
+    }
+
+    #[test]
+    fn complete_bounded_read_restores_never_analyzed_table_provenance() {
+        let mut assessment = classify_pg_topology(&ordinary_pg_evidence(false, 0));
+        assessment
+            .dataset_scope
+            .limitations
+            .push("row-count-evidence-incomplete".to_string());
+        assessment.dataset_scope.row_count_completeness = "incomplete".to_string();
+        apply_pg_bounded_row_scope(&mut assessment.dataset_scope, true, false, false);
+        assert_eq!(
+            assessment.dataset_scope.row_count_method,
+            "bounded-complete-read"
+        );
+        assert_eq!(assessment.dataset_scope.row_count_completeness, "complete");
+        assert!(!assessment
+            .dataset_scope
+            .limitations
+            .contains(&"row-count-evidence-incomplete".to_string()));
+        let mut blueprint = BlueprintFile {
+            schema_version: SCHEMA_VERSION,
+            engine: "postgresql".to_string(),
+            dataset_scope: Some(assessment.dataset_scope),
+            tables: BTreeMap::from([(
+                "table-001".to_string(),
+                BlueprintTable {
+                    rows: format::round_rows(600),
+                    object_kind: "ordinary-table".to_string(),
+                    storage_organization: "heap".to_string(),
+                    partitioning: "none".to_string(),
+                    segment_state: "created".to_string(),
+                    statistics: Some(dbwarp_blueprint_core::TableStatisticsEvidence {
+                        statistics_state: "never-analyzed".to_string(),
+                        ..dbwarp_blueprint_core::TableStatisticsEvidence::unknown_database(
+                            "postgres-planner-estimate",
+                            "postgres-local-relation-size",
+                        )
+                    }),
+                    ..BlueprintTable::default()
+                },
+            )]),
+            ..BlueprintFile::default()
+        };
+        qualify_v7_statistics(
+            &mut blueprint,
+            &BTreeSet::from(["table-001".to_string()]),
+        )
+        .unwrap();
+        let evidence = blueprint.tables["table-001"].statistics.as_ref().unwrap();
+        assert_eq!(evidence.row_count_method, "bounded-complete-read");
+        assert_eq!(evidence.row_count_quality, "exact-read");
+        assert_eq!(evidence.sample_fraction_band, "full");
+        assert_eq!(blueprint.tables["table-001"].rows, 600);
+    }
+
+    #[test]
+    fn complete_reads_cannot_restore_logical_partition_root_coverage() {
+        let mut scope = classify_pg_topology(&ordinary_pg_evidence(false, 0)).dataset_scope;
+        scope.row_count_completeness = "incomplete".to_string();
+        scope
+            .limitations
+            .extend(["logical-partition-root-unmeasured".to_string(),
+                     "row-count-evidence-incomplete".to_string()]);
+
+        apply_pg_bounded_row_scope(&mut scope, true, false, false);
+
+        assert_eq!(scope.row_count_completeness, "incomplete");
+        assert_ne!(scope.row_count_method, "bounded-complete-read");
+        assert!(scope
+            .limitations
+            .contains(&"logical-partition-root-unmeasured".to_string()));
+    }
+
+    #[test]
+    fn active_row_security_prevents_a_short_sample_becoming_a_complete_read() {
+        assert!(pg_complete_row_read(49, 50, false));
+        assert!(!pg_complete_row_read(49, 50, true));
+        assert!(!pg_complete_row_read(50, 50, false));
+        assert!(include_str!("engine_pg.rs")
+            .contains("pg_catalog.row_security_active(c.oid) AS row_security_active"));
+        assert!(include_str!("engine_pg.rs").contains("ancestor_security ON true"));
     }
 
     #[test]
@@ -340,7 +675,7 @@ mod tests {
 
     #[test]
     fn parse_ipv6_unbracketed_rejected() {
-        // Bare IPv6 with embedded colons is ambiguous — must be bracketed.
+        // Bare IPv6 with embedded colons is ambiguous: must be bracketed.
         assert!(PgConnectParams::parse("postgresql://app@::1/payments").is_err());
     }
 
@@ -351,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn postgres_binary_sample_hex_is_decoded_to_source_bytes() {
+fn postgres_binary_sample_hex_is_decoded_to_source_bytes() {
         assert_eq!(
             decode_pg_hex_sample("00ff89504e470d0a1a0a").unwrap(),
             b"\x00\xff\x89PNG\r\n\x1a\n"
@@ -366,7 +701,7 @@ mod tests {
         assert_eq!(normalized_pg_type("timestamp with time zone"), "timestamptz");
         assert_eq!(normalized_pg_type("timestamptz"), "timestamptz");
         assert_eq!(normalized_pg_type("time without time zone"), "time");
-        // TIME WITH TIME ZONE remains an explicitly unsupported generator
+        // TIME WITH TIME ZONE remains an explicitly unsupported output
         // distinction; do not conflate that limitation with TIMESTAMPTZ.
         assert_eq!(normalized_pg_type("time with time zone"), "time");
         assert_eq!(normalized_pg_type("timetz"), "time");
@@ -391,6 +726,58 @@ mod tests {
     }
 
     #[test]
+    fn reltuples_uses_one_rounded_domain_for_sampling_and_serialization() {
+        assert_eq!(pg_reltuples_row_estimate(Some(40.4)), Some(40));
+        assert_eq!(pg_reltuples_row_estimate(Some(40.6)), Some(41));
+        assert_eq!(pg_reltuples_row_estimate(Some(-1.0)), None);
+        assert_eq!(pg_reltuples_row_estimate(Some(f64::NAN)), None);
+        assert_eq!(pg_reltuples_row_estimate(None), None);
+    }
+
+    #[test]
+    fn complete_scan_skips_the_limit_fallback_without_underfill_bias() {
+        assert!(pg_sample_scanned_complete_table(100.0, false));
+        assert!(!pg_sample_scanned_complete_table(100.0, true));
+        assert!(!pg_sample_scanned_complete_table(99.9, false));
+        // A small table's adaptive rate always reaches the complete-scan
+        // clamp, so its underfilled result is a census, not degradation.
+        assert!(pg_sample_scanned_complete_table(
+            pg_table_sample_percent(500.0, 1_000),
+            false
+        ));
+        assert!(pg_sample_method_complete_scan().contains("complete scan"));
+        assert!(!pg_sample_method_complete_scan().contains("fallback"));
+    }
+
+    #[test]
+    fn stats_freshness_is_classified_against_the_run_reference_instant() {
+        let utc = |raw: &str| {
+            chrono::DateTime::parse_from_rfc3339(raw)
+                .expect("test timestamp parses")
+                .with_timezone(&chrono::Utc)
+        };
+        let analyzed = utc("2026-04-20T00:00:00Z");
+        // Identical inputs classify identically on both sides of the
+        // seven-day boundary; the wall clock plays no part.
+        assert_eq!(
+            pg_stats_freshness(Some(10.0), Some(analyzed), utc("2026-04-27T00:00:00Z")),
+            "fresh"
+        );
+        assert_eq!(
+            pg_stats_freshness(Some(10.0), Some(analyzed), utc("2026-04-28T00:00:01Z")),
+            "stale"
+        );
+        assert_eq!(
+            pg_stats_freshness(None, Some(analyzed), utc("2026-04-27T00:00:00Z")),
+            "never_analyzed"
+        );
+        assert_eq!(
+            pg_stats_freshness(Some(10.0), None, utc("2026-04-27T00:00:00Z")),
+            "never_analyzed"
+        );
+    }
+
+    #[test]
     fn emitted_version_excludes_packaging_and_build_text() {
         assert_eq!(
             normalized_pg_version("16.4 (Ubuntu 16.4-1.pgdg22.04+1)"),
@@ -399,4 +786,16 @@ mod tests {
         assert_eq!(normalized_pg_version("PostgreSQL 18.1-custom-host"), "18.1");
         assert_eq!(normalized_pg_version("custom-build"), "unknown");
     }
+}
+
+#[test]
+fn postgres_sample_truncation_uses_server_side_octet_lengths() {
+    assert_eq!(pg_sample_lengths(Some("8"), Some("8")).unwrap(), Some((8, 8)));
+    assert_eq!(
+        pg_sample_lengths(Some("4096"), Some("1024")).unwrap(),
+        Some((4096, 1024))
+    );
+    assert_eq!(pg_sample_lengths(None, None).unwrap(), None);
+    assert!(pg_sample_lengths(Some("8"), None).is_err());
+    assert!(pg_sample_lengths(Some("invalid"), Some("8")).is_err());
 }

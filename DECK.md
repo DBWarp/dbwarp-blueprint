@@ -33,9 +33,15 @@ language-neutral. Catalog validation fails closed rather than substituting
 English for a missing deck phrase. See
 [`docs/INTERNATIONALISATION.md`](docs/INTERNATIONALISATION.md).
 
+Every slide also carries localized speaker notes. The notes turn the visible
+evidence into a short, natural-language summary rather than repeating every
+label and value on the slide. They use only measurements from the Blueprint and
+omit the repeated footer, so presenter view and exported notes handouts add
+interpretation without introducing new facts.
+
 ## Footer and confidentiality
 
-Every content slide follows the DBWarp house footer: a small lockup at left, an
+Every content slide has the same footer: a small lockup at left, an
 optional separator and confidentiality level, a bare centred slide number, and
 `DBWarp.com` at right. The title slide remains unnumbered.
 
@@ -59,17 +65,18 @@ are reproducible.
 - **No application network.** Generating the deck opens no network connection;
   a Blueprint read from a network-mounted path remains subject to the host
   storage stack.
-- **No third-party library.** The OOXML is authored directly in `src/deck.rs`;
+- **No third-party library.** The OOXML is authored directly in `src/deck.rs`
+  and its `deck_*` modules;
   the `.pptx` is a plain ZIP of XML parts you can `unzip` and read. No PowerPoint
   automation, no rendering service, no extra crate in the dependency graph. The
-  approved DBWarp logo images and static DM Sans font faces are embedded in the
+  DBWarp logo images and static DM Sans font faces are embedded in the
   Rust binary and written as OOXML media/font parts; generation does not read a
   runtime asset path.
 - **No real identifiers, no row data.** Tables, columns, and indexes appear as
   the same anonymous placeholders as the Blueprint file (`table-001`, `col-1`,
   `idx-1`, `schema-A`). Source measurements retain their documented precision;
   any projection is computed only from fields already in the Blueprint. The
-  deck contains no customer-specific information beyond that input.
+  deck contains nothing specific to your database beyond that input.
 - **Reproducible from fixed input.** The exact same reviewed Blueprint produces
   a byte-identical `.pptx` for the same selected language, confidentiality
   label, and pinned timestamp (fixed part order and timestamps). This does not
@@ -80,23 +87,36 @@ are reproducible.
 
 The deck adapts to schema size:
 
-- **Title** — DBWarp logo and tagline, engine, version, source kind, table
+- **Title**: DBWarp logo and tagline, engine, version, source kind, table
   count, generation timestamp.
-- **Executive summary** — management-facing migration scale, data
+- **Executive summary**: management-facing migration scale, data
   concentration, relationship complexity, and review evidence signals.
-- **Overview** — table / row / data-size / index-size totals, plus column,
+- **Overview**: table / row / data-size / index-size totals, plus column,
   index, foreign-key, and schema counts.
-- **Small schemas** (a few tables) — a sized panel per table (rows, bytes,
+- **Small schemas** (a few tables): a sized panel per table (rows, bytes,
   column types, indexes) and a foreign-key diagram.
-- **Large schemas** — characterization instead of enumeration:
+- **Large schemas**: characterization instead of enumeration:
   - *Largest tables*: the top tables by size, with a `+ N more` remainder.
   - *Schema composition*: column-type distribution and index/total statistics.
   - *Relationships*: foreign-key count, connected vs standalone tables, and the
     most-referenced (hub) tables.
-- **Measured compression** (Tier 2 only) — sampled-table count, weighted zstd-3
+- **Measured compression** (Tier 2 only): sampled-table count, weighted zstd-3
   ratio, projected compressed footprint, and the most-compressible sampled
   tables.
-- **Trust model** — a closing slide summarising the guarantees above.
+- **Non-table objects** (`graph` and `analyzed` detail only): six plain-English
+  groups explain the database logic and dependencies outside ordinary table
+  definitions: query layers, executable logic, automatic behaviour, types and
+  value-producing objects, external dependencies, and platform configuration. The displayed
+  counts come from the Blueprint's artifact inventory.
+- **Artifact complexity** (`graph` and `analyzed` detail only): the aggregate
+  non-table complexity band, eligible-population coverage, and all seven
+  dimension bands. The slide defines those dimensions as definition size,
+  branching, feature use, dependencies, environment requirements, hidden
+  source, and dialect-specific behaviour. Each dimension displays its coverage
+  beside its band, so partial or unknown evidence cannot be mistaken for low
+  complexity. An `unknown` overall result means evidence is incomplete;
+  `not applicable` requires an empty, proved-complete eligible population.
+- **Trust model**: a closing slide summarising the trust properties above.
 
 ## Reviewing the output
 
@@ -107,6 +127,6 @@ unzip -l blueprint.pptx           # list parts
 unzip -p blueprint.pptx ppt/slides/slide1.xml   # read a slide as plain XML
 ```
 
-Open it in PowerPoint, LibreOffice Impress, or Google Slides. The generator is
+Open it in PowerPoint, LibreOffice Impress, or Google Slides. The deck writer is
 [`src/deck.rs`](src/deck.rs) and is built into the Rust binary. There is no
-separate deck generator to install, audit, or keep in sync.
+separate deck-writing tool to install or audit.

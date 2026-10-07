@@ -6,7 +6,7 @@ use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const LANGUAGES: &[&str] = &["de", "fr", "es", "pl", "ja", "zh"];
-const ROOT_ABOUT: &str = "Collect sanitized database or structured-file Blueprint metadata for DBWarp sizing, synthetic fixture generation, and migration planning.\n\nLive database modes read catalog/statistics metadata. Tier 2 compression measurement is opt-in with --measure-compression --yes; sampled bytes are encoded and compressed in memory, then discarded. Offline modes read local TOML, Parquet, Avro, or bundle files and do not connect to a database.";
+const ROOT_ABOUT: &str = "Collect sanitized database or structured-file Blueprint metadata for DBWarp migration sizing and planning.\n\nLive database modes read catalog/statistics metadata. Tier 2 compression measurement is opt-in with --measure-compression --yes; sampled bytes are encoded and compressed in memory, then discarded. Offline modes read local TOML, Parquet, Avro, or bundle files and do not connect to a database.";
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_dbwarp-blueprint")

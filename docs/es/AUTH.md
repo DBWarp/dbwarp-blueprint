@@ -80,14 +80,20 @@ Kerberos/GSSAPI en Linux:
 
 ```bash
 kinit user@EXAMPLE.COM
-DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh
-./target/release/dbwarp-blueprint \
+./dbwarp-blueprint \
   --connect sqlserver://db.internal,1433/payments \
   --auth-mode integrated \
   --expect-server-principal 'EXAMPLE\dbwarp-blueprint' \
   --tls-mode verify-full \
   --out blueprint.toml
 ```
+
+Los archivos de la versión de Linux incluyen compatibilidad con Kerberos/GSSAPI,
+pero no necesitan sus bibliotecas de ejecución para iniciarse. El binario carga
+el entorno de ejecución GSSAPI de la plataforma cuando se selecciona
+`--auth-mode integrated` y muestra `DBP1604E` si no está disponible. Una
+compilación desde el código fuente debe habilitar la función con
+`DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh`.
 
 SSPI en Windows:
 
@@ -108,13 +114,7 @@ Los ejemplos anteriores presuponen que la entidad de seguridad de Windows ya exi
 
 Dos aspectos operativos son más importantes en este modo que con `sql-auth`. La cuenta con la que se ejecuta el proceso recopilador es la identidad que ve SQL Server. Si un administrador inicia el recopilador en un host donde `BUILTIN\Administrators` pertenece a `sysadmin`, la sesión es `sysadmin` y omite todas las reglas `DENY` del script de permisos aunque la captura se complete correctamente. `--expect-server-principal` hace que este caso falle con `DBP1606E` antes de cualquier lectura del catálogo. Además, una cuenta de servicio dedicada no hereda el acceso a archivos de quien la inició. Necesita permiso de lectura para su propio archivo de credenciales cuando se utilice uno, y permiso de escritura en las rutas de `--out` y `--audit-log`.
 
-Cada conexión de SQL Server registra `ORIGINAL_LOGIN()`, `SUSER_SNAME()` y
-`USER_NAME()` en la auditoría local. `--expect-server-principal` es opcional y
-también funciona con autenticación SQL. SQL Server compara `ORIGINAL_LOGIN()`
-con la entidad de seguridad esperada en la sesión establecida. Una discrepancia
-o una identidad no disponible produce `DBP1606E` antes de cualquier captura del
-catálogo. Las identidades exactas permanecen como evidencia de auditoría local
-y no se incluyen en el Blueprint, la presentación ni los artefactos publicados.
+Cada conexión a SQL Server registra `ORIGINAL_LOGIN()`, `SUSER_SNAME()` y `USER_NAME()` en el registro de auditoría local. `--expect-server-principal` es opcional y funciona también con la autenticación SQL. Solicita a SQL Server que compare `ORIGINAL_LOGIN()` con el principal esperado en la sesión establecida. Una discrepancia o una identidad no disponible fallan con `DBP1606E` antes de cualquier captura de catálogo, por lo que un operador no puede recopilar accidentalmente datos con un inicio de sesión diferente o con privilegios excesivos. Las identidades exactas permanecen como evidencia en el registro de auditoría local y no se incluyen en los archivos de Blueprint, deck o bundle.
 
 ## Autenticación de bases de datos administradas en la nube
 
@@ -163,4 +163,4 @@ Estos permisos autorizan el inicio de sesión o un túnel de conexión; nunca su
 | Inicio de sesión Entra de Azure SQL Database o Managed Instance | `entra-token` | Ningún rol RBAC de recurso de Azure para acceder a los datos; use las opciones de token de SQL Server documentadas anteriormente |
 | Cualquier base de datos administrada compatible con credenciales nativas | `sql-auth` | Ninguno |
 
-La revisión de permisos del despliegue debe registrar los permisos de base de datos según la versión, las políticas exactas de la nube, las alternativas de roles integrados y sus salvedades de alcance. La configuración del proveedor, la creación de principales, el acceso a la red, la generación de tokens y la recuperación opcional de secretos son responsabilidades del aprovisionamiento o del wrapper; no son permisos que deban asociarse al recopilador solo porque el punto de conexión sea administrado.
+Al revisar los permisos, registre las concesiones de base de datos que tienen en cuenta la versión, las políticas de la nube exactas, las alternativas de roles integradas y las limitaciones de alcance. La configuración del servicio, la creación de usuarios, el acceso a la red, la generación de tokens y la recuperación opcional de secretos son responsabilidades de aprovisionamiento o de capa de adaptación, y no permisos que deban adjuntarse al recolector simplemente porque el punto final está gestionado.

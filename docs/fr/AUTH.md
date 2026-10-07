@@ -80,14 +80,20 @@ Kerberos / GSSAPI sous Linux :
 
 ```bash
 kinit user@EXAMPLE.COM
-DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh
-./target/release/dbwarp-blueprint \
+./dbwarp-blueprint \
   --connect sqlserver://db.internal,1433/payments \
   --auth-mode integrated \
   --expect-server-principal 'EXAMPLE\dbwarp-blueprint' \
   --tls-mode verify-full \
   --out blueprint.toml
 ```
+
+Les archives de publication Linux prennent en charge Kerberos/GSSAPI, mais ne
+nécessitent pas ses bibliothèques d'exécution au démarrage. Le binaire charge
+l'environnement d'exécution GSSAPI de la plateforme lorsque
+`--auth-mode integrated` est sélectionné et signale `DBP1604E` s'il est absent.
+Une compilation à partir du code source doit activer cette fonctionnalité avec
+`DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh`.
 
 SSPI sous Windows :
 
@@ -108,13 +114,7 @@ Les exemples ci-dessus supposent que le principal Windows existe déjà en tant 
 
 Deux points opérationnels sont plus importants dans ce mode qu'avec `sql-auth`. Le compte qui exécute le processus du collecteur est l'identité vue par SQL Server. Si le collecteur est lancé par un administrateur sur un hôte où `BUILTIN\Administrators` appartient à `sysadmin`, la session est `sysadmin` et contourne chaque règle `DENY` du script d'autorisations, alors même que la capture réussit. `--expect-server-principal` transforme ce cas en échec `DBP1606E` avant toute lecture du catalogue. Par ailleurs, un compte de service dédié n'hérite d'aucun accès aux fichiers de la personne qui l'a lancé. Il lui faut un droit de lecture sur son propre fichier d'informations d'identification lorsqu'un tel fichier est utilisé, ainsi qu'un droit d'écriture sur les chemins `--out` et `--audit-log`.
 
-Chaque connexion SQL Server consigne `ORIGINAL_LOGIN()`, `SUSER_SNAME()` et
-`USER_NAME()` dans l'audit local. `--expect-server-principal` est facultatif et
-fonctionne aussi avec l'authentification SQL. SQL Server compare alors
-`ORIGINAL_LOGIN()` au principal attendu sur la session établie. Une différence
-ou une identité indisponible provoque `DBP1606E` avant toute capture du
-catalogue. Les identités exactes restent des preuves d'audit locales et ne sont
-pas incluses dans le Blueprint, la présentation ou les artefacts publiés.
+Chaque connexion SQL Server enregistre `ORIGINAL_LOGIN()`, `SUSER_SNAME()` et `USER_NAME()` dans l'audit local. `--expect-server-principal` est facultatif et fonctionne également avec l'authentification SQL. Il demande à SQL Server de comparer `ORIGINAL_LOGIN()` avec le principal attendu dans la session établie. Une incompatibilité ou une identité indisponible entraînent une erreur `DBP1606E` avant toute capture de catalogue, de sorte qu'un opérateur ne peut pas accidentellement collecter des données avec un compte différent ou avec des privilèges excessifs. Les identités exactes restent des preuves dans l'audit local et ne sont pas incluses dans les fichiers Blueprint, deck ou bundle.
 
 ## Authentification des bases de données gérées dans le cloud
 
@@ -163,4 +163,4 @@ Ces autorisations permettent la connexion ou un tunnel; elles ne remplacent jama
 | Connexion Entra Azure SQL Database ou Managed Instance | `entra-token` | Aucun rôle RBAC de ressource Azure pour l’accès aux données; utilisez les options de jeton SQL Server documentées ci-dessus |
 | Toute base gérée prise en charge avec des identifiants natifs | `sql-auth` | Aucune |
 
-La revue des autorisations de déploiement doit consigner les droits de base de données dépendant de la version, les politiques cloud exactes, les alternatives de rôles intégrés et leurs limites de portée. La configuration du fournisseur, la création des principaux, l’accès réseau, la génération des jetons et la récupération facultative des secrets relèvent du provisionnement ou du wrapper; ces droits ne doivent pas être attribués au collecteur simplement parce que le point de terminaison est géré.
+Lorsque vous examinez les permissions, enregistrez les droits d'accès à la base de données sensibles à la version, les politiques cloud exactes, les alternatives de rôles intégrées et les limitations de portée. La configuration du service, la création de principaux, l'accès réseau, la génération de jetons et la récupération facultative de secrets relèvent des responsabilités de provisionnement ou d'enrobage, et non des permissions qui devraient être associées au collecteur simplement parce que le point de terminaison est géré.

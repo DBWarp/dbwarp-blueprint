@@ -32,15 +32,8 @@ załącznik przed jego udostępnieniem.
 
 ## Obsługiwane konfiguracje
 
-[STATUS.md](../../STATUS.md) opisuje możliwości i macierz zweryfikowanych
-silników. [BUILD.md](BUILD.md) opisuje wymagania budowania właściwe dla platformy
-i uwierzytelniania. Rust jest przypięty do dokładnej wersji podanej w
-`rust-toolchain.toml`; pole `rust-version` pakietu nie gwarantuje, że każdy
-nowszy zestaw narzędzi został zweryfikowany.
+[STATUS.md](../../STATUS.md) opisuje możliwości oraz obsługiwane wersje baz danych. [BUILD.md](BUILD.md) opisuje wymagania dotyczące kompilacji, specyficzne dla platformy i uwierzytelniania. Wersja języka Rust jest zablokowana do konkretnej wersji w `rust-toolchain.toml`; inne środowiska programistyczne niekoniecznie zostały przetestowane.
 
-Wskazówki dotyczące uprawnień usług zarządzanych nie są stwierdzeniem, że każda
-usługa lub konfiguracja została przetestowana. Użyj odpowiednich
-[wymagań dotyczących uprawnień](../../sql/grants/DATABASE_PERMISSIONS.md) i
-zweryfikuj dokładną konfigurację przed użyciem produkcyjnym.
+Wytyczne dotyczące uprawnień dla usług zarządzanych nie oznaczają, że każda usługa lub konfiguracja została przetestowana. Należy użyć odpowiednich [wymagań dotyczących uprawnień](../../sql/grants/DATABASE_PERMISSIONS.md) i przetestować konkretną konfigurację przed użyciem w środowisku produkcyjnym.
 
 Zmiany między wersjami kolektora opisuje [CHANGELOG.md](CHANGELOG.md).

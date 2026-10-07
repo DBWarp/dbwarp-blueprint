@@ -21,7 +21,8 @@ der Meldung erforderlich ist.
 
 | Modus | Netzwerknutzung zur Laufzeit |
 |---|---|
-| Live `--connect` | Eine Datenbanktreibersitzung zum angegebenen Datenbankendpunkt. Die DNS-Auflösung kann den konfigurierten Resolver kontaktieren. Die integrierte Kerberos-/SSPI-Authentifizierung kann außerdem konfigurierte Identitätsinfrastruktur wie einen KDC oder Domänencontroller kontaktieren. |
+| Live-Datenbankverbindung `--connect` für PostgreSQL, MySQL oder SQL Server | Eine Datenbanktreibersitzung zum angegebenen Datenbankendpunkt. Die DNS-Auflösung kann den konfigurierten Resolver kontaktieren. Die integrierte Kerberos-/SSPI-Authentifizierung kann außerdem konfigurierte Identitätsinfrastruktur wie einen KDC oder Domänencontroller kontaktieren. |
+| Bestätigungspflichtige Oracle-Vorschau | Startet nur die vom Operator ausgewählte Programmdatei `--oracle-sqlplus` als Kindprozess (einschließlich einer begrenzten `-V`-Abfrage, sofern verfügbar) und verwendet sie für die Katalogsitzung. Die Anmeldeinformationen werden über die Standardeingabe gesendet und niemals in Prozessargumenten abgelegt. Der Kindprozess erhält ein leeres privates Verzeichnis als `TNS_ADMIN`; seine Umgebung wird geleert und nur die vorhandenen Variablen `PATH`, `SystemRoot`, `WINDIR`, `ORACLE_HOME`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `LIBPATH` und `SHLIB_PATH` werden weitergereicht. Feste Locale-, Zeitzonen- und private `TNS_ADMIN`-Werte werden separat gesetzt. |
 | `--batch-manifest` | Eine Datenbanktreibersitzung für jede Datenbankquelle im Manifest, die sequenziell verarbeitet wird. Lokale Parquet- und Avro-Quellen verwenden kein Netzwerk. Die obigen DNS- und integrierten Authentifizierungsbedingungen gelten weiterhin. |
 | `--from-toml`, `--from-parquet`, `--from-avro`, `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Keine von der Anwendung initiierte Netzwerkverbindung. Eingaben auf Netzwerk-Dateisystemen bleiben eine Angelegenheit des Betriebssystems beziehungsweise Speichersystems. |
 
@@ -46,7 +47,7 @@ Zur Laufzeit liest die Anwendung direkt nur Eingaben, die auf der Befehlszeile a
 |---|---|
 | `--user-file` | Quelle des Benutzernamens |
 | `--password-file` | Quelle des Passworts |
-| `--anonymization-key-file` | optionaler kundenseitig verwahrter HMAC-Schlüssel, den die Binärdatei oder der SQL-Fallback-Normalisierer verwendet, um anonyme Objektkennzeichnungen über genehmigte Läufe hinweg zu erhalten; der Dateimodus darf unter Unix keinen Lesezugriff für Gruppe/Andere zulassen |
+| `--anonymization-key-file` | Optionaler HMAC-Schlüssel, den Sie besitzen und der vom binären oder SQL-Fallback-Normalisierer verwendet wird, um anonyme Objektbezeichnungen über genehmigte Ausführungen hinweg beizubehalten; der Modus muss group/other verhindern, dass auf Unix-Systemen gelesen wird. |
 | `--azure-token-file` | Quelle des SQL-Server-Entra-ID-Tokens |
 | `--tls-ca` | vertrauenswürdiges CA-Bundle |
 | `--tls-cert` | TLS-Clientzertifikat |
@@ -140,16 +141,7 @@ Längentreuerichtlinie auf diese Längen an, nicht nur auf die Längen der
 zurückgegebenen Präfixe. Die Stichprobenherkunft dokumentiert die geltenden
 Einschränkungen; eine begrenzte Ausgabe belegt keine Messung vollständiger Werte.
 
-Die Reihenfolge von Tabellen, Schemas, Indizes und Nicht-Tabellenobjekten
-verwendet domänengetrenntes HMAC-SHA256. Standardmäßig bezieht das Werkzeug vom
-Betriebssystem einen neuen prozesslokalen Schlüssel und gibt ihn niemals aus.
-Dadurch kann ein Offline-Leser mögliche Quellnamen nicht prüfen. Verwenden Sie
-`--anonymization-key-file` nur, wenn dieselben anonymen Kennzeichnungen über
-genehmigte Vergleichsläufe hinweg erhalten bleiben müssen. Die Datei muss
-genau 32 Rohbytes oder 64 Hexadezimalzeichen enthalten und wie ein
-Zugangsdatengeheimnis geschützt werden. Das Audit zeichnet nur auf, ob ein
-temporärer oder kundenseitig verwahrter Schlüssel verwendet wurde, niemals den
-Schlüsselwert.
+Tabelle, Schema, Index und die Reihenfolge von Nicht-Tabellen-Objekten verwenden eine durch Domänen getrennte HMAC-SHA256-Verschlüsselung. Standardmäßig erhält das Tool einen neuen, prozesslokalen Schlüssel vom Betriebssystem und gibt diesen niemals aus, wodurch verhindert wird, dass ein Offline-Reader potenzielle Quellnamen überprüfen kann. Verwenden Sie `--anonymization-key-file` nur, wenn dieselben anonymen Bezeichnungen über genehmigte Vergleichsläufe hinweg erhalten bleiben müssen. Die Datei muss genau 32 rohe Bytes oder 64 hexadezimale Zeichen enthalten und muss wie ein Anmeldeinformation geschützt werden. Die Prüfprotokolle zeigen, ob ein temporärer Schlüssel oder ein von Ihnen bereitgestellter Schlüssel verwendet wurde, niemals den Schlüsselwert selbst.
 
 Der nur die Standardbibliothek verwendende Normalisierer `blueprint_format.py` des SQL-Fallbacks besitzt denselben Vertrag für schlüsselgebundene Reihenfolge. Er bezieht standardmäßig einen neuen zufälligen Betriebssystemschlüssel, sofern `--anonymization-key-file` nicht angegeben ist, und fügt nach dem kanonischen Header einen festen Kommentar mit Producer/Schlüsselquelle hinzu, damit seine Ausgabe nicht mit der des Rust-Collectors verwechselt werden kann.
 

@@ -56,6 +56,7 @@ fn build_title(d: &Deck) -> SlideB {
         vec![para("l", vec![run(sub, 1400, true, false, ICE, HEAD)])],
         "t",
     );
+    s.notes = title_speaker_notes(d);
     s
 }
 
@@ -173,6 +174,7 @@ fn build_executive(d: &Deck) -> SlideB {
             "t",
         );
     }
+    s.notes = executive_speaker_notes(d);
     s
 }
 
@@ -481,7 +483,372 @@ fn build_overview(d: &Deck) -> SlideB {
         )],
         "ctr",
     );
+    s.notes = overview_speaker_notes(d);
     s
+}
+
+fn build_artifact_inventory(d: &Deck) -> Option<SlideB> {
+    let inventory = d.artifact_inventory?;
+    d.complexity?;
+    let mut s = SlideB::new(Some(WHITE));
+    kicker_title(
+        &mut s,
+        tr("deck.artifacts.title"),
+        tr("deck.artifacts.subtitle"),
+        false,
+    );
+    s.text(
+        CONTENT_X,
+        1.48,
+        CONTENT_W,
+        0.48,
+        vec![para(
+            "l",
+            vec![run(
+                tr("deck.artifacts.definition"),
+                1150,
+                false,
+                false,
+                BODY,
+                BODY_F,
+            )],
+        )],
+        "t",
+    );
+
+    for (index, group) in artifact_group_summaries(inventory).iter().enumerate() {
+        let row_y = 2.04 + index as f64 * 0.68;
+        let row_h = 0.62;
+        if index % 2 == 0 {
+            s.rect(
+                CONTENT_X,
+                row_y,
+                CONTENT_W,
+                row_h,
+                Some(PAPER),
+                None,
+                0.0,
+                Some(2500),
+            );
+        }
+        let count_color = if group.count == 0 { MUTED } else { CYANDK };
+        s.text(
+            CONTENT_X + 0.16,
+            row_y,
+            3.68,
+            row_h,
+            vec![para(
+                "l",
+                vec![
+                    run(
+                        commafy(group.count),
+                        1550,
+                        true,
+                        false,
+                        count_color,
+                        HEAD,
+                    ),
+                    run(
+                        format!(" {}", tr(group.label_key)),
+                        1200,
+                        true,
+                        false,
+                        INK,
+                        HEAD,
+                    ),
+                ],
+            )],
+            "ctr",
+        );
+        s.text(
+            CONTENT_X + 4.0,
+            row_y,
+            CONTENT_W - 4.18,
+            row_h,
+            vec![para(
+                "l",
+                vec![run(
+                    tr(group.definition_key),
+                    1025,
+                    false,
+                    false,
+                    BODY,
+                    BODY_F,
+                )],
+            )],
+            "ctr",
+        );
+    }
+    s.text(
+        CONTENT_X,
+        6.28,
+        CONTENT_W,
+        0.25,
+        vec![para(
+            "l",
+            vec![run(
+                trf(
+                    "deck.artifacts.total",
+                    &[("count", commafy(inventory.object_count))],
+                ),
+                950,
+                true,
+                false,
+                CYANDK,
+                BODY_F,
+            )],
+        )],
+        "t",
+    );
+    s.notes = artifact_inventory_speaker_notes(inventory);
+    Some(s)
+}
+
+fn build_artifact_complexity(d: &Deck) -> Option<SlideB> {
+    let complexity = d.complexity?;
+    let mut s = SlideB::new(Some(WHITE));
+    kicker_title(
+        &mut s,
+        tr("deck.artifact_complexity"),
+        tr("deck.artifact_complexity.subtitle"),
+        false,
+    );
+
+    let top_cards = [
+        (
+            CONTENT_X,
+            3.2,
+            tr("deck.complexity.overall").to_string(),
+            complexity_band_label(&complexity.overall_band).to_string(),
+            String::new(),
+        ),
+        (
+            4.3,
+            4.5,
+            tr("deck.complexity.assessment_coverage").to_string(),
+            format!(
+                "{} / {}",
+                commafy(complexity.fully_assessed_object_count),
+                commafy(complexity.eligible_object_count)
+            ),
+            trf(
+                "deck.complexity.coverage_counts",
+                &[
+                    ("fully", commafy(complexity.fully_assessed_object_count)),
+                    (
+                        "partial",
+                        commafy(complexity.partially_assessed_object_count),
+                    ),
+                    ("unassessed", commafy(complexity.unassessed_object_count)),
+                ],
+            ),
+        ),
+        (
+            9.0,
+            3.4,
+            tr("deck.complexity.population").to_string(),
+            tr(if complexity.assessment_population_complete {
+                "deck.complexity.population_complete"
+            } else {
+                "deck.complexity.population_incomplete"
+            })
+            .to_string(),
+            trf(
+                "deck.complexity.population_counts",
+                &[
+                    ("eligible", commafy(complexity.eligible_object_count)),
+                    ("excluded", commafy(complexity.excluded_object_count)),
+                ],
+            ),
+        ),
+    ];
+    for (x, width, label, value, note) in top_cards {
+        s.rect(
+            x,
+            1.72,
+            width,
+            1.22,
+            Some(PAPER),
+            Some(LINE),
+            1.0,
+            Some(6000),
+        );
+        s.text(
+            x + 0.25,
+            1.94,
+            width - 0.5,
+            0.24,
+            vec![para(
+                "l",
+                vec![run(label, 1050, true, false, CYANDK, BODY_F)],
+            )],
+            "t",
+        );
+        s.text(
+            x + 0.25,
+            2.25,
+            width - 0.5,
+            0.35,
+            vec![para("l", vec![run(value, 1750, true, false, INK, HEAD)])],
+            "t",
+        );
+        if !note.is_empty() {
+            s.text(
+                x + 0.25,
+                2.65,
+                width - 0.5,
+                0.22,
+                vec![para("l", vec![run(note, 850, false, false, MUTED, BODY_F)])],
+                "t",
+            );
+        }
+    }
+
+    let rule_key = match complexity.overall_band.as_str() {
+        "unknown" => "deck.complexity.rule.unknown",
+        "not-applicable" => "deck.complexity.rule.not_applicable",
+        _ => "deck.complexity.rule.definitive",
+    };
+    s.rect(
+        CONTENT_X,
+        3.18,
+        CONTENT_W,
+        0.55,
+        Some(GREEN_BG),
+        Some(GREEN_LN),
+        1.0,
+        Some(6000),
+    );
+    s.text(
+        CONTENT_X + 0.25,
+        3.34,
+        CONTENT_W - 0.5,
+        0.24,
+        vec![para(
+            "l",
+            vec![run(tr(rule_key), 1000, false, false, BODY, BODY_F)],
+        )],
+        "t",
+    );
+
+    let dimensions = [
+        (
+            tr("deck.complexity.dimension.volume"),
+            complexity.dimensions.volume.band.as_str(),
+            complexity.dimensions.volume.coverage.as_str(),
+        ),
+        (
+            tr("deck.complexity.dimension.control_flow"),
+            complexity.dimensions.control_flow.band.as_str(),
+            complexity.dimensions.control_flow.coverage.as_str(),
+        ),
+        (
+            tr("deck.complexity.dimension.feature_breadth"),
+            complexity.dimensions.feature_breadth.band.as_str(),
+            complexity.dimensions.feature_breadth.coverage.as_str(),
+        ),
+        (
+            tr("deck.complexity.dimension.entanglement"),
+            complexity.dimensions.entanglement.band.as_str(),
+            complexity.dimensions.entanglement.coverage.as_str(),
+        ),
+        (
+            tr("deck.complexity.dimension.environment_coupling"),
+            complexity.dimensions.environment_coupling.band.as_str(),
+            complexity.dimensions.environment_coupling.coverage.as_str(),
+        ),
+        (
+            tr("deck.complexity.dimension.opacity"),
+            complexity.dimensions.opacity.band.as_str(),
+            complexity.dimensions.opacity.coverage.as_str(),
+        ),
+        (
+            tr("deck.complexity.dimension.dialect_coupling"),
+            complexity.dimensions.dialect_coupling.band.as_str(),
+            complexity.dimensions.dialect_coupling.coverage.as_str(),
+        ),
+    ];
+    let card_w = 2.65;
+    for (index, (label, band, coverage)) in dimensions.into_iter().enumerate() {
+        let (x, y) = if index < 4 {
+            (CONTENT_X + index as f64 * 2.95, 3.98)
+        } else {
+            (2.375 + (index - 4) as f64 * 2.95, 5.15)
+        };
+        s.rect(x, y, card_w, 0.92, Some(PAPER), Some(LINE), 1.0, Some(6000));
+        s.text(
+            x + 0.2,
+            y + 0.16,
+            card_w - 0.4,
+            0.2,
+            vec![para(
+                "l",
+                vec![run(label, 950, true, false, CYANDK, BODY_F)],
+            )],
+            "t",
+        );
+        s.text(
+            x + 0.2,
+            y + 0.42,
+            card_w - 0.4,
+            0.22,
+            vec![para(
+                "l",
+                vec![run(
+                    complexity_band_label(band),
+                    1300,
+                    true,
+                    false,
+                    INK,
+                    HEAD,
+                )],
+            )],
+            "t",
+        );
+        s.text(
+            x + 0.2,
+            y + 0.68,
+            card_w - 0.4,
+            0.16,
+            vec![para(
+                "l",
+                vec![run(
+                    trf(
+                        "deck.complexity.coverage",
+                        &[("coverage", complexity_coverage_label(coverage).to_string())],
+                    ),
+                    850,
+                    false,
+                    false,
+                    MUTED,
+                    BODY_F,
+                )],
+            )],
+            "t",
+        );
+    }
+
+    s.text(
+        CONTENT_X,
+        6.2,
+        CONTENT_W,
+        0.3,
+        vec![para(
+            "l",
+            vec![run(
+                tr("deck.complexity.dimension_definition"),
+                850,
+                false,
+                false,
+                MUTED,
+                BODY_F,
+            )],
+        )],
+        "t",
+    );
+
+    s.notes = complexity_speaker_notes(complexity);
+    Some(s)
 }
 
 fn build_tables(d: &Deck) -> SlideB {
@@ -634,6 +1001,7 @@ fn build_tables(d: &Deck) -> SlideB {
         );
         y += row_h + row_gap;
     }
+    s.notes = tables_speaker_notes(d);
     s
 }
 
@@ -739,6 +1107,7 @@ fn build_largest(d: &Deck) -> SlideB {
             "t",
         );
     }
+    s.notes = largest_speaker_notes(d);
     s
 }
 
@@ -887,6 +1256,7 @@ fn build_composition(d: &Deck) -> SlideB {
         )],
         "t",
     );
+    s.notes = composition_speaker_notes(d);
     s
 }
 
@@ -991,6 +1361,7 @@ fn build_schema(d: &Deck, fk: (&str, &str, u32)) -> SlideB {
     );
     s.arrow(5.55, 3.92, 2.25, 0.38, CYANDK);
     schema_box(&mut s, CONTENT_R - 4.3, PG, fk.1, parent);
+    s.notes = schema_speaker_notes(d, fk);
     s
 }
 
@@ -1108,6 +1479,7 @@ fn build_relationships(d: &Deck) -> SlideB {
         );
         yy += 0.46;
     }
+    s.notes = relationships_speaker_notes(d);
     s
 }
 
@@ -1344,6 +1716,7 @@ fn build_compression(d: &Deck) -> Option<SlideB> {
         )],
         "t",
     );
+    s.notes = compression_speaker_notes(c);
     Some(s)
 }
 
@@ -1393,5 +1766,6 @@ fn build_ethos(_d: &Deck) -> SlideB {
         )],
         "t",
     );
+    s.notes = trust_speaker_notes();
     s
 }

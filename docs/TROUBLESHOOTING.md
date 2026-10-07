@@ -2,15 +2,15 @@
 
 Common `dbwarp-blueprint` failures and what to do next.
 
-Operator-owned failures now start with a stable `DBPnnnnS` message code, for example `DBP1001E`.
-Use the code when searching docs or opening a support ticket. See [Operator Message Codes](MESSAGES.md).
+Failures start with a stable `DBPnnnnS` message code, for example `DBP1001E`.
+Use the code when searching docs or opening an issue. See [Operator Message Codes](MESSAGES.md).
 
 ## Source Build Exits With Status 2 or 3
 
 `build.sh` exits with status 2 when the installed `rustc` does not match the
 version pinned in `rust-toolchain.toml` and network access has not been
-explicitly approved. Install that exact Rust version, or—after reviewing the
-download boundary—allow the script to fetch its pinned, checksum-verified
+explicitly approved. Install that exact Rust version, or, after reviewing the
+download boundary, allow the script to fetch its pinned, checksum-verified
 bootstrap:
 
 ```bash
@@ -99,15 +99,24 @@ store when `--tls-ca` is omitted. A supplied `.pem` or `.crt` file must contain
 exactly one CA certificate and replaces those roots. The driver checks the
 connection hostname in both `verify-ca` and `verify-full`.
 
-## Tier 2 Requires Consent
+## Consent Required
 
-Symptom:
+Symptom on a live database run, when the confirmation prompt is not answered
+with `y` or `yes`:
 
 ```text
---measure-compression requires --yes
+DBP1701E aborted (no consent)
 ```
 
-Fix:
+Symptom when compression sampling is requested for a structured file without
+`--yes`:
+
+```text
+DBP1006E ... --measure-compression requires --yes (consent flag)
+```
+
+Fix: review the preflight summary, then answer `yes` at the prompt, or rerun
+with `--yes` for a non-interactive run:
 
 ```bash
 --measure-compression --yes
@@ -144,11 +153,11 @@ Compression sections appear only when both flags are present:
 --measure-compression --yes
 ```
 
-Catalog-only Blueprints are valid, but downstream compression estimates will be inferred.
+Catalog-only Blueprints are valid, but compression estimates will be inferred from column types.
 
 ## Some Compression Samples Are Marked Biased
 
-Some engines do not provide uniform table sampling in all cases, and small tables may require a `LIMIT` fallback. The Blueprint file records `sampled_with_bias` and `bias_reason` so the estimator and reviewer can account for it.
+Some engines do not provide uniform table sampling in all cases, and small tables may require a `LIMIT` fallback. The Blueprint file records `sampled_with_bias` and `bias_reason` so a reviewer can account for it.
 
 Biased samples are still useful; they are just not as strong as uniform samples.
 
@@ -165,10 +174,6 @@ Do not include live database flags with `--from-toml`. The tool rejects mixed li
 ## Blueprint File Looks Too Small
 
 A normal Blueprint file is compact. It contains structural metadata, rounded counts, indexes, FK graph shape, and optional compression summaries. It should not contain row values or identifiers.
-
-If you need a representative benchmark database, pass the approved
-`blueprint.toml` to the separately reviewed downstream tooling authorized for
-that engagement.
 
 ## Need to Prove No Upload Happened
 

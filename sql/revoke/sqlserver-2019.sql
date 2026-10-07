@@ -1,5 +1,5 @@
 -- =============================================================================
--- DBWarp Blueprint collector-login removal — SQL Server 2019
+-- DBWarp Blueprint collector-login removal: SQL Server 2019
 -- =============================================================================
 -- Run in SQLCMD mode as a sysadmin. EDIT the login and database values below
 -- to match the grant scripts exactly. The script removes the dedicated users

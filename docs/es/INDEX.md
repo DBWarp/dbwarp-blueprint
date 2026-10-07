@@ -33,4 +33,4 @@ Referencias principales:
 - [Presentación visual de resumen](DECK.md)
 - [Descarga de binarios](BINARIES.md)
 
-La entrega de Blueprints y su uso posterior se rigen por el acuerdo con el cliente y la documentación suministrada con el producto DBWarp posterior aprobado. Este repositorio solo documenta la captura, revisión y empaquetado de Blueprints.
+Este repositorio documenta únicamente la captura, revisión y empaquetado de Blueprint.

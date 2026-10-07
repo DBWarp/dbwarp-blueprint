@@ -43,34 +43,25 @@ cargo test --locked --all-targets
 python3 tools/check_public_tree.py
 ```
 
-Współdzielony rdzeń ma własny zestaw testów jednostkowych:
+Rdzeń biblioteki posiada własne testy jednostkowe:
 
 ```bash
 cargo test --locked --manifest-path crates/dbwarp-blueprint-core/Cargo.toml --lib
 ```
 
-Pomyślne testy lokalne nie stanowią kwalifikacji wersji baz danych ani platform.
-Opisz, co faktycznie przetestowano, i jawnie oznacz pozostałe konfiguracje jako
-nieprzetestowane. Bez zgody opiekunów nie publikuj artefaktów, nie aktualizuj
-tagów wydań ani nie zmieniaj ustawień bezpieczeństwa repozytorium w ramach
-poprawki.
+Przechodzenie lokalnych testów nie oznacza, że zmiana działa na każdej wersji bazy danych ani platformie. Opisz, co dokładnie zostało przetestowane, a inne konfiguracje, które nie zostały przetestowane, wyraźnie oznacz jako nieprzetestowane. Nie publikuj artefaktów, nie aktualizuj tagów wydania ani nie zmieniaj ustawień zabezpieczeń repozytorium w ramach poprawki bez zgody osoby odpowiedzialnej za utrzymanie.
 
 ## Przepływ pracy opiekuna
 
 Kanonicznym źródłem jest angielska pomoc Rust oraz definicje komunikatów/UI
-w `src/i18n.rs`. Gdy zmienia się dowolny tekst widoczny dla klienta:
+w `src/i18n.rs`. Gdy zmienia się dowolny tekst widoczny dla użytkownika:
 
 1. zaktualizuj w tym samym commicie każdy katalog językowy w `locales/`;
 2. zachowaj dokładnie wszystkie symbole zastępcze i kanoniczne tokeny operacyjne;
 3. uruchom ukierunkowany test dokładnego pokrycia;
-4. dodaj lub zaktualizuj odpowiedni przypadek granicy operatorskiej w
+4. dodaj lub zaktualizuj odpowiedni przypadek testowy w.
    `tests/cli_errors.rs`, gdy zmienia się awaria lub ostrzeżenie;
-5. uruchom pełny zestaw testów i sprawdź reprezentatywne dane wyjściowe pomocy/prezentacji;
-6. uzyskaj weryfikację techniczną przez osobę biegle posługującą się danym językiem, zanim nowe brzmienie zostanie uznane za ostateczne dla umowy z klientem, zgłoszenia regulacyjnego lub publicznego materiału marketingowego.
-
-Ten proces dokładnego pokrycia dotyczy katalogów używanych podczas działania,
-wbudowanych w plik binarny. Tłumaczony Markdown ma charakter uzupełniający;
-zobacz [`docs/TRANSLATIONS.md`](../TRANSLATIONS.md).
+5. Uruchom pełny zestaw testów i przeanalizuj przykładowe wyniki help/deck.
 
 Ukierunkowana walidacja:
 

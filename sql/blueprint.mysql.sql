@@ -1,4 +1,4 @@
--- blueprint.mysql.sql — pure-SQL alternative to the dbwarp-blueprint binary for MySQL.
+-- blueprint.mysql.sql: pure-SQL alternative to the dbwarp-blueprint binary for MySQL.
 --
 -- Run as:
 --   mysql -h <host> -P <port> -u <user> -p --skip-column-names \
@@ -12,7 +12,7 @@
 -- script normalizes the JSON into the canonical anonymized Blueprint TOML.
 --
 -- Read every line below before running. The query joins
--- information_schema views and emits structural data only — no row content.
+-- information_schema views and emits structural data only: no row content.
 --
 -- The bare -p prompts without placing the password in shell history or the
 -- process list. Real names and declared enum/set members are present in the
@@ -20,8 +20,10 @@
 -- Keep the JSON protected inside the source environment. By default the
 -- normalizer uses a fresh secret key, so anonymous labels intentionally differ
 -- between runs.
--- The query covers every user table in <dbname>; it has no schema-subset
--- selector. Use the Rust collector when only a narrower scope is approved.
+-- The query covers ordinary local tables in the selected <dbname>; it has no
+-- narrower selector and deliberately omits FEDERATED external tables. Use the
+-- dbwarp-blueprint binary when only a narrower scope or complete v7 table kinds are
+-- required.
 
 SELECT JSON_OBJECT(
   'schema_version', 2,
@@ -80,6 +82,8 @@ SELECT JSON_OBJECT(
     ))
     FROM information_schema.TABLES t
     WHERE t.TABLE_TYPE = 'BASE TABLE'
+      AND COALESCE(t.ENGINE, '') <> 'FEDERATED'
+      AND t.TABLE_SCHEMA = DATABASE()
       AND t.TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys')
   ), JSON_ARRAY())
 ) AS blueprint;

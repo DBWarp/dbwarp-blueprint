@@ -1,0 +1,6 @@
+ERROR:
+ORA-28002: the password will expire within 7 days
+
+
+SP2-0735: unknown SET option beginning "DEFINITELY..."
+	 1

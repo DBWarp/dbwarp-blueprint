@@ -60,11 +60,32 @@ COMMON_REQUIRED = {
     "sql/blueprint.mysql.sql",
     "sql/blueprint.pg.sql",
     "sql/blueprint.sqlserver.sql",
+    "sql/oracle-accounts.sql",
+    "sql/capture/README.md",
+    "sql/capture/capture.ps1",
+    "sql/capture/capture.sh",
+    "sql/capture/run.sql",
+    "sql/capture/sanitize.awk",
+    "sql/capture/sanitize.ps1",
+    "sql/capture/oracle-12c/basic-12.1.sql",
+    "sql/capture/oracle-12c/basic-12.2.sql",
+    "sql/capture/oracle-19c/basic.sql",
+    "sql/capture/oracle-21c/basic.sql",
+    "sql/capture/oracle-26ai/basic.sql",
     "sql/grants/README.md",
     "sql/grants/DATABASE_PERMISSIONS.md",
+    "sql/grants/ORACLE_PREVIEW.md",
     "sql/grants/mysql/basic.sql",
     "sql/grants/mysql/standard.sql",
     "sql/grants/mysql/enhanced.sql",
+    "sql/grants/oracle-12c/minimum.sql",
+    "sql/grants/oracle-12c/basic.sql",
+    "sql/grants/oracle-19c/minimum.sql",
+    "sql/grants/oracle-19c/basic.sql",
+    "sql/grants/oracle-21c/minimum.sql",
+    "sql/grants/oracle-21c/basic.sql",
+    "sql/grants/oracle-23ai/minimum.sql",
+    "sql/grants/oracle-23ai/basic.sql",
     "sql/grants/postgresql/basic.sql",
     "sql/grants/postgresql/standard.sql",
     "sql/grants/postgresql/enhanced.sql",
@@ -75,13 +96,27 @@ COMMON_REQUIRED = {
     "sql/grants/sqlserver-2022/standard.sql",
     "sql/grants/sqlserver-2022/enhanced.sql",
     "sql/revoke/mysql.sql",
+    "sql/revoke/oracle-12c.sql",
+    "sql/revoke/oracle-19c.sql",
+    "sql/revoke/oracle-21c.sql",
+    "sql/revoke/oracle-23ai.sql",
     "sql/revoke/postgresql.sql",
     "sql/revoke/sqlserver-2019.sql",
     "sql/revoke/sqlserver-2022.sql",
     "assets/fonts/dm-sans/OFL.txt",
+    ".github/assets/dbwarp-logo-dark.png",
+    ".github/assets/dbwarp-logo-light.png",
     "licenses/mysql_async/LICENSE-APACHE",
     "licenses/mysql_async/LICENSE-MIT",
     "licenses/mysql_async/MODIFICATIONS.md",
+    "licenses/libgssapi-sys/LICENSE-MIT",
+    "licenses/libgssapi-sys/MODIFICATIONS.md",
+    "licenses/tiberius/LICENSE-APACHE.txt",
+    "licenses/tiberius/LICENSE-MIT.txt",
+    "licenses/tiberius/MODIFICATIONS.md",
+    "licenses/winauth/LICENSE-APACHE",
+    "licenses/winauth/LICENSE-MIT",
+    "licenses/winauth/MODIFICATIONS.md",
     "third-party-licenses/MANIFEST.json",
     "SBOM.cdx.json",
     "PROVENANCE.json",
@@ -121,12 +156,20 @@ SUPPLEMENTAL_TRANSLATIONS = {
 OPERATOR_ALLOWED = COMMON_REQUIRED | SUPPLEMENTAL_TRANSLATIONS
 
 # Operator-facing subtrees use closed allowlists so broad directory copying
-# cannot silently add unreviewed documents or scripts to an archive.
+# cannot silently add unlisted documents or scripts to an archive.
 OPERATOR_SUBTREE_PREFIXES = ("docs/", "samples/", "sql/")
 
 TARGETS = {
-    "dbwarp-blueprint-linux-x86_64": ("x86_64-unknown-linux-gnu", [], "dbwarp-blueprint"),
-    "dbwarp-blueprint-linux-arm64": ("aarch64-unknown-linux-gnu", [], "dbwarp-blueprint"),
+    "dbwarp-blueprint-linux-x86_64": (
+        "x86_64-unknown-linux-gnu",
+        ["integrated-auth-gssapi"],
+        "dbwarp-blueprint",
+    ),
+    "dbwarp-blueprint-linux-arm64": (
+        "aarch64-unknown-linux-gnu",
+        ["integrated-auth-gssapi"],
+        "dbwarp-blueprint",
+    ),
     "dbwarp-blueprint-macos-arm64": ("aarch64-apple-darwin", [], "dbwarp-blueprint"),
     "dbwarp-blueprint-windows-x86_64": (
         "x86_64-pc-windows-msvc",
@@ -528,11 +571,27 @@ def validate_archive(
                 "vendor/mysql_async/LICENSE-APACHE",
                 "vendor/mysql_async/LICENSE-MIT",
                 "vendor/mysql_async/MODIFICATIONS.md",
+                "vendor/libgssapi-sys/LICENSE-MIT",
+                "vendor/libgssapi-sys/MODIFICATIONS.md",
+                "vendor/tiberius/LICENSE-APACHE.txt",
+                "vendor/tiberius/LICENSE-MIT.txt",
+                "vendor/tiberius/MODIFICATIONS.md",
+                "vendor/winauth/LICENSE-APACHE",
+                "vendor/winauth/LICENSE-MIT",
+                "vendor/winauth/MODIFICATIONS.md",
             }
         )
         required.discard("licenses/mysql_async/LICENSE-APACHE")
         required.discard("licenses/mysql_async/LICENSE-MIT")
         required.discard("licenses/mysql_async/MODIFICATIONS.md")
+        required.discard("licenses/libgssapi-sys/LICENSE-MIT")
+        required.discard("licenses/libgssapi-sys/MODIFICATIONS.md")
+        required.discard("licenses/tiberius/LICENSE-APACHE.txt")
+        required.discard("licenses/tiberius/LICENSE-MIT.txt")
+        required.discard("licenses/tiberius/MODIFICATIONS.md")
+        required.discard("licenses/winauth/LICENSE-APACHE")
+        required.discard("licenses/winauth/LICENSE-MIT")
+        required.discard("licenses/winauth/MODIFICATIONS.md")
         if not any(name.startswith("vendor-crates/") for name in files):
             failures.append("source archive has no vendor-crates dependency tree")
     for missing in sorted(required - files.keys()):

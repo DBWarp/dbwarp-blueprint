@@ -23,7 +23,7 @@ les commandes, valeurs, identifiants et schémas de sortie canoniques :
 
 Pour les exécutions sans surveillance, définissez `DBWARP_BLUEPRINT_LANG=fr` ou des
 paramètres régionaux de processus standard. Un `--lang` explicite est toujours
-prioritaire. Les codes DBP et les détails de bas niveau du fournisseur restent
+prioritaire. Les codes DBP et les détails de bas niveau du pilote restent
 canoniques, afin qu'un échec localisé puisse être recherché et transmis au
 support.
 
@@ -60,35 +60,11 @@ Utile lorsque le nom d'utilisateur contient des caractères difficiles à encode
   --audit-log mysql-appdb.audit.txt
 ```
 
-Pour une reconstruction synthétique représentative des performances, utilisez
-la politique équilibrée par défaut : métadonnées de déclaration/index MySQL
-exactes et largeurs échantillonnées arrondies avec précision :
+La recette ci-dessus utilise déjà la politique équilibrée par défaut : métadonnées MySQL declaration/index exactes et largeurs échantillonnées arrondies avec précision.
 
-```bash
-./dbwarp-blueprint \
-  --connect mysql://mysql-primary.internal:3306/appdb \
-  --user-file /etc/dbwarp/mysql-blueprint.user \
-  --password-file /etc/dbwarp/mysql-blueprint.pass \
-  --tls-mode verify-full \
-  --tls-ca /etc/pki/mysql-ca.pem \
-  --measure-compression --yes \
-  --out mysql-appdb.blueprint.toml \
-  --audit-log mysql-appdb.audit.txt
-```
+Confirmez `declared_length_fidelity = "exact"`, `index_length_fidelity = "exact"` et `observed_length_fidelity = "relative-rounded-v2"`. Utilisez `--length-fidelity exact --yes` uniquement après que votre organisation ait approuvé le partage de statistiques de longueur d'échantillon exactes. Les noms et les valeurs restent exclus.
 
-Vérifiez `declared_length_fidelity = "exact"`,
-`index_length_fidelity = "exact"` et
-`observed_length_fidelity = "relative-rounded-v2"`. N'utilisez
-`--length-fidelity exact --yes` qu'après que le client a approuvé le partage
-des statistiques exactes de longueur échantillonnée. Les noms et les valeurs
-restent exclus.
-
-Pour les parcs contenant des milliers de tables, augmentez si nécessaire
-`--max-wall-secs` au-delà de sa valeur par défaut de 300 secondes. Les marqueurs
-de fidélité certifient la politique, tandis que l'estimateur en aval exige
-séparément les longueurs moyenne/p95 observées pour chaque colonne indexée non
-vide et de largeur variable avant de déclarer une fixture prête pour un
-benchmark.
+Dans les bases de données contenant des milliers de tables, augmentez `--max-wall-secs` au-dessus de sa valeur par défaut de 300 secondes si nécessaire. Les marqueurs de fidélité décrivent la politique ; ils n'indiquent pas que l'échantillonnage a atteint toutes les tables.
 
 ## Recette : authentification SQL de SQL Server
 
@@ -117,10 +93,10 @@ Générez le jeton en dehors de l'outil, puis fournissez-le par fichier :
 ```bash
 install -d -m 700 "$HOME/.cache/dbwarp-blueprint"
 TOKEN_FILE="$HOME/.cache/dbwarp-blueprint/sql-token"
+install -m 600 /dev/null "$TOKEN_FILE"
 az account get-access-token \
   --resource https://database.windows.net/ \
   --query accessToken -o tsv > "$TOKEN_FILE"
-chmod 600 "$TOKEN_FILE"
 
 ./dbwarp-blueprint \
   --connect sqlserver://sql-primary.database.windows.net,1433/appdb \
@@ -128,11 +104,15 @@ chmod 600 "$TOKEN_FILE"
   --auth-mode entra-token \
   --azure-token-file "$TOKEN_FILE" \
   --tls-mode verify-full \
-  --tls-ca /etc/pki/sqlserver-ca.pem \
   --measure-compression --yes \
   --out mssql-entra.blueprint.toml \
   --audit-log mssql-entra.audit.txt
 ```
+
+Azure SQL présente un certificat émis par une autorité publique. Cette recette
+laisse donc `--tls-ca` non défini et utilise le magasin de confiance du système
+d’exploitation. Un fichier `--tls-ca` fourni remplace ce magasin par un seul
+certificat ; consultez [TLS](TLS.md).
 
 ## Recette : revue de sécurité du catalogue uniquement
 
@@ -148,7 +128,7 @@ chmod 600 "$TOKEN_FILE"
   --yes
 ```
 
-Il s'agit du mode de revue le plus simple. Il évite l'échantillonnage des lignes, mais produit en aval des estimations de compression et de sortie réseau moins précises.
+C'est le mode de révision avec le moins de contraintes. Il évite l'échantillonnage des lignes, mais produit des estimations de compression et de débit de sortie moins précises.
 
 ## Évaluer la complexité de migration hors tables
 
@@ -178,7 +158,7 @@ Après approbation de sécurité, recueillez les dépendances anonymes et les pr
 ```
 
 
-Examinez `visibility`, les trois indicateurs de complétude, `catalogs_unreadable`, `families_not_inventoried` et `counts_by_external_class`. Traitez chaque classe externe comme une tâche de migration explicite. Un objet inventorié ne prouve pas que DBWarp peut le recréer ou le traduire ; comparez-le à la matrice de capacité de migration. Consultez [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
+Vérifiez `visibility`, les trois indicateurs de complétude, `catalogs_unreadable`, `families_not_inventoried` et `counts_by_external_class`. Traitez chaque classe externe comme une tâche de migration explicite. Ne considérez pas un objet répertorié comme une preuve que DBWarp peut le recréer ou le traduire ; demandez à DBWarp quels types d'objets sont pris en charge pour votre migration. Consultez [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
 
 ## Recette : désactiver la sonde RTT
 
@@ -213,9 +193,9 @@ Pour les grands systèmes de production, conservez une première exécution prud
 
 Si la sortie marque de nombreux échantillons comme biaisés ou manquants, recommencez depuis une réplique en lecture avec un budget temporel plus élevé.
 
-## Recette : un client, plusieurs bases de données
+## Recette : Plusieurs bases de données dans un seul package.
 
-Utilisez un manifeste de lot lorsqu'un client souhaite un dossier vérifié unique pour plusieurs bases de données.
+Utilisez un manifeste par lots lorsque vous souhaitez un seul paquet révisé pour plusieurs bases de données.
 
 `customer.batch.toml` :
 
@@ -271,9 +251,9 @@ Exécution :
 Cette opération écrit `bundle.toml`, un Blueprint enfant par source et un audit par source.
 Les Blueprints enfants restent vérifiables indépendamment.
 
-## Recette : un client, des bases de données et des fichiers de lac de données mélangés
+## Recette : Bases de données hétérogènes et fichiers de data lake.
 
-Utilisez des sources de fichiers structurés dans le même lot lorsque le client dispose d'extraits Parquet ou Avro à côté de bases de données actives.
+Utilisez les sources de fichiers structurés dans le même lot lorsque vous avez des extractions Parquet ou Avro à proximité de bases de données actives.
 
 ```toml
 [defaults]
@@ -292,7 +272,7 @@ tags = ["database"]
 [[source]]
 id = "orders_parquet"
 kind = "parquet"
-paths = ["/mnt/customer/orders/year=*/month=*/*.parquet"]
+paths = ["/data/orders/year=*/month=*/*.parquet"]
 dataset_mode = "partitioned_dataset"
 logical_table = "orders"
 tags = ["lake", "orders"]
@@ -300,12 +280,12 @@ tags = ["lake", "orders"]
 [[source]]
 id = "events_avro"
 kind = "avro"
-paths = ["/mnt/customer/events/*.avro"]
+paths = ["/data/events/*.avro"]
 dataset_mode = "one_table_per_file"
 tags = ["lake", "events"]
 ```
 
-`partitioned_dataset` fusionne actuellement les fichiers comme `merge_same_schema`, mais conserve l'intention du client visible dans le bundle. Conservez les schémas sans rapport dans des sources distinctes.
+`partitioned_dataset` fusionne les fichiers tels que `merge_same_schema` et enregistre le mode déclaré dans le groupe. Conservez les schémas non liés dans des sources distinctes.
 
 ## Recette : extraire une seule source ou table d'un bundle
 
@@ -333,14 +313,11 @@ Extrayez une table d'une source :
   --out erp_pg_table_042.blueprint.toml
 ```
 
-Utilisez cette méthode lorsque le client n'approuve qu'une partie de son parc pour un benchmark, ou lorsque vous souhaitez générer une petite fixture ciblée à partir d'un grand bundle.
+Utilisez ceci lorsque seulement une partie d'un ensemble est approuvée pour être partagée.
 
-## Recette : empaqueter pour transmission un bundle examiné séparément
+## Recette : Préparer un ensemble validé pour le partage.
 
-Le répertoire de bundle de travail contient les Blueprints enfants et les
-audits à accès contrôlé. Ne le transférez pas dans son intégralité. Après avoir
-examiné les valeurs du manifeste et les Blueprints enfants, créez une
-transmission dans un seul fichier :
+Le répertoire du paquet de travail contient des Blueprints enfants et des audits contrôlés par l'accès. Ne le transférez pas intégralement. Après avoir examiné les valeurs du manifeste et les Blueprints enfants, créez un seul fichier à partager :
 
 ```bash
 ./dbwarp-blueprint \
@@ -353,12 +330,12 @@ identifiants de groupe de jeux de données et les métadonnées de chemin d'audi
 fournis par l'opérateur. Utilisez des valeurs anonymes, inspectez le TOML
 empaqueté et transférez-le uniquement par le canal approuvé.
 
-## Recette : dossier de transmission par lot
+## Recette : Paquet groupé pour le partage.
 
-Suivez la [politique de transmission](QUICKSTART.md#review-and-share). Conservez localement le manifeste de travail, les audits, les commandes enregistrées et les notes de revue. Créez ce répertoire distinct uniquement à partir du Blueprint empaqueté et vérifié.
+Suivez les [instructions de révision et de partage](QUICKSTART.md#review-and-share). Conservez le manifeste de travail, les audits et les enregistrements de commandes localement ; créez ce répertoire distinct uniquement à partir du Blueprint empaqueté révisé.
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   customer-blueprint-bundle.packed.toml
 ```
 
@@ -374,8 +351,8 @@ Ce mode lit uniquement le fichier TOML et écrit la présentation. Il refuse les
 
 ## Recette : reproductibilité à l'octet près
 
-Figez l'horodatage et réutilisez la même clé d'anonymisation protégée et
-conservée par le client :
+Figez l'horodatage et réutilisez la même clé d'anonymisation protégée que vous
+détenez :
 
 ```bash
 ./dbwarp-blueprint \
@@ -388,27 +365,15 @@ conservée par le client :
   --yes
 ```
 
-Le fichier de clé doit contenir exactement 32 octets bruts ou 64 caractères
-hexadécimaux, ne doit pas être lisible par le groupe ou les autres utilisateurs
-sous Unix et ne doit jamais être inclus dans la transmission. Sans cette
-option, une nouvelle clé aléatoire fournie par le système d'exploitation change
-intentionnellement l'ordre des libellés anonymes à chaque exécution. Figer
-uniquement `--generated-at` ne suffit pas. Utilisez la recette complète pour
-les instantanés forensiques approuvés ; une présentation générée deux fois à
-partir du même Blueprint vérifié reste identique octet pour octet lorsque son
-horodatage et sa langue sont inchangés.
+Le fichier de clé doit contenir exactement 32 octets bruts ou 64 caractères hexadécimaux, ne doit pas être group/world-readable sous Unix, et ne doit jamais être partagé. Sans cette option, une nouvelle clé générée aléatoirement par le système d'exploitation modifie intentionnellement l'ordre des étiquettes anonymes à chaque exécution. Fixer uniquement `--generated-at` est insuffisant. Utilisez la recette complète pour les instantanés forensiques approuvés ; Une présentation générée deux fois à partir du même Blueprint examiné reste identique au niveau des octets lorsque son horodatage et sa langue ne changent pas.
 
-## Recette : dossier de transmission à DBWarp
+## Recette : Package à partager avec DBWarp.
 
-Suivez la [politique de transmission](QUICKSTART.md#review-and-share).
+Suivez les [instructions de révision et de partage](QUICKSTART.md#review-and-share). Le paquet par défaut contient uniquement le Blueprint approuvé :
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   blueprint.toml
 ```
 
-Par défaut, partagez uniquement le `blueprint.toml` vérifié ou le bundle empaqueté. La présentation `blueprint.pptx` ne peut l’accompagner qu’après vérification de son contenu et de son niveau de confidentialité, puis approbation distincte conformément à la politique de votre organisation.
-
-Conservez localement, avec un accès contrôlé, les audits, commandes enregistrées, notes de revue et présentations non approuvées. Ils peuvent contenir des points de terminaison, identités authentifiées, chemins locaux, données temporelles et identifiants du manifeste. Envoyez les preuves opérationnelles uniquement pour un besoin précis d’assistance, via un canal sécurisé approuvé.
-
-L’outil ne crée pas `command-used.redacted.txt` ; il s’agit d’un enregistrement facultatif de l’opérateur, pas d’un élément standard du dossier. N’incluez jamais de fichiers de mots de passe ou de jetons, de clés d’anonymisation, de clés privées d’autorité de certification, de dumps du client ni de journaux de base de données.
+Ajoutez `blueprint.pptx` uniquement après une revue et une approbation distinctes. Conservez les audits, les enregistrements de commandes et le matériel credential/key en dehors du répertoire partagé ; envoyez les audits uniquement pour un besoin de support spécifique via un canal sécurisé approuvé.

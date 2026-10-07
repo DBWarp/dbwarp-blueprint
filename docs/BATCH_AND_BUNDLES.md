@@ -2,7 +2,7 @@
 
 `dbwarp-blueprint` supports both one-source Blueprint files and multi-source bundle directories.
 
-Use a single `blueprint.toml` when the customer is sharing one database, one table subset, one Parquet file, or one Avro file. Use a bundle when the customer has multiple databases, multiple structured-file datasets, or wants one review package for a whole estate.
+Use a single `blueprint.toml` when you are sharing one database, one table subset, one Parquet file, or one Avro file. Use a bundle when you have multiple databases, multiple structured-file datasets, or want one review package for a whole estate.
 
 ## Bundle Layout
 
@@ -23,7 +23,7 @@ customer-blueprint-bundle/
 
 `bundle.toml` contains source-level metadata and relative paths to child Blueprint files. This is the preferred working form because each source stays independently reviewable, auditable, and rerunnable.
 
-For a separately reviewed handoff, pack the directory into one embedded TOML:
+To share a bundle as one file, pack the directory into one embedded TOML:
 
 ```bash
 dbwarp-blueprint \
@@ -44,10 +44,9 @@ Current bundles use `schema_version = 3` and
 with `blueprint_path`; a packed bundle embeds it under `blueprint`. Writers emit
 only these canonical identifiers.
 
-Readers also accept bundle schemas v1 and v2. Those contracts are input-only
-compatibility: an accepted legacy bundle is normalized to v3 and is never
-re-emitted with former identifiers. Because old bundles do not state whether
-sources are independent, replicas, or shards, their relationship becomes
+A v1 or v2 bundle is still read and is normalized to v3. Those versions do not
+record whether sources are independent, replicas, or shards, so their
+relationship becomes
 `unknown` and cross-source aggregate totals are suppressed. Child paths must
 be relative and must remain inside the bundle directory after canonicalization.
 
@@ -74,7 +73,7 @@ partial shard set from being presented as the whole dataset.
 
 ## Batch Manifest
 
-Create a customer-owned manifest:
+Create a manifest:
 
 ```toml
 [defaults]
@@ -189,7 +188,7 @@ For Parquet and Avro sources:
 - `one_table_per_file` maps each file to a separate anonymously labelled table
   in one child Blueprint file.
 - `merge_same_schema` merges many files into one logical table when column counts match.
-- `partitioned_dataset` currently uses the same merge behavior as `merge_same_schema`; it reserves the semantic distinction for Hive-style partition discovery.
+- `partitioned_dataset` behaves like `merge_same_schema`.
 
 The merge check is intentionally conservative. It requires matching anonymized
 column layout, canonical/native types, nullability, declared widths,
@@ -248,14 +247,13 @@ Supported selector keys are:
 
 Selectors can be passed as one comma-separated string or as repeated `--select` flags. Conflicting values for the same key are rejected.
 
-## Downstream Handoff
+## Artifact Complexity In Bundles
 
-A bundle is a portable, reviewable Blueprint input. Before accepting one, a
-downstream consumer must validate the bundle contract and schema versions,
-apply the recorded selectors, and preserve source IDs when combining multiple
-children so table IDs cannot collide. Commands and compatibility rules for
-other DBWarp products belong to their separately reviewed documentation and
-are intentionally not duplicated here.
+Artifact complexity remains a property of each child Blueprint. It is never
+summed, averaged, or assigned a bundle-level band: sources may use different
+engines, analyzer versions, dialects, grammar profiles, scopes, and assessment
+populations, so an aggregate would not have a defensible meaning. Compare
+each source independently.
 
 ## Privacy And Review Boundary
 
@@ -266,7 +264,7 @@ A bundle does not relax the privacy model:
   capture always walks container records to derive counts, lengths and null
   fractions, even without compression measurement;
 - decoded samples stay in memory;
-- bundle metadata uses customer-chosen source IDs and tags;
+- bundle metadata uses the source IDs and tags you chose;
 - no bundle command sends telemetry or uploads files.
 
-The customer can remove any child Blueprint or source entry before sharing the bundle.
+You can remove any child Blueprint or source entry before sharing the bundle.

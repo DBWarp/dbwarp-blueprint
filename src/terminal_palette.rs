@@ -12,27 +12,12 @@ pub enum ColorCapability {
     Mono,
 }
 
-/// RGB values shared by CLI presentation and the monitor TUI.
-#[allow(dead_code)]
+/// RGB values for this binary's CLI presentation roles.
 pub mod palette {
-    pub const INK: (u8, u8, u8) = (0x0b, 0x12, 0x20);
-    pub const PANEL: (u8, u8, u8) = (0x11, 0x1a, 0x2c);
-    pub const EDGE: (u8, u8, u8) = (0x1a, 0x24, 0x38);
-    pub const SELECTED: (u8, u8, u8) = (0x18, 0x2f, 0x3a);
-    pub const TEXT: (u8, u8, u8) = (0xe7, 0xec, 0xf3);
-    pub const MUTED: (u8, u8, u8) = (0x8e, 0xa0, 0xb8);
-    pub const DIM: (u8, u8, u8) = (0x5f, 0x71, 0x88);
     pub const TEAL: (u8, u8, u8) = (0x2d, 0xd4, 0xbf);
-    pub const AQUA: (u8, u8, u8) = (0x5e, 0xea, 0xd4);
-    pub const BLUE: (u8, u8, u8) = (0x38, 0xbd, 0xf8);
-    pub const GOOD: (u8, u8, u8) = (0x34, 0xd3, 0x99);
     pub const WARN: (u8, u8, u8) = (0xfb, 0xbf, 0x24);
     pub const BAD: (u8, u8, u8) = (0xf8, 0x71, 0x71);
-    pub const PG: (u8, u8, u8) = BLUE;
-    pub const MYSQL: (u8, u8, u8) = WARN;
-    pub const TDS: (u8, u8, u8) = (0xa7, 0x8b, 0xfa);
-    pub const COMPRESS: (u8, u8, u8) = TEAL;
-    pub const WIRE: (u8, u8, u8) = AQUA;
+    pub const WIRE: (u8, u8, u8) = (0x5e, 0xea, 0xd4);
 }
 
 pub fn detect_color_capability() -> ColorCapability {

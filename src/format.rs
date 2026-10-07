@@ -20,10 +20,10 @@ use sha2::Sha256;
 #[cfg(test)]
 pub use dbwarp_blueprint_core::MIN_SCHEMA_VERSION;
 pub use dbwarp_blueprint_core::{
-    ArtifactInventory, BlueprintArtifact, BlueprintCardinality, BlueprintColumn,
-    BlueprintCompression, BlueprintExternalPrerequisite, BlueprintFile, BlueprintIndex,
-    BlueprintRelationship, BlueprintSampleLayout, BlueprintTable, DatabaseTopology, DatasetScope,
-    FkEdge, LanguageFeatureCensus, NetworkProbe, Totals, ARTIFACT_CONTRACT,
+    ArtifactInventory, ArtifactRequirement, BlueprintArtifact, BlueprintCardinality,
+    BlueprintColumn, BlueprintCompression, BlueprintExternalPrerequisite, BlueprintFile,
+    BlueprintIndex, BlueprintRelationship, BlueprintSampleLayout, BlueprintTable, DatabaseTopology,
+    DatasetScope, FkEdge, LanguageFeatureCensus, NetworkProbe, Totals, ARTIFACT_CONTRACT,
     LANGUAGE_CENSUS_CONTRACT, SCHEMA_VERSION,
 };
 
@@ -172,6 +172,45 @@ pub fn round_rows(n: u64) -> u64 {
     round_to(n, bucket)
 }
 
+/// Round an engine estimate without collapsing a known-positive table into
+/// the same serialized value as a proven empty table.
+///
+/// The ordinary privacy bucket maps estimates 1..=49 to zero.  Zero is a
+/// useful fact only when the engine proved the table empty; for an estimate it
+/// causes readers (and relationship enrichment) to treat a non-empty table
+/// as empty.  Use the first non-zero bucket for a positive estimate.  The
+/// accompanying `row_count_quality = "engine-estimate"` remains the authority
+/// that this is not an exact count.
+pub fn round_estimated_rows(n: u64) -> u64 {
+    if n == 0 {
+        0
+    } else {
+        round_rows(n).max(100)
+    }
+}
+
+/// Round a largest-partition estimate without inventing a value at exact-read
+/// scale. Catalog estimates may use the first non-zero privacy bucket. When
+/// the table population is exact, a bucket that rounds to zero or above the
+/// exact total is unrepresentable and the optional value is omitted.
+pub fn round_partition_rows_max(
+    n: u64,
+    serialized_table_rows: u64,
+    exact_table_population: bool,
+) -> Option<u64> {
+    if serialized_table_rows == 0 {
+        return Some(0);
+    }
+    if n == 0 {
+        return None;
+    }
+    if exact_table_population {
+        let rounded = round_rows(n);
+        return (rounded > 0 && rounded <= serialized_table_rows).then_some(rounded);
+    }
+    Some(round_estimated_rows(n).min(serialized_table_rows))
+}
+
 /// Round bytes to nearest 1KiB if < 1MiB, else nearest 1MiB if < 1GiB,
 /// else nearest 100MiB. Sizes are bucket-quantized so low-bit channels are gone.
 pub fn round_bytes(n: u64) -> u64 {
@@ -191,7 +230,7 @@ pub fn round_bytes(n: u64) -> u64 {
 /// UTC time (seconds resolution) is used.
 ///
 /// Pinning is via the `--generated-at` CLI flag, never an environment
-/// variable — the audit-relevant runtime surface stays narrow and
+/// variable: the audit-relevant runtime surface stays narrow and
 /// explicit, matching the README trust contract "no environment
 /// variables read by default."
 pub fn generated_at_now(pinned: Option<&str>) -> String {
@@ -204,7 +243,21 @@ pub fn generated_at_now(pinned: Option<&str>) -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
-/// Round Tier-2 in-memory sample buffer size — coarser than round_bytes
+/// The reference instant for statistics-freshness classification. A
+/// parseable pinned `--generated-at` timestamp anchors the fresh/stale
+/// boundary so identical inputs serialize identical Blueprints; an absent
+/// or unparseable pin falls back to the current time, matching
+/// [`generated_at_now`]'s clock.
+pub fn stats_freshness_reference(pinned: Option<&str>) -> chrono::DateTime<chrono::Utc> {
+    pinned
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| value.with_timezone(&chrono::Utc))
+        .unwrap_or_else(chrono::Utc::now)
+}
+
+/// Round Tier-2 in-memory sample buffer size: coarser than round_bytes
 /// because the exact byte count is the most exfiltration-friendly field
 /// in the file (one tunable u64 per table the customer chose to sample).
 ///
@@ -213,7 +266,7 @@ pub fn generated_at_now(pinned: Option<&str>) -> String {
 ///   otherwise : nearest 100 MiB
 ///
 /// An exact buf.len() sample_bytes value carries ~30 bits of u64
-/// entropy per table — sufficient to encode arbitrary data across a
+/// entropy per table: sufficient to encode arbitrary data across a
 /// multi-table report as a hidden channel. Coarsening removes the
 /// channel.
 pub fn round_sample_bytes(n: u64) -> u64 {
@@ -269,7 +322,7 @@ fn round_to(n: u64, bucket: u64) -> u64 {
 #[cfg(test)]
 pub const FILE_HEADER: &str = dbwarp_blueprint_core::BLUEPRINT_TOML_HEADER;
 
-/// Emit a BlueprintFile as canonical TOML — alphabetical keys (BTreeMap is
+/// Emit a BlueprintFile as canonical TOML: alphabetical keys (BTreeMap is
 /// already sorted), fixed precision for floats, no inserted comments beyond
 /// the verbatim header.
 pub fn emit_toml(file: &BlueprintFile) -> anyhow::Result<String> {
@@ -359,6 +412,10 @@ mod tests {
                 "postgres-planner-estimate",
                 "postgres-local-relation-size",
             )),
+            structure_scope: None,
+            source_environment: None,
+            statistics_evidence: None,
+            activity_snapshot: None,
             tables: BTreeMap::new(),
             fk_edges: BTreeMap::new(),
         };
@@ -422,6 +479,27 @@ mod tests {
     }
 
     #[test]
+    fn positive_row_estimates_never_serialize_as_empty() {
+        assert_eq!(round_estimated_rows(0), 0);
+        assert_eq!(round_estimated_rows(1), 100);
+        assert_eq!(round_estimated_rows(49), 100);
+        assert_eq!(round_estimated_rows(50), 100);
+        assert_eq!(round_estimated_rows(149), 100);
+        assert_eq!(round_estimated_rows(150), 200);
+    }
+
+    #[test]
+    fn partition_row_rounding_stays_nonzero_and_bounded_by_the_table() {
+        assert_eq!(round_partition_rows_max(30, 100, false), Some(100));
+        assert_eq!(round_partition_rows_max(30, 0, false), Some(0));
+        assert_eq!(round_partition_rows_max(151, 200, false), Some(200));
+        assert_eq!(round_partition_rows_max(500, 400, false), Some(400));
+        assert_eq!(round_partition_rows_max(4, 7, true), None);
+        assert_eq!(round_partition_rows_max(60, 70, true), None);
+        assert_eq!(round_partition_rows_max(151, 200, true), Some(200));
+    }
+
+    #[test]
     fn round_bytes_buckets() {
         assert_eq!(round_bytes(0), 0);
         assert_eq!(round_bytes(1_023), 1_024);
@@ -438,7 +516,7 @@ mod tests {
         // Pinning is done via the `--generated-at` CLI flag passed
         // through as Some(&str). When None or an empty/whitespace
         // string, fall back to the current UTC time. The function
-        // must NOT read any env var — the README trust contract says
+        // must NOT read any env var: the README trust contract says
         // "no env vars read by default."
         assert_eq!(
             generated_at_now(Some("2026-04-26T00:00:00Z")),
@@ -451,8 +529,20 @@ mod tests {
         assert!(live.contains('T') && live.ends_with('Z'), "got: {live}");
     }
 
+    #[test]
+    fn stats_freshness_reference_pins_parseable_generated_at() {
+        let pinned = stats_freshness_reference(Some("2026-04-26T00:00:00Z"));
+        assert_eq!(pinned.to_rfc3339(), "2026-04-26T00:00:00+00:00");
+        // Absent, blank, or unparseable pins fall back to the live clock,
+        // matching generated_at_now's contract.
+        let before = chrono::Utc::now();
+        for raw in [None, Some(""), Some("   "), Some("not-a-timestamp")] {
+            assert!(stats_freshness_reference(raw) >= before);
+        }
+    }
+
     /// Lock the no-env-var contract: the function must not consult
-    /// any environment variable. Set the previously-honored env var
+    /// any environment variable. Set a plausible env var name
     /// to a known sentinel and assert the function still returns a
     /// fresh ISO timestamp (i.e., it ignored the env var).
     #[test]
@@ -615,7 +705,7 @@ mod tests {
                 ..BlueprintTable::default()
             },
         );
-        let file = BlueprintFile {
+        let mut file = BlueprintFile {
             artifact_inventory: None,
             schema_version: SCHEMA_VERSION,
             generated_at: "2026-04-26T00:00:00Z".to_string(),
@@ -638,9 +728,14 @@ mod tests {
                 "postgres-planner-estimate",
                 "postgres-local-relation-size",
             )),
+            structure_scope: None,
+            source_environment: None,
+            statistics_evidence: None,
+            activity_snapshot: None,
             tables,
             fk_edges: BTreeMap::new(),
         };
+        file.initialize_v7_database_contract();
         let toml = emit_toml(&file).unwrap();
         // Header is verbatim.
         assert!(toml.starts_with(FILE_HEADER));

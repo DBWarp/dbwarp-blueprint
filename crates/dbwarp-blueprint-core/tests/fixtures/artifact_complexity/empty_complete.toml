@@ -1,0 +1,55 @@
+# Hand-authored semantic oracle. Do not generate this file from the assessor.
+# A known-complete empty population is not applicable, not trivially complex.
+
+[inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "analyzed"
+scope = "selected-schemas"
+visibility = "full"
+inventory_complete = true
+dependencies_complete = true
+requirements_complete = true
+analysis_complete = true
+object_count = 0
+
+[expected]
+contract = "dbwarp-blueprint-artifact-complexity/v1"
+assessor_version = 1
+scope = "selected-schemas"
+population_policy = "exclude-known-engine-generated-and-secondary"
+assessment_population_complete = true
+eligible_object_count = 0
+fully_assessed_object_count = 0
+partially_assessed_object_count = 0
+unassessed_object_count = 0
+excluded_object_count = 0
+analyzer_version = "lexical-v2"
+overall_band = "not-applicable"
+
+[expected.dimensions.volume]
+band = "not-applicable"
+coverage = "not-applicable"
+
+[expected.dimensions.control_flow]
+band = "not-applicable"
+coverage = "not-applicable"
+
+[expected.dimensions.feature_breadth]
+band = "not-applicable"
+coverage = "not-applicable"
+
+[expected.dimensions.entanglement]
+band = "not-applicable"
+coverage = "not-applicable"
+
+[expected.dimensions.environment_coupling]
+band = "not-applicable"
+coverage = "not-applicable"
+
+[expected.dimensions.opacity]
+band = "not-applicable"
+coverage = "not-applicable"
+
+[expected.dimensions.dialect_coupling]
+band = "not-applicable"
+coverage = "not-applicable"

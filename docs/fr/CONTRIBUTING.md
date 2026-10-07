@@ -45,35 +45,26 @@ cargo test --locked --all-targets
 python3 tools/check_public_tree.py
 ```
 
-Le cœur partagé possède sa propre suite de tests unitaires :
+Le module principal possède ses propres tests unitaires :
 
 ```bash
 cargo test --locked --manifest-path crates/dbwarp-blueprint-core/Cargo.toml --lib
 ```
 
-La réussite des tests locaux ne qualifie pas une version de base de données ni
-une plateforme. Décrivez ce qui a réellement été testé et indiquez explicitement
-que les autres configurations n’ont pas été testées. Ne publiez pas d’artefacts,
-ne modifiez pas les tags de version ni les paramètres de sécurité du dépôt dans
-le cadre d’un correctif sans l’accord des responsables de maintenance.
+Le fait de réussir les tests locaux ne prouve pas qu'une modification fonctionne sur toutes les versions de base de données ou toutes les plateformes. Décrivez ce qui a été testé et indiquez explicitement les configurations qui n'ont pas été testées. Ne publiez pas d'artefacts, ne mettez pas à jour les balises de version ni ne modifiez les paramètres de sécurité du dépôt dans le cadre d'une correction sans l'approbation du responsable.
 
 ## Flux de travail des responsables de maintenance
 
 La source canonique est constituée de l'aide Rust en anglais et des définitions
 de messages/interface utilisateur dans `src/i18n.rs`. Lorsqu'une expression
-visible par le client change :
+visible par l'utilisateur change :
 
 1. mettez à jour chaque catalogue de paramètres régionaux sous `locales/` dans le même commit ;
 2. conservez exactement tous les espaces réservés et les jetons opérationnels canoniques ;
 3. exécutez le test ciblé de couverture exacte ;
-4. ajoutez ou mettez à jour le cas correspondant à la limite opérateur dans
+4. ajoutez ou mettez à jour le cas de test pertinent dans.
    `tests/cli_errors.rs` lorsqu'un échec ou un avertissement change ;
-5. exécutez l'intégralité de la suite de tests et inspectez un échantillon représentatif de l'aide et des présentations ;
-6. obtenez une relecture technique native avant de considérer une nouvelle formulation comme définitive pour un contrat client, un dépôt réglementaire ou un support marketing public.
-
-Ce processus de couverture exacte s’applique aux catalogues d’exécution
-intégrés au binaire. Les documents Markdown traduits sont complémentaires ;
-consultez [`docs/TRANSLATIONS.md`](../TRANSLATIONS.md).
+5. Exécutez la suite de tests complète et examinez la sortie représentative help/deck.
 
 Validation ciblée :
 

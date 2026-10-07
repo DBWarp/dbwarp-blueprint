@@ -4,14 +4,7 @@
 
 **语言：** [English](../MESSAGES.md) | [Deutsch](../de/MESSAGES.md) | [Français](../fr/MESSAGES.md) | [Español](../es/MESSAGES.md) | [Polski](../pl/MESSAGES.md) | [日本語](../ja/MESSAGES.md) | **简体中文**
 
-`dbwarp-blueprint` 对 DBWarp 自身负责的验证和工作流故障使用稳定的运维消息标识符。该格式借鉴 IBM 风格的运维消息：子系统前缀、数字标识符和严重性后缀。IBM CICS 文档描述了程序标识符、四位消息号和严重性字母；IBM MQ 同样使用组件/前缀字段、数字标识符和最后的消息类型代码。Microsoft 错误消息指南进一步强调了一条实用规则：错误应说明问题，并提供用户可以采取的措施。
-
-参考资料：
-
-- IBM CICS 消息格式：https://www.ibm.com/docs/en/cics-pa/5.3.0?topic=messages-message-format
-- IBM CICS 消息信息布局：https://www.ibm.com/docs/en/cics-ts/6.x?topic=messages-format-cics-message-information
-- IBM MQ for z/OS 消息格式：https://www.ibm.com/docs/SSFKSJ_9.2.0/com.ibm.mq.ref.doc/q050270_.htm
-- Microsoft 错误消息指南：https://learn.microsoft.com/en-us/windows/win32/uxguide/mess-error
+`dbwarp-blueprint` 使用稳定的操作员消息标识符，用于 DBWarp 相关的验证和工作流程失败。每个消息都包含一个子系统前缀、一个数字标识符和一个严重性后缀，并说明了问题以及相应的补救措施。
 
 ## 格式
 
@@ -25,7 +18,7 @@ DBPnnnnS message text. Next: corrective action.
 - `nnnn` 是稳定的四位消息号。
 - `S` 是严重性：`E` 错误、`W` 警告、`I` 信息。
 
-代码稳定且与语言无关。当 `--lang` 或进程区域设置选择了受支持语言时，其摘要、原因和纠正措施会被本地化。动态操作系统、数据库驱动程序、路径和因果链详细信息保持原样，以便支持工程师搜索原始故障。消息文本不得包含机密或未脱敏的连接 URI。
+代码是稳定且与语言无关的。其摘要、原因和纠正措施，当`--lang`或进程的区域设置选择支持的语言时，会进行本地化。动态操作系统、数据库驱动程序、路径以及因果链的详细信息保持不变，以便可以搜索原始故障。消息文本中不得包含任何秘密或未经过滤的连接URI。
 
 ## 范围
 
@@ -54,8 +47,8 @@ DBPnnnnS message text. Next: corrective action.
 | `DBP1004E` | 将 Azure 令牌选项用于非 SQL Server 引擎。 |
 | `DBP1005E` | 所选引擎不支持该身份验证模式。 |
 | `DBP1006E` | 请求结构化文件压缩采样但未显式提供 `--yes`。 |
-| `DBP1007E` | 对尚未公开该契约的引擎请求了显式长度保真度模式。 |
-| `DBP1008E` | 旧版精确长度别名与 strict 长度保真度冲突。 |
+| `DBP1007E` | 请求对不支持该功能的引擎启用精确长度验证模式。 |
+| `DBP1008E` | `--preserve-exact-lengths` 与严格的长度一致性存在冲突。 |
 | `DBP1009E` | 请求精确采样长度保真度但未显式提供 `--yes`。 |
 | `DBP1010E` | 内嵌本地化目录不完整或不一致。 |
 | `DBP1011E` | 命令行参数无效。 |
@@ -109,10 +102,20 @@ DBPnnnnS message text. Next: corrective action.
 | `DBP1419E` | 实时采集超过 `--max-wall-secs`；客户端断开连接并报告特定于引擎的服务器限制。 |
 | `DBP1420E` | 至少一个请求的 `--schema` 不可见，因此未写入范围不明确的 Blueprint。 |
 | `DBP1421W` | 无法获取 SQL Server 会话主体信息；采集在不声明身份的情况下继续。 |
+| `DBP1422W` | 对象复杂度评估失败；清单已保留，受影响的汇总维度为未知。 |
+| `DBP1423W` | 索引或关系结构目录不可用；核心表和列已保留，并明确标记为覆盖不完整。 |
+| `DBP1424W` | 无法证明 SQL Server 安全策略目录的完整可见性；每个受影响表均跳过 Tier 2 采样。 |
+| `DBP1425W` | SQL Server 报告存在活动的行级安全筛选器；系统有意跳过 Tier 2 采样，而不是测量经过筛选的子集。 |
+| `DBP1426E` | Oracle 基本数据采集在配置、SQL*Plus 启动、对象所有者解析、数据采集或映射过程中失败。 |
+| `DBP1427W` | 无法完整证明 Oracle SQL*Plus 客户端版本来源；采集在明确限制下继续。 |
+| `DBP1428W` | Oracle Basic 在执行所有预期的目录查询之前停止了；已读取的表、列、行以及大小信息会被保留，并且 Blueprint 会被标记为不完整。 |
+| `DBP1429W` | Oracle Basic 保留了核心的表、列、行和大小数据，同时由于一个或多个额外的目录查询不可用。 |
+| `DBP1430W` | Oracle Basic 发布了其 Blueprint，但无法写入可选的离线流文件。 |
 | `DBP1501E` | 结构化文件采集边界失败。 |
 | `DBP1502E` | Blueprint 或捆绑包输出失败。 |
 | `DBP1503E` | PowerPoint 演示文稿生成失败。 |
 | `DBP1504W` | 无法写入审计日志。 |
+| `DBP1505E` | Oracle Basic 离线传输失败，原因是文件权限、大小限制、校验和、查询集或目录结构验证失败。 |
 | `DBP1601E` | 获取凭据失败。 |
 | `DBP1602E` | TLS 配置失败。 |
 | `DBP1603E` | 获取数据库用户名失败。 |
@@ -124,15 +127,13 @@ DBPnnnnS message text. Next: corrective action.
 | `DBP1702E` | 无法从标准输入读取同意响应。 |
 | `DBP1801E` | 无法初始化异步运行时。 |
 
-每种已发布语言都必须包含每个当前 DBP 的摘要、原因和措施。二进制文件会在启动时验证这一点，并以 `DBP1010E` 失败，而不是静默回退到英语。
-
-可预测的决策边界故障由对抗性 CLI 矩阵进行验证。已知条件必须将其特定代码作为第一个运维代码输出，不得回退到 `DBP0001E`。呈现器还会扫描完整错误链，因此未编码的实现上下文无法隐藏已编码的内部原因。
+每种支持的语言都包含所有 DBP 摘要、原因和操作。二进制文件在启动时会进行检查，如果发现问题，会报错 `DBP1010E`，而不是静默地切换到英语。
 
 非致命数据库采样警告会使用稳定的警告代码打印，并记录在运行审计中。这样可以区分完整 Tier 2 采集与成功但部分采样的采集，同时不会把可选探测失败变成整体采集失败。
 
 ## 支持清单
 
-当客户报告故障时，请索取：
+请求故障支持时，请提供：
 
 - 完整终端输出，包括 `DBP` 代码；
 - 如果使用了 `--audit-log`，则提供审计日志；

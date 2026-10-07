@@ -41,7 +41,13 @@ async fn capture_artifacts(
                n.nspname AS schema_name,
                c.relname AS object_name,
                c.relkind::text AS relkind,
-               {class_definition} AS definition
+               {class_definition} AS definition,
+               EXISTS (
+                   SELECT 1 FROM pg_depend d
+                   WHERE d.classid = 'pg_class'::regclass
+                     AND d.objid = c.oid
+                     AND d.deptype IN ('i', 'a')
+               ) AS engine_generated
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind IN ('v','m','S')
@@ -70,11 +76,22 @@ async fn capture_artifacts(
                     "S" => ("sequence", "integer_sequence"),
                     _ => continue,
                 };
+                // pg_depend deptype 'i' marks internal dependents such as
+                // identity-column sequences, 'a' the auto dependents serial
+                // creates. Answered by the same row for every listed object,
+                // so both values are catalog-confirmed - None stays reserved
+                // for catalogs that did not answer. ALTER SEQUENCE OWNED BY
+                // also records deptype 'a', so a hand-created sequence later
+                // bound to a column reports true: the flag asserts an
+                // engine-bound lifecycle (dropped with its column), not who
+                // typed the CREATE, which is the property the flag conveys.
+                let engine_generated: bool = row.get("engine_generated");
                 let mut item = RawArtifact::new(
                     format!("postgresql|{kind}|{schema}|{name}|{native_id}"),
                     kind,
                     subkind,
                 );
+                item.generated_by_engine = Some(engine_generated);
                 item.schema_identity = Some(schema);
                 if matches!(kind, "view" | "materialized_view") {
                     let definition: Option<String> = row.get("definition");
@@ -108,7 +125,7 @@ async fn capture_artifacts(
 
     let started = Instant::now();
     let routine_definition = if analyze {
-        "CASE WHEN p.prokind IN ('f','p') AND l.lanname NOT IN ('c','internal') THEN pg_get_functiondef(p.oid) ELSE NULL END"
+        "CASE WHEN p.prokind IN ('f','p') AND l.lanname NOT IN ('c','internal') THEN p.prosrc ELSE NULL END"
     } else {
         "NULL::text"
     };
@@ -121,6 +138,10 @@ async fn capture_artifacts(
                p.prokind::text AS prokind,
                l.lanname AS language_name,
                p.prosecdef,
+               p.proleakproof,
+               p.proretset,
+               p.provolatile::text AS volatility,
+               p.proparallel::text AS parallel_safety,
                {routine_definition} AS definition
         FROM pg_proc p
         JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -154,7 +175,7 @@ async fn capture_artifacts(
                 let language: String = row.get("language_name");
                 let (kind, subkind) = match prokind.as_str() {
                     "p" => ("procedure", "stored_procedure"),
-                    "a" | "w" => ("aggregate", "user_defined_aggregate"),
+                    "a" => ("aggregate", "user_defined_aggregate"),
                     _ => ("function", "stored_function"),
                 };
                 let mut item = RawArtifact::new(
@@ -168,6 +189,40 @@ async fn capture_artifacts(
                 } else {
                     "invoker"
                 };
+                if row.get::<_, bool>("prosecdef") {
+                    item.requirements.push(RawArtifactRequirement::catalog(
+                        "postgresql.function.security-definer",
+                    ));
+                }
+                if row.get::<_, bool>("proleakproof") {
+                    item.requirements.push(RawArtifactRequirement::catalog(
+                        "postgresql.function.leakproof",
+                    ));
+                }
+                if row.get::<_, bool>("proretset") {
+                    item.requirements.push(RawArtifactRequirement::catalog(
+                        "postgresql.function.set-returning",
+                    ));
+                }
+                if row.get::<_, String>("volatility") == "v" {
+                    item.requirements.push(RawArtifactRequirement::catalog(
+                        "postgresql.function.volatile",
+                    ));
+                }
+                match row.get::<_, String>("parallel_safety").as_str() {
+                    "r" => item.requirements.push(RawArtifactRequirement::catalog(
+                        "postgresql.function.parallel-restricted",
+                    )),
+                    "u" => item.requirements.push(RawArtifactRequirement::catalog(
+                        "postgresql.function.parallel-unsafe",
+                    )),
+                    _ => {}
+                }
+                if prokind == "w" {
+                    item.requirements.push(RawArtifactRequirement::catalog(
+                        "postgresql.function.window",
+                    ));
+                }
                 let language_lower = language.to_ascii_lowercase();
                 if matches!(language_lower.as_str(), "c" | "internal") {
                     item.external = Some(RawExternalPrerequisite::package(
@@ -176,7 +231,9 @@ async fn capture_artifacts(
                     ));
                 }
                 let definition: Option<String> = row.get("definition");
-                item.definition_visibility = if analyze {
+                item.definition_visibility = if matches!(prokind.as_str(), "a" | "w") {
+                    "not_applicable"
+                } else if analyze {
                     if definition.is_some() {
                         "available"
                     } else {
@@ -187,6 +244,11 @@ async fn capture_artifacts(
                 };
                 item.analysis = Some(RawLanguageAnalysis {
                     definition: definition.map(Zeroizing::new),
+                    definition_span: if matches!(prokind.as_str(), "a" | "w") {
+                        RawDefinitionSpan::NotApplicable
+                    } else {
+                        RawDefinitionSpan::ExecutableBody
+                    },
                     dialect: language_lower,
                     grammar_profile: grammar_profile.clone(),
                     ..RawLanguageAnalysis::default()
@@ -254,11 +316,9 @@ async fn capture_artifacts(
     }
 
     let started = Instant::now();
-    let trigger_definition = if analyze {
-        "pg_get_triggerdef(t.oid, true)"
-    } else {
-        "NULL::text"
-    };
+    // PostgreSQL trigger rows contain event/binding syntax but no executable
+    // body; the invoked routine is inventoried and analyzed independently.
+    let trigger_definition = "NULL::text";
     let trigger_sql = format!(
         r#"
         SELECT t.oid::text AS native_id,
@@ -297,9 +357,10 @@ async fn capture_artifacts(
                 item.schema_identity = Some(schema.clone());
                 item.parent_table_identity =
                     Some(artifacts::table_identity("postgresql", &schema, &table));
-                item.definition_visibility = if analyze { "available" } else { "not_read" };
+                item.definition_visibility = "not_applicable";
                 item.analysis = Some(RawLanguageAnalysis {
                     definition: definition.map(Zeroizing::new),
+                    definition_span: RawDefinitionSpan::NotApplicable,
                     dialect: "sql".to_string(),
                     grammar_profile: grammar_profile.clone(),
                     ..RawLanguageAnalysis::default()
@@ -385,6 +446,7 @@ async fn capture_artifacts(
                 item.definition_visibility = if analyze { "available" } else { "not_read" };
                 item.analysis = Some(RawLanguageAnalysis {
                     definition: definition.map(Zeroizing::new),
+                    definition_span: RawDefinitionSpan::ExecutableBody,
                     dialect: "sql".to_string(),
                     grammar_profile: grammar_profile.clone(),
                     ..RawLanguageAnalysis::default()
@@ -472,6 +534,11 @@ async fn capture_artifacts(
                 item.definition_visibility = if analyze { "available" } else { "not_read" };
                 item.analysis = Some(RawLanguageAnalysis {
                     definition: definition.map(Zeroizing::new),
+                    definition_span: if kind_static == "rule" {
+                        RawDefinitionSpan::PostgreSqlRule
+                    } else {
+                        RawDefinitionSpan::ExecutableBody
+                    },
                     dialect: "sql".to_string(),
                     grammar_profile: grammar_profile.clone(),
                     ..RawLanguageAnalysis::default()
@@ -564,6 +631,7 @@ async fn capture_artifacts(
     )
     .await;
     capture_pg_dependencies(client, schemas, audit, &mut out, &mut completeness).await;
+    artifacts::qualify_catalog_requirement_coverage(&mut out, &mut completeness);
     (out, completeness)
 }
 

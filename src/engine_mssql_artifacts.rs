@@ -84,7 +84,7 @@ async fn capture_artifacts(
     let grammar_profile = artifacts::grammar_profile("sqlserver", engine_version);
 
     let definition_expr = if analyze {
-        "m.definition"
+        "CASE WHEN o.type = 'C' THEN chk.definition WHEN o.type = 'D' THEN def.definition ELSE m.definition END"
     } else {
         "CAST(NULL AS nvarchar(max))"
     };
@@ -100,6 +100,12 @@ async fn capture_artifacts(
                CONVERT(nvarchar(10), COALESCE(m.uses_ansi_nulls, 0)) AS ansi_nulls,
                CONVERT(nvarchar(10), COALESCE(m.uses_quoted_identifier, 0)) AS quoted_identifier,
                CONVERT(nvarchar(20), COALESCE(m.execute_as_principal_id, 0)) AS execute_as_principal_id,
+               CONVERT(nvarchar(10), COALESCE(m.is_schema_bound, 0)) AS is_schema_bound,
+               CONVERT(nvarchar(10), COALESCE(m.uses_database_collation, 0)) AS uses_database_collation,
+               CONVERT(nvarchar(10), COALESCE(m.is_recompiled, 0)) AS is_recompiled,
+               CONVERT(nvarchar(10), COALESCE(m.uses_native_compilation, 0)) AS uses_native_compilation,
+               CONVERT(nvarchar(10), COALESCE(m.is_inlineable, 0)) AS is_inlineable,
+               CONVERT(nvarchar(10), COALESCE(OBJECTPROPERTY(o.object_id, 'ExecIsStartup'), 0)) AS is_startup,
                CASE WHEN syn.object_id IS NULL THEN ''
                     WHEN PARSENAME(syn.base_object_name, 4) IS NOT NULL
                       OR PARSENAME(syn.base_object_name, 3) IS NOT NULL THEN 'remote_or_cross_database'
@@ -111,6 +117,8 @@ async fn capture_artifacts(
         LEFT JOIN sys.objects po ON po.object_id = o.parent_object_id
         LEFT JOIN sys.schemas ps ON ps.schema_id = po.schema_id
         LEFT JOIN sys.synonyms syn ON syn.object_id = o.object_id
+        LEFT JOIN sys.check_constraints chk ON chk.object_id = o.object_id
+        LEFT JOIN sys.default_constraints def ON def.object_id = o.object_id
         WHERE o.is_ms_shipped = 0
           AND o.type IN ('V','P','PC','RF','FN','IF','TF','FS','FT','AF','TR','TA','D','C','R','SN','SO')
           {}
@@ -133,6 +141,12 @@ async fn capture_artifacts(
                 .catalogs_read
                 .push("sys.sql_modules".to_string());
             completeness.catalogs_read.push("sys.synonyms".to_string());
+            completeness
+                .catalogs_read
+                .push("sys.check_constraints".to_string());
+            completeness
+                .catalogs_read
+                .push("sys.default_constraints".to_string());
             for row in rows {
                 let native_id = mssql_string(&row, "native_id");
                 let schema = mssql_string(&row, "schema_name");
@@ -155,12 +169,42 @@ async fn capture_artifacts(
                         &parent_name,
                     ));
                 }
-                let execute_as = mssql_string(&row, "execute_as_principal_id");
-                item.security_mode = match execute_as.as_str() {
-                    "0" | "" => "caller",
-                    "-2" => "owner",
-                    _ => "principal",
-                };
+                let module_object = mssql_has_module_security_context(type_code);
+                if module_object {
+                    let execute_as = mssql_string(&row, "execute_as_principal_id");
+                    item.security_mode = match execute_as.as_str() {
+                        "0" | "" => "caller",
+                        "-2" => "owner",
+                        _ => "principal",
+                    };
+                }
+                for (column, token) in [
+                    ("is_schema_bound", "sqlserver.module.schema-bound"),
+                    (
+                        "uses_database_collation",
+                        "sqlserver.module.database-collation-dependent",
+                    ),
+                    ("is_recompiled", "sqlserver.module.recompile"),
+                    (
+                        "uses_native_compilation",
+                        "sqlserver.module.native-compiled",
+                    ),
+                ] {
+                    if mssql_string(&row, column) == "1" {
+                        item.requirements
+                            .push(RawArtifactRequirement::catalog(token));
+                    }
+                }
+                if kind == "function" && mssql_string(&row, "is_inlineable") == "1" {
+                    item.requirements.push(RawArtifactRequirement::catalog(
+                        "sqlserver.scalar-udf.inlineable",
+                    ));
+                }
+                if kind == "procedure" && mssql_string(&row, "is_startup") == "1" {
+                    item.requirements.push(RawArtifactRequirement::catalog(
+                        "sqlserver.procedure.startup",
+                    ));
+                }
                 let is_clr = matches!(type_code, "PC" | "FS" | "FT" | "AF" | "TA");
                 if is_clr {
                     item.external = Some(RawExternalPrerequisite::package(
@@ -189,17 +233,13 @@ async fn capture_artifacts(
                         None
                     }
                 };
-                item.definition_visibility = if is_clr {
-                    "external_binary"
-                } else if !analyze {
-                    "not_read"
-                } else if definition.is_some() {
-                    "available"
-                } else if mssql_string(&row, "is_encrypted") == "1" {
-                    "encrypted"
-                } else {
-                    "withheld"
-                };
+                item.definition_visibility = mssql_definition_visibility(
+                    type_code,
+                    analyze,
+                    is_clr,
+                    definition.is_some(),
+                    mssql_string(&row, "is_encrypted") == "1",
+                );
                 if matches!(
                     kind,
                     "view"
@@ -212,6 +252,7 @@ async fn capture_artifacts(
                 ) {
                     item.analysis = Some(RawLanguageAnalysis {
                         definition: definition.map(Zeroizing::new),
+                        definition_span: mssql_definition_span(type_code, is_clr),
                         dialect: if is_clr { "clr" } else { "tsql" }.to_string(),
                         grammar_profile: grammar_profile.clone(),
                         compatibility_level: compatibility_level.clone(),
@@ -239,6 +280,7 @@ async fn capture_artifacts(
     .await;
     capture_mssql_types(client, schemas, audit, &mut out, &mut completeness).await;
     capture_mssql_external(client, schemas, audit, &mut out, &mut completeness).await;
+    artifacts::qualify_catalog_requirement_coverage(&mut out, &mut completeness);
     (out, completeness)
 }
 
@@ -250,6 +292,8 @@ async fn capture_mssql_dependencies(
     identity_by_native_id: &BTreeMap<String, String>,
     completeness: &mut CaptureCompleteness,
 ) {
+    // A three-part name naming this database is same-database spelling and
+    // therefore falls through to ordinary resolution.
     let sql = format!(
         r#"
         SELECT CONVERT(nvarchar(30), d.referencing_id) AS referencing_id,
@@ -257,10 +301,18 @@ async fn capture_mssql_dependencies(
                COALESCE(d.referenced_schema_name, '') AS referenced_schema_name,
                COALESCE(d.referenced_entity_name, '') AS referenced_entity_name,
                COALESCE(o.type, '') AS referenced_type,
-               CASE WHEN d.referenced_server_name IS NOT NULL
-                       OR d.referenced_database_name IS NOT NULL
-                       OR d.is_ambiguous = 1
-                       OR d.referenced_id IS NULL THEN '1' ELSE '0' END AS unresolved
+               -- Classified at the row, where the evidence lives: the CASE
+               -- arms are ordered from the most specific fact to the least.
+               -- A three-part name naming this database is same-database
+               -- spelling, not a cross-database reference: it falls through
+               -- to ordinary resolution.
+               CASE WHEN d.referenced_server_name IS NOT NULL THEN 'cross-server'
+                    WHEN d.referenced_database_name IS NOT NULL
+                         AND d.referenced_database_name <> DB_NAME() THEN 'cross-database'
+                    WHEN d.is_ambiguous = 1 THEN 'ambiguous-binding'
+                    WHEN d.is_caller_dependent = 1 THEN 'caller-dependent'
+                    WHEN d.referenced_id IS NULL THEN 'target-not-visible'
+                    ELSE '' END AS unresolved_reason
         FROM sys.sql_expression_dependencies d
         JOIN sys.objects source_object ON source_object.object_id = d.referencing_id
         JOIN sys.schemas source_schema ON source_schema.schema_id = source_object.schema_id
@@ -284,19 +336,25 @@ async fn capture_mssql_dependencies(
                 .catalogs_read
                 .push("sys.sql_expression_dependencies".to_string());
             let mut dependencies: BTreeMap<String, Vec<String>> = BTreeMap::new();
-            let mut unresolved: BTreeMap<String, u64> = BTreeMap::new();
+            let mut unresolved: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
             for row in rows {
                 let referencing = mssql_string(&row, "referencing_id");
-                if mssql_string(&row, "unresolved") == "1" {
-                    *unresolved.entry(referencing).or_default() += 1;
+                let reason = mssql_string(&row, "unresolved_reason");
+                if !reason.is_empty() {
+                    *unresolved
+                        .entry(referencing)
+                        .or_default()
+                        .entry(reason)
+                        .or_insert(0) += 1;
                     continue;
                 }
                 let referenced = mssql_string(&row, "referenced_id");
+                let referenced_schema = mssql_string(&row, "referenced_schema_name");
                 let dependency =
                     if mssql_dependency_target_is_table(&mssql_string(&row, "referenced_type")) {
                         Some(artifacts::table_identity(
                             "sqlserver",
-                            &mssql_string(&row, "referenced_schema_name"),
+                            &referenced_schema,
                             &mssql_string(&row, "referenced_entity_name"),
                         ))
                     } else {
@@ -308,7 +366,23 @@ async fn capture_mssql_dependencies(
                         .or_default()
                         .push(dependency);
                 } else {
-                    *unresolved.entry(referencing).or_default() += 1;
+                    // The engine resolved the reference, so the target is
+                    // real; this inventory has no record for it. A target in
+                    // an unselected schema is the operator's scope decision;
+                    // one inside the selection is a family this collector
+                    // does not model.
+                    let reason = if !referenced_schema.is_empty()
+                        && !schemas.includes(&referenced_schema)
+                    {
+                        "outside-selected-schema"
+                    } else {
+                        "target-family-unmodeled"
+                    };
+                    *unresolved
+                        .entry(referencing)
+                        .or_default()
+                        .entry(reason.to_string())
+                        .or_insert(0) += 1;
                 }
             }
             for item in out {
@@ -316,7 +390,11 @@ async fn capture_mssql_dependencies(
                     if let Some(values) = dependencies.remove(native_id) {
                         item.dependencies.extend(values);
                     }
-                    item.unresolved_dependency_count += unresolved.remove(native_id).unwrap_or(0);
+                    if let Some(reasons) = unresolved.remove(native_id) {
+                        for (reason, count) in reasons {
+                            *item.unresolved_reasons.entry(reason).or_insert(0) += count;
+                        }
+                    }
                 }
             }
         }
@@ -751,6 +829,56 @@ fn mssql_string(row: &tiberius::Row, column: &str) -> String {
 
 fn mssql_dependency_target_is_table(type_code: &str) -> bool {
     type_code.trim() == "U"
+}
+
+fn mssql_has_module_security_context(type_code: &str) -> bool {
+    matches!(
+        type_code.trim(),
+        "V" | "P"
+            | "PC"
+            | "RF"
+            | "FN"
+            | "IF"
+            | "TF"
+            | "FS"
+            | "FT"
+            | "AF"
+            | "TR"
+            | "TA"
+            | "R"
+    )
+}
+
+fn mssql_definition_visibility(
+    type_code: &str,
+    analyze: bool,
+    is_clr: bool,
+    definition_present: bool,
+    encrypted: bool,
+) -> &'static str {
+    if matches!(type_code.trim(), "SN" | "SO") {
+        "not_applicable"
+    } else if is_clr {
+        "external_binary"
+    } else if !analyze {
+        "not_read"
+    } else if definition_present {
+        "available"
+    } else if encrypted {
+        "encrypted"
+    } else {
+        "withheld"
+    }
+}
+
+fn mssql_definition_span(type_code: &str, is_clr: bool) -> RawDefinitionSpan {
+    if is_clr {
+        RawDefinitionSpan::NotApplicable
+    } else if matches!(type_code.trim(), "C" | "D") {
+        RawDefinitionSpan::ExecutableBody
+    } else {
+        RawDefinitionSpan::SqlServerModule
+    }
 }
 
 fn mssql_artifact_kind(type_code: &str) -> Option<(&'static str, &'static str)> {

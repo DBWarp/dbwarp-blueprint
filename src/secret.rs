@@ -1,8 +1,8 @@
-//! Credential handling — single-file surface, audit-grep-able.
+//! Credential handling: single-file surface, audit-grep-able.
 //!
 //! `Secret` wraps a credential string in a `Zeroizing` buffer that is wiped
 //! on drop. It deliberately does NOT implement `Debug`, `Display`, `Clone`,
-//! or any `Serialize` trait — passing a Secret to `tracing!`, `format!`,
+//! or any `Serialize` trait: passing a Secret to `tracing!`, `format!`,
 //! `println!`, or `serde_json::to_string` is a compile error.
 //!
 //! There is exactly one method that exposes the bytes: `expose()`. Every
@@ -21,7 +21,7 @@ pub struct Secret(Zeroizing<String>);
 
 impl Secret {
     /// Read a password from the controlling TTY (`/dev/tty`). Echo disabled.
-    /// Reading from stdin is intentionally NOT supported — it would allow
+    /// Reading from stdin is intentionally NOT supported: it would allow
     /// pipe-injection (`echo secret | tool`) which makes the credential
     /// visible in shell history.
     pub fn from_tty_prompt(prompt: &str) -> Result<Self> {
@@ -42,7 +42,7 @@ impl Secret {
         let raw = std::fs::read_to_string(path)
             .with_context(|| format!("reading password file '{}'", path.display()))?;
         // Trim only one trailing newline (common for `echo secret > file`),
-        // not arbitrary whitespace — passwords can legitimately contain spaces.
+        // not arbitrary whitespace: passwords can legitimately contain spaces.
         let trimmed = raw.strip_suffix('\n').unwrap_or(&raw);
         let trimmed = trimmed.strip_suffix('\r').unwrap_or(trimmed);
         if trimmed.is_empty() {
@@ -52,7 +52,7 @@ impl Secret {
     }
 
     /// Read a password from a named environment variable. Tool reads ONLY
-    /// the variable the customer named — no fallback to PGPASSWORD,
+    /// the variable the customer named: no fallback to PGPASSWORD,
     /// MYSQL_PWD, etc.
     pub fn from_env(var_name: &str) -> Result<Self> {
         let raw = std::env::var(var_name).map_err(|_| anyhow!("env var '{var_name}' not set"))?;
@@ -62,7 +62,7 @@ impl Secret {
         Ok(Self(Zeroizing::new(raw)))
     }
 
-    /// EXPLICIT exposure — every call site is the entire credential leak
+    /// EXPLICIT exposure: every call site is the entire credential leak
     /// surface. Grep `\.expose\(\)` to find them all.
     pub fn expose(&self) -> &str {
         &self.0
@@ -71,7 +71,7 @@ impl Secret {
     /// Placeholder Secret for the `--auth-mode integrated` path, where
     /// the actual credential lives in the OS-level Kerberos TGT cache
     /// (Linux) or the current Windows session (Windows). The engine's
-    /// Integrated dispatch arm does not call `.expose()` — the
+    /// Integrated dispatch arm does not call `.expose()`: the
     /// placeholder exists only so the `engine_mssql::run(secret: &Secret, ...)`
     /// signature stays uniform across auth modes.
     pub fn placeholder_for_integrated_auth() -> Self {
@@ -83,10 +83,12 @@ fn check_secret_file_mode(path: &Path) -> Result<()> {
     check_sensitive_file_mode(path, "password file")
 }
 
-/// Shared mode check used by `--password-file`, `--tls-key`, and any
-/// future sensitive-file flag. Refuses to read the file if group or
-/// other can read it (mode bits `0o044` set). On non-Unix platforms it emits
-/// a warning because Unix mode bits cannot express the host ACL policy.
+/// Shared mode check used by `--password-file`, `--tls-key`, and other
+/// sensitive-file flags. Refuses to read the file if group or
+/// other can read it (mode bits `0o044` set). On non-Unix platforms the mode
+/// check is unavailable; callers record the warning in the audit only after
+/// the sensitive input has otherwise been accepted, so the warning cannot
+/// precede and mask a primary failure code.
 ///
 /// `label` is included verbatim in error/warning messages so the
 /// customer can tell which flag tripped the check.
@@ -109,28 +111,31 @@ pub fn check_sensitive_file_mode(path: &Path, label: &str) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-pub fn check_sensitive_file_mode(path: &Path, label: &str) -> Result<()> {
-    // Emit a loud warning rather than silently accept. Windows ACLs
-    // require a different API surface (e.g. `windows-acl` / WinAPI
-    // GetSecurityInfo) that this version of the tool does not pull
-    // in. Until ACL-aware enforcement ships, the customer at least
-    // sees that the tool is NOT enforcing the same restriction it
-    // does on Unix.
-    eprintln!(
-        "{}",
-        crate::i18n::format(
-            "security.mode_check_noop",
-            &[
-                ("code", "DBP1605W".to_string()),
-                ("label", label.to_string()),
-                ("path", path.display().to_string()),
-            ]
-        )
-    );
+pub fn check_sensitive_file_mode(_path: &Path, _label: &str) -> Result<()> {
     Ok(())
 }
 
-/// Describe how a credential was supplied — emitted into the audit log,
+#[cfg(unix)]
+pub fn sensitive_file_mode_warning(_path: &Path, _label: &str) -> Option<String> {
+    None
+}
+
+#[cfg(not(unix))]
+pub fn sensitive_file_mode_warning(path: &Path, label: &str) -> Option<String> {
+    // Windows ACLs require a different API surface (for example WinAPI
+    // GetSecurityInfo). Until ACL-aware enforcement ships, retain an explicit
+    // warning in the audit after the file operation itself has succeeded.
+    Some(crate::i18n::format(
+        "security.mode_check_noop",
+        &[
+            ("code", "DBP1605W".to_string()),
+            ("label", label.to_string()),
+            ("path", path.display().to_string()),
+        ],
+    ))
+}
+
+/// Describe how a credential was supplied: emitted into the audit log,
 /// never the credential itself.
 #[derive(Debug, Clone)]
 pub enum SecretSource {
@@ -154,7 +159,7 @@ pub enum SecretSource {
     },
     /// Integrated authentication: Kerberos TGT cache (Linux via
     /// libgssapi) or current Windows session (SSPI). dbwarp-blueprint
-    /// itself reads no credential — the OS-level cache supplies
+    /// itself reads no credential: the OS-level cache supplies
     /// it during the SQL Server handshake.
     IntegratedAuth,
 }
@@ -197,7 +202,7 @@ pub fn file_mode(_path: &Path) -> Option<u32> {
 }
 
 // Compile-time guarantee: Secret is intentionally not Clone, Debug, Display,
-// Serialize. To verify, uncomment the body of the closure below — it MUST
+// Serialize. To verify, uncomment the body of the closure below: it MUST
 // fail to compile.
 //
 //   #[cfg(test)]

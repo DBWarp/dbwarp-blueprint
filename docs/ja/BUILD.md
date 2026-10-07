@@ -4,7 +4,7 @@
 
 **言語:** [English](../../BUILD.md) | [Deutsch](../de/BUILD.md) | [Français](../fr/BUILD.md) | [Español](../es/BUILD.md) | [Polski](../pl/BUILD.md) | **日本語** | [简体中文](../zh/BUILD.md)
 
-このガイドは、データベースに対してツールを実行する前に、自身でビルドすることを希望する顧客向けです。
+データベースに対して実行する前に、このツールを自分でビルドする場合は、このガイドを参照してください。
 
 ## クイックビルド
 
@@ -97,18 +97,26 @@ Windows PowerShell:
 Get-FileHash .\dbwarp-blueprint-windows-x86_64.zip -Algorithm SHA256
 ```
 
+各リリースでは、展開済み実行ファイル用の
+`dbwarp-blueprint-<platform>.binary.sha256` ファイルも公開します。検証コマンドは
+[バイナリのダウンロード](BINARIES.md)を参照してください。
+
 ## 認証方式固有のビルド
 
 既定のビルドは password、token-file、token-env、TLS の各フローをサポートします。クライアント証明書 mTLS は PostgreSQL と MySQL で使用できます。
 
-SQL Server 統合認証には、プラットフォーム固有のビルドがあります:
+SQL Server 統合認証のサポートはプラットフォームごとに異なります:
 
 | プラットフォーム | ビルドコマンド | 用途 |
 |---|---|---|
-| Linux | `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh` | Kerberos / GSSAPI |
-| Windows | GitHub release Windows binary, or `cargo build --release --features winauth` | Windows Integrated Auth / SSPI |
+| Linux | GitHub リリースの Linux バイナリ、または `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh` | パスワード、トークン、TLS による認証、および選択時の Kerberos / GSSAPI |
+| Windows | GitHub release Windows binary, or `cargo build --release --locked --features winauth` | Windows Integrated Auth / SSPI |
 
-Linux Kerberos には通常の MIT Kerberos ランタイムライブラリが必要です。ホスト上で `kinit` が動作する場合、必要なランタイム部品は通常すでに存在します。
+Linux リリース版のバイナリは、起動時に Kerberos ライブラリを必要としません。
+プラットフォームの GSSAPI ランタイムは、`--auth-mode integrated` が選択された
+場合にのみ読み込まれます。`kinit` が動作する場合、必要なランタイムコンポーネントは
+通常すでに存在します。ソースビルドでは、上記のように
+`integrated-auth-gssapi` を使用して Kerberos/GSSAPI を有効にします。
 
 ## スクリプトを使用しないビルド
 
@@ -132,12 +140,7 @@ cargo build --release --locked --features integrated-auth-gssapi
 
 ## リリースバイナリの再現
 
-`./build.sh` はレビュー済みソースがビルドできることを示します。バイト単位の
-同一性には、リリースの完全なネイティブビルド入力も必要です。
-`PROVENANCE.json` に記録された正確なソースリビジョン、ターゲット、features、
-固定 Rust toolchain、ネイティブコンパイラー/リンカー、コミット時刻を使った
-`SOURCE_DATE_EPOCH`、リリースワークフローのパス再マッピングとリンカーフラグを
-使用してください。Windows リリースでは `clang-cl` と `/Brepro` も使います。
+`./build.sh` は、レビューされたソースコードが正常にビルドされることを証明します。バイト単位の同一性は、さらにリリース版の完全なネイティブビルド入力が必要となります。正確なソースコードのバージョンは `PROVENANCE.json` に記録されており、各リリース版とともに公開されています。そのターゲットと機能リスト、固定された Rust ツールチェーン、記録されたネイティブ compiler/linker、コミットのタイムスタンプ `SOURCE_DATE_EPOCH`、およびリリースワークフローのパスリマッピングとリンカーフラグを参照してください。Windows 版では、`clang-cl` と `/Brepro` も使用されます。
 
 入力を再現した後、展開したリリースバイナリをローカル結果と比較します:
 
@@ -146,15 +149,14 @@ SOURCE_BIN=target/release/dbwarp-blueprint \
   ./verify.sh /path/to/extracted/dbwarp-blueprint
 ```
 
-ハッシュが異なる場合は、バイナリを同等として扱わないでください。リリース CI
-は同じ runner 上の別々の Cargo target ディレクトリで 2 回ビルドし、差異を
-拒否します。`PROVENANCE.json` はローカル再現の評価に必要な情報を記録します。
+もしハッシュ値が異なる場合、そのバイナリを同等とみなさないでください。各リリースは2回ビルドされ、1バイトでも不一致があるとリリースは失敗します。`PROVENANCE.json`には、ソースのバージョン、ターゲット、機能、ツールチェーン、ソースの日付（エポック秒）、ネイティブコンパイラ、バイナリサイズ、およびローカルでの再現を評価するために必要なハッシュが記録されます。
 
 ## Vendored 依存関係
 
-通常のリポジトリには、MySQL の `--tls-ca` がツールの他の部分と同じ制限的な
-信頼セマンティクスを持つようにするため、`vendor/mysql_async` 配下に小さな
-パッチ済み依存関係が 1 つ含まれています。その他すべての依存関係バージョンは
+リポジトリには、パッチ済みの依存関係が `vendor/` 配下に含まれています。これらは
+MySQL と SQL Server の `--tls-ca` に対する制限的な信頼規則を維持します。Linux 統合
+認証は、要求された場合にのみ GSSAPI を読み込みます。Windows 統合認証では、保守
+されている乱数生成用の依存関係を使用します。その他すべての依存関係バージョンは
 `Cargo.lock` によって固定されています。
 
 各 GitHub Release では、すべての依存関係ソースファイルをオフラインで検査してビルドしたいセキュリティチーム向けに、別個の `dbwarp-blueprint-source-vendored.tar.gz` バンドルを公開します。
@@ -165,7 +167,7 @@ cd dbwarp-blueprint-source-vendored
 DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh
 ```
 
-このバンドルには、パッチ済みの `vendor/mysql_async`、その他すべての依存関係用に生成された
+このバンドルには、`vendor/` 配下のパッチ済み依存関係、その他すべての依存関係用に生成された
 `vendor-crates/` ツリー、および crates.io をローカル vendor ツリーへリダイレクトする
 生成済みの `.cargo/config.toml` が含まれます。このモードでは、`build.sh` は
 `cargo build --release --frozen --offline --locked` を使用します。

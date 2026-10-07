@@ -39,12 +39,11 @@ idioma. La validación se detiene y rechaza un catálogo incompleto en lugar de
 sustituir por inglés una frase ausente de la presentación. Consulte
 [`docs/INTERNATIONALISATION.md`](INTERNATIONALISATION.md).
 
+Cada diapositiva también incluye notas para el presentador, adaptadas al idioma. Estas notas transforman la información visible en un resumen conciso y en lenguaje natural, en lugar de repetir cada etiqueta y valor de la diapositiva. Utilizan únicamente las mediciones de Blueprint y omiten el pie de página repetido, de modo que la vista del presentador y las notas exportadas añaden interpretación sin introducir nuevos datos.
+
 ## Pie de página y confidencialidad
 
-Cada diapositiva de contenido utiliza el pie de página corporativo de DBWarp:
-un logotipo pequeño a la izquierda, un separador y un nivel de confidencialidad
-opcionales, un número de diapositiva centrado y sin texto adicional, y
-`DBWarp.com` a la derecha. La diapositiva de título no se numera.
+Cada diapositiva de contenido tiene el mismo pie de página: un pequeño logotipo en la parte izquierda, un separador opcional y el nivel de confidencialidad, un número de diapositiva centrado y `DBWarp.com` en la parte derecha. La diapositiva de título no tiene número.
 
 Use `--deck-confidentiality public|internal|confidential|restricted` para añadir
 una de las etiquetas de clasificación integradas y localizadas. Cualquier otro
@@ -68,20 +67,19 @@ los bytes de la presentación son reproducibles.
 - **Sin red de la aplicación.** La generación de la presentación no abre
   ninguna conexión de red; la lectura de un Blueprint desde una ruta montada
   en red sigue dependiendo de la pila de almacenamiento del host.
-- **Sin bibliotecas de terceros.** El OOXML se crea directamente en
-  `src/deck.rs`; el archivo `.pptx` es un ZIP sencillo de partes XML que puede
-  abrir con `unzip` y leer. No hay automatización de PowerPoint, servicios de
-  representación ni crates adicionales en el grafo de dependencias. Las
-  imágenes de logotipo DBWarp aprobadas y las fuentes estáticas DM Sans están
-  integradas en el binario de Rust y se escriben como partes multimedia y de
-  fuente OOXML; la generación no lee ninguna ruta de activos en tiempo de
-  ejecución.
+- **Sin bibliotecas de terceros.** El generador OOXML está implementado en
+  `src/deck.rs` y sus módulos `deck_*`. El archivo `.pptx` es un ZIP compuesto
+  por partes XML que puede examinar con `unzip`. No utiliza automatización de
+  PowerPoint, servicios de renderizado ni dependencias adicionales. Las
+  imágenes del logotipo de DBWarp y las fuentes estáticas DM Sans están
+  incrustadas en el binario de Rust y se escriben como partes en formato OOXML
+  media/font; la generación no lee una ruta de recursos en tiempo de ejecución.
 - **Sin identificadores reales ni datos de filas.** Las tablas, columnas e
   índices aparecen como los mismos marcadores anónimos que en el archivo de
   Blueprint (`table-001`, `col-1`, `idx-1`, `schema-A`). Las mediciones de origen
   conservan la precisión documentada; cualquier proyección se calcula solo a
   partir de campos ya presentes en el Blueprint. La presentación no contiene
-  información específica del cliente más allá de esa entrada.
+  nada específico de su base de datos más allá de esa entrada.
 - **Reproducible a partir de una entrada fija.** El mismo Blueprint revisado
   produce un `.pptx` idéntico byte a byte para el mismo idioma, etiqueta de
   confidencialidad y marca de tiempo fijada (orden y marcas de tiempo fijos).
@@ -112,7 +110,9 @@ La presentación se adapta al tamaño del esquema:
 - **Compresión medida** (solo nivel 2): número de tablas muestreadas, proporción
   ponderada de zstd-3, tamaño comprimido proyectado y las tablas muestreadas más
   comprimibles.
-- **Modelo de confianza:** una diapositiva final que resume las garantías
+- **Lógica de la base de datos más allá de las tablas.** Objetos que no son tablas (`graph` y `analyzed` detallan únicamente): seis grupos en lenguaje sencillo explican la lógica y las dependencias de la base de datos fuera de las definiciones de tablas ordinarias: capas de consulta, lógica ejecutable, comportamiento automático, tipos y objetos que producen valores, dependencias externas y configuración de la plataforma. Los recuentos mostrados provienen del inventario de artefactos Blueprint.
+- **Complejidad de los artefactos** (solo con detalle `graph` o `analyzed`): banda agregada de complejidad de los objetos que no son tablas, cobertura de la población de objetos evaluables y bandas de las siete dimensiones. La diapositiva define esas dimensiones como tamaño de la definición, ramificación, uso de funciones, dependencias, requisitos del entorno, código fuente oculto y comportamiento específico del dialecto. Cada dimensión muestra su cobertura junto a su banda, por lo que la evidencia parcial o desconocida no puede confundirse con baja complejidad. Un resultado general `unknown` significa que la evidencia está incompleta; `not applicable` requiere una población de objetos evaluables vacía y cuya integridad esté demostrada.
+- **Modelo de confianza:** una diapositiva final que resume las propiedades de confianza
   anteriores.
 
 ## Revisión del resultado
@@ -125,7 +125,4 @@ unzip -l blueprint.pptx           # list parts
 unzip -p blueprint.pptx ppt/slides/slide1.xml   # read a slide as plain XML
 ```
 
-Ábralo en PowerPoint, LibreOffice Impress o Google Slides. El generador está en
-[`src/deck.rs`](https://github.com/DBWarp/dbwarp-blueprint/blob/main/src/deck.rs) y se integra en el binario de Rust. No existe
-un generador de presentaciones separado que deba instalar, auditar o mantener
-sincronizado.
+Ábrelo en PowerPoint, LibreOffice Impress o Google Slides. El creador de presentaciones es [`src/deck.rs`](../../src/deck.rs) y está integrado en el binario de Rust. No hay una herramienta separada para crear presentaciones que se deba instalar o auditar.

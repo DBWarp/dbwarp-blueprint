@@ -80,14 +80,18 @@ Linux Kerberos / GSSAPI：
 
 ```bash
 kinit user@EXAMPLE.COM
-DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh
-./target/release/dbwarp-blueprint \
+./dbwarp-blueprint \
   --connect sqlserver://db.internal,1433/payments \
   --auth-mode integrated \
   --expect-server-principal 'EXAMPLE\dbwarp-blueprint' \
   --tls-mode verify-full \
   --out blueprint.toml
 ```
+
+Linux 发布归档包含 Kerberos/GSSAPI 支持，但启动时不需要其运行时库。二进制
+文件会在选择 `--auth-mode integrated` 时加载平台 GSSAPI 运行时；如果缺少该
+运行时，则会报告 `DBP1604E`。从源代码构建时，必须使用
+`DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh` 启用该功能。
 
 Windows SSPI：
 
@@ -108,12 +112,7 @@ Windows SSPI：
 
 与 `sql-auth` 相比，此模式下有两个尤其重要的运维注意事项。SQL Server 看到的身份就是运行采集器进程的账户。如果管理员在 `BUILTIN\Administrators` 属于 `sysadmin` 的主机上启动采集器，则该会话将以 `sysadmin` 身份运行，并绕过权限脚本中的所有 `DENY`，但采集仍会成功。`--expect-server-principal` 会在读取任何目录之前使此情况以 `DBP1606E` 失败。此外，专用服务账户不会继承启动者的文件访问权限。使用凭据文件时，该账户需要读取自身凭据文件的权限，并需要对 `--out` 和 `--audit-log` 路径的写入权限。
 
-每个 SQL Server 连接都会在本地审计中记录 `ORIGINAL_LOGIN()`、
-`SUSER_SNAME()` 和 `USER_NAME()`。`--expect-server-principal` 为可选项，
-也适用于 SQL 身份验证。SQL Server 会在已建立的会话中比较
-`ORIGINAL_LOGIN()` 与预期主体。若不匹配或无法获取身份，则会在任何目录
-采集前以 `DBP1606E` 失败。确切身份只作为本地审计证据保留，不会写入
-Blueprint、演示文稿或发布制品。
+每个 SQL Server 连接都会在本地审计中记录 `ORIGINAL_LOGIN()`、`SUSER_SNAME()` 和 `USER_NAME()`。`--expect-server-principal` 是可选的，并且也适用于 SQL 身份验证。它要求 SQL Server 将 `ORIGINAL_LOGIN()` 与已建立会话中的预期主体进行比较。如果出现不匹配或身份不可用，则会发生 `DBP1606E` 错误，这发生在任何目录捕获之前，因此操作员无法意外地在不同的或具有更高权限的登录名下进行收集。确切的身份信息仍然是本地审计的证据，并且不会包含在 Blueprint、deck 或 bundle 文件中。
 
 ## 云托管数据库身份验证
 
@@ -162,4 +161,4 @@ MySQL 示例：
 | Azure SQL Database 或 Managed Instance Entra 登录 | `entra-token` | 数据访问不需要 Azure 资源 RBAC 角色；使用上文记录的 SQL Server 令牌选项 |
 | 使用原生数据库凭据的任何受支持托管数据库 | `sql-auth` | 无 |
 
-部署权限审查应记录版本感知的数据库权限、精确的云策略、内置角色替代方案及其范围注意事项。提供商配置、主体创建、网络访问、令牌生成以及可选密钥检索均由预配流程或包装程序负责；不能仅因为端点是托管端点，就将这些权限附加到收集器。
+在您审查权限时，请记录版本相关的数据库权限、精确的云策略、内置的角色替代方案以及范围限制。服务配置、主体创建、网络访问、令牌生成以及可选的密钥检索是配置或包装层面的职责，而不是应该附加到采集器的权限，仅仅因为该端点是受管理的。

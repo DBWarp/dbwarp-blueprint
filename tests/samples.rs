@@ -1,6 +1,6 @@
 //! Customer examples must remain valid, useful illustrations of the live contract.
 
-use dbwarp_blueprint_core::{blueprint_to_toml, parse_blueprint_toml, SCHEMA_VERSION};
+use dbwarp_blueprint_core::{blueprint_to_toml, parse_blueprint_toml};
 
 const CURRENT: [(&str, &str, &str); 3] = [
     (
@@ -21,11 +21,11 @@ const CURRENT: [(&str, &str, &str); 3] = [
 ];
 
 #[test]
-fn current_samples_validate_and_round_trip_without_losing_fields() {
+fn v6_samples_remain_compatible_and_round_trip_without_losing_fields() {
     for (name, engine, text) in CURRENT {
         let blueprint =
             parse_blueprint_toml(text).unwrap_or_else(|error| panic!("{name}: {error:#}"));
-        assert_eq!(blueprint.schema_version, SCHEMA_VERSION, "{name}");
+        assert_eq!(blueprint.schema_version, 6, "{name}");
         assert_eq!(blueprint.source_kind, "synthetic", "{name}");
         assert_eq!(blueprint.engine, engine, "{name}");
         let encoded = blueprint_to_toml(&blueprint).unwrap();

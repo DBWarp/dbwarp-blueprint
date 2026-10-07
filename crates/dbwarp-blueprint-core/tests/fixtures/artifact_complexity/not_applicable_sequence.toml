@@ -1,0 +1,81 @@
+# Hand-authored semantic oracle. Do not generate this file from the assessor.
+# One definition-free sequence is fully determined for six dimensions while
+# its dependency/entanglement evidence is unknown.
+
+[inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "analyzed"
+scope = "selected-schemas"
+visibility = "full"
+inventory_complete = true
+dependencies_complete = false
+requirements_complete = true
+analysis_complete = true
+object_count = 1
+
+[inventory.counts_by_kind]
+sequence = 1
+
+[inventory.artifacts.artifact-001]
+kind = "sequence"
+subkind = "ordinary"
+tier = "enhanced"
+definition_visibility = "not_applicable"
+requirement_status = "not_applicable"
+
+[expected]
+contract = "dbwarp-blueprint-artifact-complexity/v1"
+assessor_version = 1
+scope = "selected-schemas"
+population_policy = "exclude-known-engine-generated-and-secondary"
+assessment_population_complete = true
+eligible_object_count = 1
+fully_assessed_object_count = 0
+partially_assessed_object_count = 1
+unassessed_object_count = 0
+excluded_object_count = 0
+analyzer_version = "lexical-v2"
+overall_band = "unknown"
+limitations = ["graph-incomplete"]
+
+[expected.dimensions.volume]
+band = "not-applicable"
+coverage = "not-applicable"
+[expected.dimensions.volume.histogram]
+not_applicable = 1
+
+[expected.dimensions.control_flow]
+band = "not-applicable"
+coverage = "not-applicable"
+[expected.dimensions.control_flow.histogram]
+not_applicable = 1
+
+[expected.dimensions.feature_breadth]
+band = "not-applicable"
+coverage = "not-applicable"
+[expected.dimensions.feature_breadth.histogram]
+not_applicable = 1
+
+[expected.dimensions.entanglement]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.entanglement.histogram]
+unknown = 1
+
+[expected.dimensions.environment_coupling]
+band = "not-applicable"
+coverage = "not-applicable"
+[expected.dimensions.environment_coupling.histogram]
+not_applicable = 1
+
+[expected.dimensions.opacity]
+band = "not-applicable"
+coverage = "not-applicable"
+[expected.dimensions.opacity.histogram]
+not_applicable = 1
+
+[expected.dimensions.dialect_coupling]
+band = "not-applicable"
+coverage = "not-applicable"
+[expected.dimensions.dialect_coupling.histogram]
+not_applicable = 1

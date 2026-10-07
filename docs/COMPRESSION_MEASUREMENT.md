@@ -24,17 +24,15 @@ compression, null-density, cardinality/frequency, length, and style
 measurements before discarding sampled values and temporary fingerprints.
 
 For selected text/binary columns, Tier 2 may also sample that column alone. This
-lets downstream planning tools match per-column entropy instead of relying only
-on table-level averages.
+gives per-column compressibility instead of only table-level averages.
 
 Live-database table ratios use a neutral sequence of bounded 1,000-row
 groups with one descriptor per column, fixed-width value lengths, and
-column-contiguous payloads. This measures the compression-relevant structure
-shared by bulk transports without capturing a database protocol or a DBWarp
-wire format. Per-column ratios retain `blueprint-compression-probe-v2`, whose
+column-contiguous payloads. This measures compression-relevant structure
+without capturing any database or transfer protocol. Per-column ratios retain `blueprint-compression-probe-v2`, whose
 tagged length-prefixed values remain the more specific entropy input.
 
-PostgreSQL table blocks currently use `blueprint-columnar-transfer-probe-v2`,
+PostgreSQL table blocks use `blueprint-columnar-transfer-probe-v2`,
 which passes row groups through one persistent zstd level-3 context and flushes
 after every group. MySQL and SQL Server use
 `blueprint-columnar-transfer-probe-v3`: the same neutral bytes and persistent
@@ -42,16 +40,14 @@ context, with additional flushes at 256 KiB probe chunk boundaries.
 SQL Server `nvarchar`, `nchar`, and `ntext` samples are measured as
 UTF-16LE byte distributions. SQL Server `varchar`, `char`, and `text` retain their
 sampled narrow-byte width; the Blueprint records the source collation's catalog
-code page as `utf-8`, `windows-N`, or `code-page-N` so an approved consumer can
-choose a compatible native encoder instead of widening the values. The database
+code page as `utf-8`, `windows-N`, or `code-page-N`. The database
 driver still exposes decoded strings to the sampler, so legacy-code-page byte
 identity is not claimed. Table `ratio_stddev` is measured across outer row-group
 outputs. Per-column
 projection blocks remain independent one-shot entropy measurements and emit
-`0.0`. Older table measurements tagged
-`blueprint-columnar-transfer-probe-v1` used one pledged operation over the
-joined frames; the explicit version prevents those ratios being silently
-reinterpreted under the current streaming policy.
+`0.0`. Blueprints from earlier versions may carry
+`blueprint-columnar-transfer-probe-v1`; ratios with different tags are not
+comparable.
 
 The sampled bytes travel only over the selected database session into the local
 process. They are not written to disk, included in `blueprint.toml`, included
@@ -102,9 +98,9 @@ style = "json"
 measured = true
 sample_rows = 1000
 sample_bytes = 65536
-sample_method = "column LIMIT N (engine-specific bounded sample)"
+sample_method = "LIMIT N (fallback after underfilled adaptive TABLESAMPLE; simple-query text fields; raw binary/vector decoded; server-side cell cap)"
 sampled_with_bias = true
-bias_reason = "unordered_limit_after_empty_TABLESAMPLE"
+bias_reason = "unordered_limit_after_underfilled_adaptive_TABLESAMPLE+server_side_cell_cap"
 ratio_zstd_3 = 12.35
 ratio_stddev = 0.2
 sample_encoding = "blueprint-compression-probe-v2"
@@ -120,8 +116,7 @@ ratio_stddev = 0.15
 sample_encoding = "blueprint-columnar-transfer-probe-v3"
 ```
 
-These values help approved downstream tools estimate network transfer size and
-generate synthetic text/binary data with similar compressibility.
+These values are used to estimate network transfer size.
 
 ## Why It Matters
 
@@ -138,19 +133,18 @@ A small local measurement is usually more useful than guessing from column types
 Some engines do not offer perfectly uniform table sampling. MySQL spreads a
 bounded sample over four numeric-primary-key ranges when that access path is
 available, and otherwise falls back to `LIMIT N`; both remain explicitly
-marked as biased because neither is a statistical random sample. Other less
-ideal engine fallbacks are likewise recorded through `sampled_with_bias` and
-`bias_reason`.
+marked as biased because neither is a statistical random sample. Non-final
+range windows have an exclusive upper bound. Sparse or skewed primary-key
+regions can therefore underfill a window, but one window cannot re-read rows
+from the next. Other less ideal engine fallbacks are likewise recorded through
+`sampled_with_bias` and `bias_reason`.
 
-When a bounded sample has a layout that affects synthetic generation,
-Blueprint records it separately from those prose fields. MySQL numeric
-primary-key range sampling emits
+Blueprint records the layout of a bounded sample separately from those prose
+fields. MySQL numeric primary-key range sampling emits
 `sample_layout = "primary-key-range-windows"` and orders every window by the
-complete primary key. This lets consumers preserve grouped composite-key
-locality without parsing `sample_method` or `bias_reason` text.
+complete primary key.
 
-Biased samples are still useful, but downstream tools should treat them with
-lower confidence. The audit log records that row sampling was enabled and the
+Biased samples are still useful, but they are lower-confidence. The audit log records that row sampling was enabled and the
 locally encoded probe byte count. Database session byte totals are reported as
 `unknown` when the driver does not expose them.
 
@@ -164,7 +158,7 @@ First production-safe pass:
 --max-wall-secs 120
 ```
 
-Better estimator input when a read replica or maintenance window is available:
+More accurate measurement when a read replica or maintenance window is available:
 
 ```bash
 --measure-compression --yes \
@@ -191,16 +185,10 @@ original-length metadata, retries and driver buffers add overhead. The audit
 records the configured payload ceiling, performed queries and the exact locally
 encoded probe byte total; it does not report measured database wire traffic.
 
-## How Downstream Consumers Use It
+## How The Measurements Are Interpreted
 
-A downstream consumer should use compression evidence in this order:
-
-1. recognized per-column compression blocks;
-2. recognized table-level compression blocks;
-3. type/style defaults when no measured ratio exists.
-
-The `sample_encoding` field is part of the contract. Consumers should only use
-ratios with a recognized encoding tag, because different sample encodings can
-produce different compression ratios for the same logical data. In particular,
-the table-level columnar transfer-probe ratio and the per-column v2 ratios are
+The `sample_encoding` field is part of the contract. Ratios are comparable only
+within one encoding tag, because different sample encodings can produce
+different compression ratios for the same logical data. In particular, the
+table-level columnar transfer-probe ratio and the per-column v2 ratios are
 complementary measurements and must not be substituted for one another.

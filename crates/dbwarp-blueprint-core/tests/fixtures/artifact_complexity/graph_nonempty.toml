@@ -1,0 +1,81 @@
+# Hand-authored semantic oracle. Do not generate this file from the assessor.
+# Graph detail can determine graph and requirement dimensions, but a non-empty
+# estate never receives an overall complexity verdict without definition work.
+
+[inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "graph"
+scope = "selected-schemas"
+visibility = "full"
+inventory_complete = true
+dependencies_complete = true
+requirements_complete = true
+analysis_complete = false
+object_count = 1
+
+[inventory.counts_by_kind]
+view = 1
+
+[inventory.artifacts.artifact-001]
+kind = "view"
+subkind = "ordinary"
+tier = "declarative"
+definition_visibility = "not_read"
+requirement_status = "complete"
+
+[expected]
+contract = "dbwarp-blueprint-artifact-complexity/v1"
+assessor_version = 1
+scope = "selected-schemas"
+population_policy = "exclude-known-engine-generated-and-secondary"
+assessment_population_complete = true
+eligible_object_count = 1
+fully_assessed_object_count = 0
+partially_assessed_object_count = 1
+unassessed_object_count = 0
+excluded_object_count = 0
+analyzer_version = "not-applicable"
+overall_band = "unknown"
+limitations = ["definition-analysis-not-requested"]
+
+[expected.dimensions.volume]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.volume.histogram]
+unknown = 1
+
+[expected.dimensions.control_flow]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.control_flow.histogram]
+unknown = 1
+
+[expected.dimensions.feature_breadth]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.feature_breadth.histogram]
+unknown = 1
+
+[expected.dimensions.entanglement]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.entanglement.histogram]
+"0" = 1
+
+[expected.dimensions.environment_coupling]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.environment_coupling.histogram]
+"0" = 1
+
+[expected.dimensions.opacity]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.opacity.histogram]
+unknown = 1
+
+[expected.dimensions.dialect_coupling]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.dialect_coupling.histogram]
+"0" = 1

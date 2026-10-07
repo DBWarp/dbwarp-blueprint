@@ -1,11 +1,11 @@
-# dbwarp-blueprint v6
+# dbwarp-blueprint v7
 # Anonymous database Blueprint. Source object names and row values are excluded.
 # Review under your organization's data-classification policy before sharing.
 # https://github.com/DBWarp/dbwarp-blueprint
 
 # Producer: blueprint_format.py SQL fallback; anonymization key source: customer-key-file
 
-schema_version = 6
+schema_version = 7
 generated_at = "2026-04-28T00:00:00Z"
 engine = "postgresql"
 engine_version = "16.2"
@@ -22,11 +22,12 @@ table_bytes = 4514119680
 table_count = 2
 
 [database_topology]
-contract = "dbwarp-blueprint-topology/v1"
+contract = "dbwarp-blueprint-topology/v2"
 deployment = "unknown"
 local_role = "unknown"
 visibility = "unknown"
 member_count = 0
+member_count_scope = "unknown"
 identifiers_redacted = true
 
 [dataset_scope]
@@ -39,17 +40,75 @@ row_count_method = "postgres-planner-estimate"
 size_method = "postgres-local-relation-size"
 limitations = ["topology-unobserved", "topology-visibility-unknown"]
 
+[structure_scope]
+contract = "dbwarp-blueprint-structure-scope/v1"
+visibility = "privilege-filtered"
+table_inventory_completeness = "incomplete"
+column_inventory_completeness = "incomplete"
+index_inventory_completeness = "incomplete"
+relationship_inventory_completeness = "incomplete"
+catalogs_read = ["postgresql-columns", "postgresql-foreign-keys", "postgresql-indexes", "postgresql-tables"]
+limitations = ["metadata-visibility-privilege-filtered", "table-kinds-not-inventoried"]
+
+[source_environment]
+contract = "dbwarp-blueprint-source-environment/v1"
+evidence_origin = "none"
+hosting_model = "unknown"
+infrastructure_location = "unknown"
+capacity_scope = "unknown"
+capacity_visibility = "not-requested"
+cpu_capacity_band = "unknown"
+cpu_capacity_basis = "unknown"
+memory_capacity_band = "unknown"
+memory_capacity_basis = "unknown"
+collector_machine_excluded = true
+
+[statistics_evidence]
+contract = "dbwarp-blueprint-statistics-evidence/v1"
+visibility = "unknown"
+table_count = 2
+counts_by_statistics_state = { unknown = 2 }
+counts_by_row_count_quality = { unknown = 2 }
+counts_by_size_quality = { unknown = 2 }
+limitations = ["statistics-provenance-unclassified"]
+
+[artifact_inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "none"
+scope = "unknown"
+visibility = "unknown"
+families_not_inventoried = ["non_table_objects"]
+
 [tables.table-001]
 has_clustered_index = false
 index_bytes = 1048576000
+object_kind = "ordinary-table"
+partitioning = "none"
 rows = 12500000
 schema = "schema-A"
+segment_state = "unknown"
+storage_organization = "unknown"
 table_bytes = 4194304000
+
+[tables.table-001.statistics]
+row_count_method = "postgres-planner-estimate"
+row_count_quality = "unknown"
+statistics_state = "unknown"
+refresh_age_band = "unknown"
+modification_ratio_band = "unknown"
+sample_fraction_band = "unknown"
+statistics_scope = "unknown"
+size_method = "postgres-local-relation-size"
+size_quality = "unknown"
+size_scope = "unknown"
+size_accounting = "unknown"
+size_visibility = "unknown"
 
 [tables.table-001.cols.col-1]
 len_avg = 10
 len_p95 = 0
 nullable = false
+numeric_model = "unknown"
 ordinal = 1
 type = "bigint"
 
@@ -57,6 +116,7 @@ type = "bigint"
 len_avg = 30
 len_p95 = 0
 nullable = false
+numeric_model = "not-applicable"
 ordinal = 2
 type = "text"
 
@@ -64,6 +124,7 @@ type = "text"
 len_avg = 10
 len_p95 = 0
 nullable = false
+numeric_model = "not-applicable"
 ordinal = 3
 type = "timestamp"
 
@@ -80,14 +141,33 @@ unique = true
 [tables.table-002]
 has_clustered_index = false
 index_bytes = 95420416
+object_kind = "ordinary-table"
+partitioning = "none"
 rows = 985000
 schema = "schema-A"
+segment_state = "unknown"
+storage_organization = "unknown"
 table_bytes = 319815680
+
+[tables.table-002.statistics]
+row_count_method = "postgres-planner-estimate"
+row_count_quality = "unknown"
+statistics_state = "unknown"
+refresh_age_band = "unknown"
+modification_ratio_band = "unknown"
+sample_fraction_band = "unknown"
+statistics_scope = "unknown"
+size_method = "postgres-local-relation-size"
+size_quality = "unknown"
+size_scope = "unknown"
+size_accounting = "unknown"
+size_visibility = "unknown"
 
 [tables.table-002.cols.col-1]
 len_avg = 10
 len_p95 = 0
 nullable = false
+numeric_model = "unknown"
 ordinal = 1
 type = "bigint"
 
@@ -95,6 +175,7 @@ type = "bigint"
 len_avg = 10
 len_p95 = 0
 nullable = false
+numeric_model = "unknown"
 ordinal = 2
 type = "bigint"
 
@@ -102,6 +183,7 @@ type = "bigint"
 len_avg = 10
 len_p95 = 0
 nullable = false
+numeric_model = "unknown"
 ordinal = 3
 type = "bigint"
 
@@ -109,6 +191,7 @@ type = "bigint"
 len_avg = 10
 len_p95 = 0
 nullable = false
+numeric_model = "not-applicable"
 ordinal = 4
 type = "timestamp"
 

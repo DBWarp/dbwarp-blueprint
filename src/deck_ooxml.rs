@@ -42,6 +42,10 @@ fn content_types(n_slides: usize) -> String {
             "application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml",
         ),
         (
+            "/ppt/notesMasters/notesMaster1.xml".into(),
+            "application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml",
+        ),
+        (
             "/docProps/core.xml".into(),
             "application/vnd.openxmlformats-package.core-properties+xml",
         ),
@@ -54,6 +58,10 @@ fn content_types(n_slides: usize) -> String {
         ov.push((
             format!("/ppt/slides/slide{}.xml", k),
             "application/vnd.openxmlformats-officedocument.presentationml.slide+xml",
+        ));
+        ov.push((
+            format!("/ppt/notesSlides/notesSlide{}.xml", k),
+            "application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml",
         ));
     }
     let mut s = String::from(XMLDECL);
@@ -74,6 +82,10 @@ fn content_types(n_slides: usize) -> String {
 
 fn font_rel_id(n_slides: usize, font_idx: usize) -> String {
     format!("rId{}", 2 + n_slides + 4 + font_idx)
+}
+
+fn notes_master_rel_id(n_slides: usize) -> String {
+    format!("rId{}", 2 + n_slides + 4 + EMBEDDED_FONTS.len())
 }
 
 fn embedded_font_list(n_slides: usize) -> String {
@@ -140,6 +152,8 @@ fn presentation_rels(n_slides: usize) -> String {
         owned_ids.push(font_rel_id(n_slides, idx));
         owned_targets.push(font.target.to_string());
     }
+    owned_ids.push(notes_master_rel_id(n_slides));
+    owned_targets.push("notesMasters/notesMaster1.xml".to_string());
     // build items with proper types
     items.push((
         owned_ids[0].as_str(),
@@ -175,6 +189,12 @@ fn presentation_rels(n_slides: usize) -> String {
             owned_targets[fontoff + j].as_str(),
         ));
     }
+    let notes_master_offset = fontoff + EMBEDDED_FONTS.len();
+    items.push((
+        owned_ids[notes_master_offset].as_str(),
+        format!("{}/notesMaster", R),
+        owned_targets[notes_master_offset].as_str(),
+    ));
     part_rels(&items)
 }
 
@@ -198,7 +218,8 @@ fn root_rels() -> String {
     ])
 }
 
-fn slide_rels() -> String {
+fn slide_rels(slide_number: usize) -> String {
+    let notes_target = format!("../notesSlides/notesSlide{}.xml", slide_number);
     part_rels(&[
         (
             "rId1",
@@ -225,6 +246,89 @@ fn slide_rels() -> String {
             format!("{}/image", R),
             "../media/dbwarp-logo-light-small.png",
         ),
+        ("rId6", format!("{}/notesSlide", R), notes_target.as_str()),
+    ])
+}
+
+fn notes_master() -> String {
+    format!(
+        "{decl}<p:notesMaster xmlns:a=\"{A}\" xmlns:r=\"{R}\" xmlns:p=\"{P}\"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Slide Image Placeholder 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\" noRot=\"1\" noChangeAspect=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldImg\" idx=\"2\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"1143000\" y=\"685800\"/><a:ext cx=\"4572000\" cy=\"3429000\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:noFill/></p:spPr></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Notes Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" sz=\"quarter\" idx=\"3\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"685800\" y=\"4343400\"/><a:ext cx=\"5486400\" cy=\"4114800\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Slide Number Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"5\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"3884613\" y=\"8685213\"/><a:ext cx=\"2971800\" cy=\"457200\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree></p:cSld><p:clrMap bg1=\"lt1\" tx1=\"dk1\" bg2=\"lt2\" tx2=\"dk2\" accent1=\"accent1\" accent2=\"accent2\" accent3=\"accent3\" accent4=\"accent4\" accent5=\"accent5\" accent6=\"accent6\" hlink=\"hlink\" folHlink=\"folHlink\"/><p:notesStyle><a:lvl1pPr marL=\"0\" algn=\"l\"><a:defRPr sz=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"{font}\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl1pPr></p:notesStyle></p:notesMaster>",
+        decl = XMLDECL,
+        A = A,
+        R = R,
+        P = P,
+        font = DM_SANS,
+    )
+}
+
+fn notes_master_rels() -> String {
+    part_rels(&[("rId1", format!("{}/theme", R), "../theme/theme1.xml")])
+}
+
+fn notes_slide(notes: &[NoteParagraph]) -> String {
+    let locale = crate::i18n::active_locale();
+    let east_asian_typeface = east_asian_typeface(locale);
+    let east_asian_font = if east_asian_typeface.is_empty() {
+        String::new()
+    } else {
+        format!("<a:ea typeface=\"{}\"/>", east_asian_typeface)
+    };
+    let mut paragraphs = String::new();
+    for note in notes {
+        let (paragraph_properties, size, bold, italic, color) = match note.style {
+            NoteStyle::Section => (
+                "<a:pPr marL=\"0\" algn=\"l\"><a:spcBef><a:spcPts val=\"700\"/></a:spcBef><a:spcAft><a:spcPts val=\"200\"/></a:spcAft></a:pPr>",
+                1350,
+                1,
+                0,
+                CYANDK,
+            ),
+            NoteStyle::Body => (
+                "<a:pPr marL=\"0\" algn=\"l\"><a:spcAft><a:spcPts val=\"500\"/></a:spcAft></a:pPr>",
+                1150,
+                0,
+                0,
+                BODY,
+            ),
+        };
+        paragraphs.push_str(&format!(
+            "<a:p>{}<a:r><a:rPr lang=\"{}\" sz=\"{}\" b=\"{}\" i=\"{}\"><a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill><a:latin typeface=\"{}\"/>{}</a:rPr><a:t>{}</a:t></a:r></a:p>",
+            paragraph_properties,
+            locale.bcp47(),
+            size,
+            bold,
+            italic,
+            color,
+            DM_SANS,
+            east_asian_font,
+            esc(&note.text),
+        ));
+    }
+    if paragraphs.is_empty() {
+        paragraphs.push_str(&format!(
+            "<a:p><a:endParaRPr lang=\"{}\"/></a:p>",
+            locale.bcp47()
+        ));
+    }
+    format!(
+        "{decl}<p:notes xmlns:a=\"{A}\" xmlns:r=\"{R}\" xmlns:p=\"{P}\"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Slide Image Placeholder 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldImg\" idx=\"2\"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Notes Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" idx=\"3\" sz=\"quarter\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/>{paragraphs}</p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Slide Number Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" idx=\"5\" sz=\"quarter\"/></p:nvPr></p:nvSpPr><p:spPr/></p:sp></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>",
+        decl = XMLDECL,
+        A = A,
+        R = R,
+        P = P,
+        paragraphs = paragraphs,
+    )
+}
+
+fn notes_slide_rels(slide_number: usize) -> String {
+    let slide_target = format!("../slides/slide{}.xml", slide_number);
+    part_rels(&[
+        (
+            "rId1",
+            format!("{}/notesMaster", R),
+            "../notesMasters/notesMaster1.xml",
+        ),
+        ("rId2", format!("{}/slide", R), slide_target.as_str()),
     ])
 }
 

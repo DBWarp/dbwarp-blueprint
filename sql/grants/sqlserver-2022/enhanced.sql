@@ -1,5 +1,5 @@
 -- =============================================================================
--- dbwarp-blueprint least-privilege grants — SQL Server 2022 / 2025 (16.x, 17.x)
+-- dbwarp-blueprint least-privilege grants: SQL Server 2022 / 2025 (16.x, 17.x)
 -- Tier: ENHANCED
 -- =============================================================================
 -- Authorizes this command:
@@ -15,16 +15,25 @@
 -- sys.certificates, sys.symmetric_keys, sys.asymmetric_keys,
 -- sys.database_scoped_credentials, sys.external_*; partition functions /
 -- schemes, filegroups, sys.column_master_keys, sys.column_encryption_keys,
--- sys.servers and sys.databases were visible with CONNECT alone (verified).
--- Two catalogs need explicit grants (verified: denied without them):
+-- sys.servers and sys.databases are visible with CONNECT alone.
+-- Two catalogues need explicit grants:
 --   sys.sql_expression_dependencies  (dependency edges) -> SELECT on that view
 --     (by default only db_owner may select it; db_datareader also covers it)
 --   msdb.dbo.sysjobs                 (Agent job census)  -> user in msdb +
 --     SELECT on dbo.sysjobs (SQLAgentReaderRole is NOT enough: the collector
 --     reads the base table, not sysjobs_view)
+-- One server-level permission is granted at this tier only:
+--   VIEW SERVER PERFORMANCE STATE  lets the collector read sys.dm_os_sys_info for
+--     the coarse CPU and memory bands of a self-managed server, and the HADR
+--     state views used for availability-group topology. It is server-wide
+--     operational metadata, so BASIC and STANDARD do not grant it and leave
+--     those bands unknown. Remove that batch below to keep ENHANCED without it.
 --
 -- Trust note: analyzed mode reads module definitions transiently; VIEW
 -- DEFINITION grants that read capability to the account in any tool.
+-- The exact object-grant path excludes external tables. db_datareader is the
+-- broader alternative and can authorize them in another client; Blueprint
+-- inventories them but deliberately never follows them.
 -- The collector reports artifact visibility = "full" when the account holds
 -- VIEW DEFINITION on the database (or is db_owner/sysadmin).
 --
@@ -41,7 +50,8 @@
 --   GRANT VIEW ANY COLUMN ENCRYPTION KEY DEFINITION TO [dbwarp_blueprint_enhanced];
 --   USE [master]; GRANT VIEW ANY DEFINITION TO [dbwarp_blueprint_enhanced];  -- server-wide metadata; broad
 --
--- NOT granted: VIEW SERVER STATE, VIEW ANY DEFINITION, SQLAgent roles, UNMASK,
+-- NOT granted: VIEW SERVER STATE,
+-- VIEW ANY DEFINITION, SQLAgent roles, UNMASK,
 -- key/certificate CONTROL, IMPERSONATE, ALTER, DML, DDL, sysadmin, db_owner.
 -- Common to every tier:
 --   VIEW DEFINITION  makes the database's object metadata visible. Catalog
@@ -54,6 +64,8 @@
 --
 -- Run ONCE with sqlcmd (or SSMS in SQLCMD mode) as a sysadmin, or a principal
 -- with ALTER ANY LOGIN on the server and db_owner in the target database:
+-- the server-level batch also needs CONTROL SERVER (or VIEW SERVER PERFORMANCE STATE
+-- WITH GRANT OPTION), which a sysadmin has.
 --     sqlcmd -S HOST -E -i enhanced.sql           (Windows auth)
 --     sqlcmd -S HOST -U admin -i enhanced.sql  (prompts for password)
 -- Re-running is safe; it resets the login password to the value below.
@@ -73,7 +85,7 @@
 --   ALL = every schema that owns a user table (for an unscoped run),
 --   or an explicit comma-separated list, e.g.  :setvar schemas "app, billing"
 :setvar use_db_datareader 0
---   1 = add the login to db_datareader instead of granting schema SELECT.
+--   1 = add the login to db_datareader instead of granting object SELECT.
 -- -----------------------------------------------------------------------------
 :on error exit
 SET NOCOUNT ON;
@@ -86,6 +98,13 @@ IF SUSER_ID('$(login)') IS NULL
     CREATE LOGIN [$(login)] WITH PASSWORD = N'$(password)', DEFAULT_DATABASE = [$(database)], CHECK_POLICY = ON;
 ELSE
     ALTER LOGIN [$(login)] WITH PASSWORD = N'$(password)', DEFAULT_DATABASE = [$(database)];
+GO
+
+-- Server-level, ENHANCED only: coarse host CPU and memory bands and HADR
+-- topology. Skip this batch on Azure SQL Database and managed instances; the
+-- collector never reads the host-level view there.
+USE [master];
+GRANT VIEW SERVER PERFORMANCE STATE TO [$(login)];
 GO
 
 USE [$(database)];
@@ -104,20 +123,24 @@ END
 ELSE
 BEGIN
     -- STRING_SPLIT needs database compatibility level 130+ (SQL Server 2016).
-    DECLARE @s sysname, @sql nvarchar(max);
+    DECLARE @s sysname, @o sysname, @sql nvarchar(max);
     DECLARE c CURSOR LOCAL FAST_FORWARD FOR
-        SELECT s.name FROM sys.schemas s
-        WHERE ('$(schemas)' = 'ALL'
-               AND EXISTS (SELECT 1 FROM sys.tables t WHERE t.schema_id = s.schema_id AND t.is_ms_shipped = 0))
-           OR ('$(schemas)' <> 'ALL'
-               AND s.name IN (SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT('$(schemas)', ',')))
-        ORDER BY s.name;
-    OPEN c; FETCH NEXT FROM c INTO @s;
+        SELECT s.name, t.name
+        FROM sys.schemas s
+        JOIN sys.tables t ON t.schema_id = s.schema_id
+        LEFT JOIN sys.external_tables et ON et.object_id = t.object_id
+        WHERE t.is_ms_shipped = 0
+          AND et.object_id IS NULL
+          AND ('$(schemas)' = 'ALL'
+               OR s.name IN (SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT('$(schemas)', ',')))
+        ORDER BY s.name, t.name;
+    OPEN c; FETCH NEXT FROM c INTO @s, @o;
     WHILE @@FETCH_STATUS = 0
     BEGIN
-        SET @sql = N'GRANT SELECT ON SCHEMA::' + QUOTENAME(@s) + N' TO ' + QUOTENAME('$(login)') + N';';
+        SET @sql = N'GRANT SELECT ON OBJECT::' + QUOTENAME(@s) + N'.' + QUOTENAME(@o)
+                 + N' TO ' + QUOTENAME('$(login)') + N';';
         PRINT @sql; EXEC sp_executesql @sql;
-        FETCH NEXT FROM c INTO @s;
+        FETCH NEXT FROM c INTO @s, @o;
     END
     CLOSE c; DEALLOCATE c;
 END
@@ -140,8 +163,11 @@ SELECT 'dbwarp-blueprint ENHANCED tier applied for' AS note, '$(login)' AS login
 SELECT s.name AS schema_name,
        COUNT(*) AS visible_user_tables,
        SUM(CASE WHEN HAS_PERMS_BY_NAME(QUOTENAME(s.name) + '.' + QUOTENAME(t.name), 'OBJECT', 'SELECT') = 1 THEN 1 ELSE 0 END) AS readable_tables
-FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id
+FROM sys.tables t
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+LEFT JOIN sys.external_tables et ON et.object_id = t.object_id
 WHERE t.is_ms_shipped = 0
+  AND et.object_id IS NULL
 GROUP BY s.name ORDER BY s.name;
 SELECT COUNT(*) AS partition_stats_rows
 FROM sys.dm_db_partition_stats p JOIN sys.tables t ON t.object_id = p.object_id WHERE t.is_ms_shipped = 0;

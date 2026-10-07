@@ -24,7 +24,7 @@ uzupełniający i mogą zawierać błędy.
 
 DBWarp Blueprint to kolektor Blueprint bazy danych zaprojektowany z myślą o zaufaniu. Uruchamiasz go we własnym środowisku względem PostgreSQL, MySQL lub SQL Server. Odczytuje metadane katalogowe, a tylko na żądanie pomiaru kompresji również ograniczoną próbkę wierszy. Następnie zapisuje zanonimizowany strukturalny Blueprint bazy danych: rozmiary tabel, liczby wierszy, rodziny typów oraz strukturę indeksów i kluczy obcych.
 
-Identyfikatory są zastępowane anonimowymi etykietami chronionymi kluczem, a wartości wierszy nie są zapisywane w pliku Blueprint. Domyślnie nowy klucz lokalny dla procesu uniemożliwia sprawdzanie słownikowe offline; `--anonymization-key-file` pozwala klientowi zachować etykiety między zatwierdzonymi uruchomieniami porównawczymi. Przed udostępnieniem wyników przeczytaj [`SECURITY.md`](SECURITY.md): dokument ten dokładnie określa, co ujawnia każdy tryb i które opcje zwiększają zakres ujawnianych informacji.
+Identyfikatory są zastępowane anonimowymi etykietami przypisanymi za pomocą kluczy, a żadne wartości wierszy nie są zapisywane do Blueprint. Świeży, lokalny dla procesu klucz domyślnie uniemożliwia sprawdzanie słownika w trybie offline; `--anonymization-key-file` umożliwia zachowanie etykiet podczas zatwierdzonych porównań. Przed udostępnieniem jakichkolwiek wyników, przeczytaj [`SECURITY.md`](SECURITY.md): dokument ten dokładnie określa, co każdy tryb ujawnia oraz które opcje to rozszerzają.
 
 Wynik jest plikiem tekstowym. Przed podjęciem decyzji o jego udostępnieniu możesz przeczytać każdy wiersz.
 
@@ -41,14 +41,11 @@ Najważniejsza jest odległość. Im dalej muszą zostać przesłane dane, tym w
 
 ---
 
-Wersja angielska jest wiążąca; tłumaczenia wspomagane maszynowo mają charakter uzupełniający i mogą zawierać błędy.
-[`MACHINE_TRANSLATIONS.md`](https://github.com/DBWarp/dbwarp-blueprint/blob/main/MACHINE_TRANSLATIONS.md).
-
 `dbwarp-blueprint` jest działającym po stronie klienta kolektorem Blueprint dla DBWarp. Uruchamia się go we własnym środowisku klienta, aby utworzyć ograniczony, zanonimizowany i możliwy do przeglądu plik `blueprint.toml`, którego DBWarp może użyć do wymiarowania migracji, generowania syntetycznych zestawów danych i planowania wstępnego bez otrzymywania dostępu do bazy danych, zrzutów, nazw schematów ani danych wierszy.
 
 Narzędzie łączy się z PostgreSQL, MySQL lub SQL Server, odczytuje metadane katalogu, opcjonalnie mierzy lokalną kompresję na podstawie ograniczonej próbki wierszy i zapisuje TOML w zwykłym tekście. Może również wyprowadzić Blueprint z lokalnych plików Parquet lub Avro w trybie offline, gdy dane wejściowe są już plikiem strukturalnym, a nie bazą danych na żywo. Możesz otworzyć dane wyjściowe, przejrzeć każdy wiersz i zdecydować, czy je udostępnić.
 
-Opcjonalnie `--deck blueprint.pptx` zapisuje również podsumowanie PowerPoint tego samego zanonimizowanego Blueprint. Prezentację można wygenerować podczas pracy z bazą danych na żywo albo później ze sprawdzonego pliku TOML za pomocą `--from-toml blueprint.toml --deck blueprint.pptx`. Generator prezentacji jest wbudowany w plik binarny Rust i nie nawiązuje połączeń sieciowych.
+Opcjonalnie `--deck blueprint.pptx` zapisuje również podsumowanie PowerPoint tego samego zanonimizowanego Blueprint. Prezentację można zapisać podczas pracy z bazą danych na żywo albo później ze sprawdzonego pliku TOML za pomocą `--from-toml blueprint.toml --deck blueprint.pptx`. Mechanizm tworzenia prezentacji jest wbudowany w plik binarny Rust i nie nawiązuje połączeń sieciowych.
 
 ## Do czego służy
 
@@ -62,9 +59,9 @@ DBWarp potrzebuje wystarczającej ilości informacji strukturalnych, aby oszacow
 - struktury indeksów i kluczy obcych;
 - ograniczonych, pozbawionych nazw liczników artefaktów innych niż tabele i zewnętrznych wymagań wdrożeniowych;
 - opcjonalnych podsumowań kompresji tabel i kolumn z małej lokalnej próbki;
-- opcjonalnych dowodów RTT bazy danych po stronie klienta.
+- opcjonalny pomiar czasu odpowiedzi (round-trip time) z narzędzia do zbierania danych do Twojej bazy danych.
 
-Te fakty wystarczają do oszacowania wielkości transferu, wybrania początkowego planu transferu masowego DBWarp i wygenerowania reprezentatywnego syntetycznego zestawu testowego. Nazwy źródłowe i wartości wierszy są pomijane, ale charakterystyczna struktura i statystyki mogą nadal identyfikować obciążenie; anonimizacja ogranicza ryzyko, nie jest obietnicą nieodwracalności.
+Te informacje są wystarczające do oszacowania rozmiaru transferu i zaplanowania go. Nazwy źródeł i wartości w wierszach są pomijane, ale charakterystyczna struktura i statystyki nadal mogą identyfikować obciążenie; anonimizacja to redukcja ryzyka, a nie gwarancja nieodwracalności.
 
 ## Czego nie robi
 
@@ -91,7 +88,7 @@ sieciowych aplikacji.
 
 | Ścieżka | Najlepsze zastosowanie | Odsyłacz |
 |---|---|---|
-| Pobranie pliku binarnego | szybka próba, rozmowa z inżynierem sprzedaży, izolowany host testowy | [`binaries/README.md`](BINARIES.md) |
+| Pobierz plik binarny. | szybka wersja testowa, odizolowany serwer testowy. | [`binaries/README.md`](BINARIES.md) |
 | Budowanie z małego klonu źródeł | przegląd bezpieczeństwa, zasady produkcyjne, kontrola odtwarzalności | [`BUILD.md`](BUILD.md) |
 | Budowanie z pakietu źródeł z zależnościami | rygorystyczny audyt zależności offline | GitHub Releases |
 | Przegląd i uruchomienie zapasowej ścieżki SQL | zasady DBA odrzucają plik binarny strony trzeciej | [`sql/blueprint.pg.sql`](../../sql/blueprint.pg.sql), [`sql/blueprint.mysql.sql`](../../sql/blueprint.mysql.sql), [`sql/blueprint.sqlserver.sql`](../../sql/blueprint.sqlserver.sql) i [`blueprint_format.py`](../../blueprint_format.py) |
@@ -100,7 +97,7 @@ sieciowych aplikacji.
 
 Zapasowa ścieżka SQL jest możliwym do przeglądu minimum katalogowym, a nie funkcjonalnym odpowiednikiem kolektora Rust. Każdy skrypt SQL zapisuje pośredni dokument JSON z rzeczywistymi nazwami schematów, tabel, kolumn i indeksów; w MySQL `COLUMN_TYPE` może również zawierać zadeklarowane elementy enum/set. Traktuj ten JSON jako wrażliwy materiał schematu, pozostaw go w środowisku źródłowym, znormalizuj lokalnie za pomocą `blueprint_format.py` i udostępniaj wyłącznie sprawdzony wynik TOML.
 
-Ścieżka zapasowa nie ma selektora `--schema`: PostgreSQL obejmuje wszystkie schematy niesystemowe w połączonej bazie, a MySQL i SQL Server wszystkie tabele użytkownika w wybranej bazie. Nie używaj jej, gdy zatwierdzono tylko podzbiór. Jej TOML zawiera strukturę tabel, kolumn, indeksów i FK oraz przybliżone lokalne rozmiary, ale bez próbkowania wierszy, dowodów RTT, inwentarza artefaktów innych niż tabele ani sond topologii na żywo; topologia i kompletność zbioru danych są jawnie `unknown`.
+Ścieżka zapasowa nie ma selektora `--schema`: PostgreSQL obejmuje zwykłe tabele we wszystkich schematach niesystemowych połączonej bazy, a MySQL i SQL Server zwykłe lokalne tabele użytkownika w wybranej bazie. Nie używaj jej, gdy zatwierdzono tylko podzbiór. Jej TOML zawiera podzbiór zwykłych tabel ze strukturą tabel, kolumn, indeksów i FK oraz przybliżonymi lokalnymi rozmiarami, ale nie inwentaryzuje wszystkich rodzajów tabel v7. Oznacza wszystkie rodziny struktury jako niekompletne oraz wyklucza tabele MySQL FEDERATED i zewnętrzne tabele SQL Server, zamiast błędnie oznaczać ich zdalne dane jako lokalne. Nie zawiera także próbkowania wierszy, dowodów RTT, inwentarza artefaktów innych niż tabele ani sond topologii na żywo; topologia i kompletność zbioru danych są jawnie `unknown`.
 
 Ścieżką stawiającą zaufanie na pierwszym miejscu jest budowanie ze źródeł. Zwykłe repozytorium pozostaje małe i używa `Cargo.lock` do przypięcia wersji zależności. Na potrzeby bardziej rygorystycznych audytów offline każde wydanie publikuje również pakiet źródeł ze wszystkimi plikami źródłowymi zależności. Dla wygody dostarczane są pliki binarne wydania z sumami kontrolnymi SHA256.
 
@@ -131,24 +128,13 @@ kody DBP, klucze audytu i generowany TOML pozostają kanonicznymi tokenami
 angielskimi. Dzięki temu automatyzacja i procedury pomocy są identyczne w każdym
 języku. Zobacz [`docs/INTERNATIONALISATION.md`](INTERNATIONALISATION.md).
 
-Przed połączeniem z bazą sprawdź przykłady zapisane w repozytorium pod
-[`samples/`](../../samples/). Są to zwykłe pliki TOML Blueprint i nie wymagają
-konfiguracji. Po uzyskaniu pliku binarnego pierwszy przebieg offline może
-wygenerować z jednego z nich prezentację bez bazy danych ani dostępu do sieci:
-
-Zacznij od małych przykładów schematu v6 opisanych w
-[`samples/README.md`](../../samples/README.md): PostgreSQL tylko z katalogami,
-MySQL z próbkowaniem oraz SQL Server z próbkowaniem i analizą artefaktów.
-Są to ręcznie opracowane ilustracje syntetyczne, a nie przechwycenia klientów
-ani wyniki kwalifikacji. Większe przykłady schematu v1 pozostają fixture'ami
-zgodności. Przed zatwierdzeniem przechwycenia klienta sprawdź pełny zakres
-wyjścia w [`FORMAT.md`](FORMAT.md); żaden przykład nie obejmuje wszystkich
-pól opcjonalnych.
+Przed połączeniem z bazą danych, zapoznaj się z przykładami dostępnymi pod adresem [`samples/`](../../samples/). Są to standardowe pliki TOML w formacie Blueprint i nie wymagają żadnej konfiguracji do przeglądania. Po pobraniu pliku binarnego, można uruchomić go w trybie offline, aby wygenerować prezentację bez dostępu do bazy danych ani sieci:
 
 ```bash
 ./dbwarp-blueprint --from-toml samples/sqlserver-v6-analyzed.toml --deck sample.pptx
 ```
 
+Zacznij od małych przykładów Blueprint opisanych w [`samples/README.md`](../../samples/README.md): katalog PostgreSQL, próbki MySQL i próbki SQL Server z analizowanymi artefaktami. Są to przykłady ręcznie przygotowane, a nie rzeczywiste dane. Większe przykłady schematu v1 pokazują starszy format, który jest nadal czytelny. Użyj [`FORMAT.md`](FORMAT.md), aby zapoznać się z pełnym formatem wyjściowym przed zatwierdzeniem zebrania danych; żaden przykład nie obejmuje wszystkich opcjonalnych pól.
 Najpierw wykonaj przebieg próbny. Wypisuje plan bez nawiązywania połączenia:
 
 ```bash
@@ -174,20 +160,7 @@ Zalecane uruchomienie w stylu produkcyjnym z TLS, dziennikiem audytu i pomiarem 
   --audit-log audit.txt
 ```
 
-Z `--measure-compression --yes` dane wyjściowe zawierają współczynniki zstd na
-poziomie tabeli i projekcje kompresji dla poszczególnych kolumn. Bloki kolumn są
-obliczane z tej samej ograniczonej próbki co współczynnik tabeli; są przeznaczone
-do estymacji syntetycznych zestawów testowych DBWarp i nie zapisują wartości próbek na dysku.
-Istotnie dominująca próbka binarna z rozpoznanymi sygnaturami standardowych
-skompresowanych kontenerów otrzymuje wyłącznie zgrubną etykietę
-`style = "precompressed"`; typ pliku, sygnatura ani próbkowana wartość nie są
-serializowane. Generowane bliźniaki przekształcają tę etykietę w neutralne,
-deterministyczne dane testowe ze skompresowanymi kontenerami, nie twierdząc, że
-znają pierwotny typ treści klienta. Schemat v3 i nowsze emitują również ograniczone, pozbawione nazw agregaty
-kardynalności i skośności dla poszczególnych kolumn oraz wywnioskowane
-podsumowania prefiksów indeksów i relacji. Tymczasowe skróty poszczególnych
-wartości są ograniczone w pamięci i usuwane; próbkowane wartości i ich skróty
-nigdy nie trafiają do pliku TOML Blueprint, natomiast udokumentowane agregaty tak.
+Dzięki `--measure-compression --yes` wynik zawiera współczynniki kompresji zstd na poziomie tabeli oraz prognozy kompresji dla poszczególnych kolumn. Bloki dla poszczególnych kolumn są obliczane na podstawie tego samego, ograniczonego zbioru danych, co współczynnik na poziomie tabeli; służą one do doprecyzowania oszacowania transferu i nie zapisują próbek danych na dysku. Materiałnie dominująca, binarna próbka z rozpoznawalnymi, standardowymi sygnaturami skompresowanych kontenerów otrzymuje tylko ogólną etykietę `style = "precompressed"`; nie jest serializowany żaden typ pliku, sygnatura ani wartość próbki. Schematy w wersji 3 i nowszych również generują ograniczone, pozbawione nazw agregaty dla poszczególnych kolumn cardinality/skew oraz wnioskowane podsumowania index-prefix/relationship. Tymczasowe hasze dla poszczególnych wartości są ograniczone w pamięci i usuwane; próbki danych i hasze dla poszczególnych wartości nigdy nie pojawiają się w pliku Blueprint TOML, podczas gdy udokumentowane agregaty tak.
 
 Od schematu v4 Blueprinty inwentaryzują również obiekty inne niż tabele. Domyślne
 `--artifact-detail summary` zapisuje ograniczone liczniki według klas obiektów i
@@ -219,8 +192,8 @@ znakowe/bajtowe i długości prefiksów indeksów. Próbkowane średnie/p95 dłu
 wartości korzystają z przedziałów błędu względnego (maksymalny błąd około 3,2%,
 przy czym wartości do 32 bajtów zachowuje się dokładnie). Dzięki temu klucz
 `VARCHAR(3000)`, którego wartości zwykle mają 9 znaków, pozostaje blisko 9
-znaków w generowanych danych, a jednocześnie zachowane są prawidłowe limity
-DDL/indeksów źródła:
+znaków, dzięki czemu rozmiar odzwierciedla rzeczywistą szerokość wartości, a
+jednocześnie zachowane są prawidłowe limity DDL/indeksów źródła:
 
 ```bash
 ./dbwarp-blueprint \
@@ -244,31 +217,11 @@ Używaj dokładnych statystyk próbek tylko wtedy, gdy zasady pozwalają na doda
   --audit-log mysql-appdb-exact.audit.txt
 ```
 
-Użyj `--length-fidelity strict`, aby zachować starsze, zgrubne przedziały
-prywatności dla długości deklarowanych, obserwowanych i
-prefiksów. Tryb `strict` celowo poświęca wierność zestawu testowego i indeksu i nie
-jest gotowy do benchmarku klienta. Starsza pisownia
-`--preserve-exact-lengths --yes` pozostaje aliasem zgodności dla
-`--length-fidelity exact --yes`.
+Użyj `--length-fidelity strict` do zastosowania ogólnego podziału danych pod względem prywatności dla zadeklarowanych, zaobserwowanych i prefiksów. Tryb ścisły zmniejsza dokładność uzyskiwanego wyniku. Pisownia `--preserve-exact-lengths --yes` pozostaje aliasem dla `--length-fidelity exact --yes`.
 
-Nowe Blueprinty zapisują osobne pola `declared_length_fidelity`,
-`index_length_fidelity` i `observed_length_fidelity`. Starsze pole
-`length_metadata` pozostaje dla zachowawczej zgodności ze starszymi
-konsumentami. Pojemności znakowe PostgreSQL są dokładnymi wartościami
-katalogowymi; zależne od kodowania limity bajtowe i długości prefiksów indeksów
-pozostają niedostępne.
+Nowe plany (Blueprints) zawierają oddzielne pola `declared_length_fidelity`, `index_length_fidelity` i `observed_length_fidelity`. Pole `length_metadata` również jest zapisywane, aby narzędzia odczytujące starszy format mogły nadal działać. Dokładne wartości katalogu dla pojemności znaków w PostgreSQL są dostępne; limity bajtów zależne od kodowania oraz długości prefiksów indeksów pozostają niedostępne.
 
-Dla generowanego benchmarku reprezentatywnego dla klienta
-`--measure-compression` nie jest opcjonalne: dostarcza zaobserwowane średnie/p95
-długości wartości, dzięki czemu zadeklarowany wielokilobajtowy klucz, którego
-rzeczywiste wartości mają tylko kilka znaków, nie jest generowany z długością
-równą pojemności. Domyślny budżet czasu rzeczywistego próbkowania wynosi 300
-sekund. Zwiększ `--max-wall-secs` dla bardzo dużych schematów. Narzędzia
-planistyczne działające dalej powinny odrzucić Blueprint, jeśli którakolwiek
-niepusta indeksowana kolumna o zmiennej szerokości pozostanie bez próbki.
-Generowanie na potrzeby testu dymnego lub zgodności wymaga wtedy jawnego
-nadpisania w narzędziu dalszego etapu i musi zostać oznaczone jako
-niereprezentatywne.
+Dla uzyskania najbardziej dokładnej oszacowania, uruchom z opcją `--measure-compression`: rejestruje ona obserwowane średnie i wartości p95 długości, dzięki czemu kolumna zadeklarowana jako znacznie szersza niż jej rzeczywiste wartości nie zostanie przeszacowana. Domyślny limit czasu próbkowania wynosi 300 sekund; zwiększ wartość `--max-wall-secs` dla bardzo dużych schematów.
 
 Następnie przejrzyj pliki:
 
@@ -277,9 +230,7 @@ less blueprint.toml
 less audit.txt
 ```
 
-Przestrzegaj [zasad przekazywania](QUICKSTART.md#review-and-share).
-Domyślnie udostępniaj tylko zatwierdzony Blueprint; prezentację dołączaj
-wyłącznie po odrębnym przeglądzie i zatwierdzeniu. Dowody operacyjne zachowaj lokalnie.
+Przed wysłaniem jakiegokolwiek elementu, należy wykonać [kroki przeglądania i udostępniania](QUICKSTART.md#review-and-share). Udostępniaj tylko zatwierdzone treści Blueprint, a w razie potrzeby, po oddzielnym przeglądzie i zatwierdzeniu, prezentację; domyślnie, zachowuj lokalnie dokumentację operacyjną.
 
 ## Tryb pliku strukturalnego
 
@@ -302,8 +253,8 @@ Jeżeli źródłem jest już lokalny plik strukturalny, wygeneruj TOML Blueprint
 Tryb Parquet odczytuje stopkę i metadane grup wierszy. Kontenery obiektów Avro nie mają równoważnej liczby wierszy w stopce, dlatego tryb Avro przechodzi przez kontener, aby policzyć rekordy, i używa schematu zapisu (writer schema) do określenia struktury kolumn. Żaden z trybów nie łączy się z bazą danych ani nie odczytuje flag poświadczeń.
 
 Jeżeli zasady zezwalają na zdekodowane próbkowanie, tryb plikowy może również
-mierzyć ograniczoną lokalną podatność na kompresję na potrzeby dalszego
-planowania:
+mierzyć ograniczoną lokalną podatność na kompresję na potrzeby planowania
+transferu:
 
 ```bash
 ./dbwarp-blueprint \
@@ -321,7 +272,7 @@ nigdy próbkowane wartości.
 
 ## Tryb wsadowy i pakietowy
 
-Dla wielu baz danych, wielu tabel/zestawów danych albo przeglądu środowiska klienta użyj manifestu wsadowego i zapisz katalog pakietu:
+Dla wielu baz danych, wielu tables/datasets lub w celu przeglądu całej infrastruktury, użyj zbiorczego manifestu i utwórz katalog zawierający wyniki:
 
 ```bash
 ./dbwarp-blueprint \
@@ -411,17 +362,17 @@ Jeśli zasady dopuszczają wyłącznie katalogi tabel, kolumn, indeksów i FK, p
   --yes
 ```
 
-Ten tryb wyłącznie katalogowy odczytuje metadane i statystyki tabel, ale nie wartości wierszy ani katalogi obiektów innych niż tabele. DBWarp nadal może estymować na podstawie rozmiaru tabel, liczby wierszy, rodzin typów i struktury indeksów/FK, ale kompresja i realizm syntetycznego zestawu danych są słabsze, ponieważ entropia tekstu/danych binarnych musi zostać wywnioskowana. Bez `--artifact-detail none` domyślne podsumowanie odczytuje także katalogi obiektów innych niż tabele, lecz nie definicje.
+Ten tryb, działający tylko na katalogach, odczytuje metadane tabel, statystyki oraz sondę topologii, która zlicza obiekty, ale nie odczytuje wartości wierszy ani informacji o obiektach innych niż tabele. DBWarp nadal może oszacować rozmiar na podstawie rozmiaru tabeli, liczby wierszy, typów danych oraz index/FK struktury, ale oszacowania kompresji są słabsze, ponieważ text/binary entropia musi być wnioskowana. Bez `--artifact-detail none`, domyślne podsumowanie odczytuje również katalogi obiektów innych niż tabele, ale nie ich definicje.
 
 ## Podgląd danych wyjściowych
 
 ```toml
-# dbwarp-blueprint v6
+# dbwarp-blueprint v7
 # Anonymous database Blueprint. Source object names and row values are excluded.
 # Review under your organization's data-classification policy before sharing.
 # https://github.com/DBWarp/dbwarp-blueprint
 
-schema_version = 6
+schema_version = 7
 generated_at = "2026-04-26T00:00:00Z"
 engine = "postgresql"
 engine_version = "16.2"
@@ -432,10 +383,72 @@ index_length_fidelity = "not-captured"
 observed_length_fidelity = "not-sampled"
 
 [totals]
-table_count = 28
+table_count = 1
 row_count = 12500000
-table_bytes = 4200000000
-index_bytes = 1100000000
+table_bytes = 4194304000
+index_bytes = 1048576000
+
+[database_topology]
+contract = "dbwarp-blueprint-topology/v2"
+deployment = "unknown"
+local_role = "unknown"
+visibility = "unknown"
+member_count = 0
+member_count_scope = "unknown"
+identifiers_redacted = true
+
+[dataset_scope]
+contract = "dbwarp-blueprint-dataset-scope/v1"
+layout = "unknown"
+table_inventory_completeness = "unknown"
+row_count_completeness = "unknown"
+size_completeness = "unknown"
+row_count_method = "postgres-planner-estimate"
+size_method = "postgres-local-relation-size"
+limitations = ["topology-unobserved", "topology-visibility-unknown"]
+
+[structure_scope]
+contract = "dbwarp-blueprint-structure-scope/v1"
+visibility = "unknown"
+table_inventory_completeness = "unknown"
+column_inventory_completeness = "unknown"
+index_inventory_completeness = "unknown"
+relationship_inventory_completeness = "unknown"
+limitations = ["metadata-visibility-unknown"]
+
+[source_environment]
+contract = "dbwarp-blueprint-source-environment/v1"
+evidence_origin = "database-endpoint"
+hosting_model = "unknown"
+infrastructure_location = "unknown"
+capacity_scope = "connected-instance"
+capacity_visibility = "partial"
+cpu_capacity_band = "unknown"
+cpu_capacity_basis = "unknown"
+memory_capacity_band = "under-2-gib"
+memory_capacity_basis = "database-buffer-cache"
+collector_machine_excluded = true
+catalogs_read = ["pg-capacity-settings"]
+
+[statistics_evidence]
+contract = "dbwarp-blueprint-statistics-evidence/v1"
+visibility = "unknown"
+table_count = 1
+counts_by_statistics_state = { unknown = 1 }
+counts_by_row_count_quality = { unknown = 1 }
+counts_by_size_quality = { unknown = 1 }
+limitations = ["statistics-provenance-unclassified"]
+
+[artifact_inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "none"
+scope = "all-visible-schemas"
+visibility = "unknown"
+inventory_complete = false
+dependencies_complete = false
+requirements_complete = false
+analysis_complete = false
+families_not_inventoried = ["non_table_objects"]
 
 [tables.table-001]
 rows = 12500000
@@ -443,11 +456,31 @@ table_bytes = 4194304000
 index_bytes = 1048576000
 schema = "schema-A"
 has_clustered_index = false
+object_kind = "ordinary-table"
+storage_organization = "unknown"
+partitioning = "none"
+segment_state = "unknown"
+
+[tables.table-001.statistics]
+row_count_method = "postgres-planner-estimate"
+row_count_quality = "unknown"
+statistics_state = "unknown"
+refresh_age_band = "unknown"
+modification_ratio_band = "unknown"
+sample_fraction_band = "unknown"
+statistics_scope = "unknown"
+size_method = "postgres-local-relation-size"
+size_quality = "unknown"
+size_scope = "unknown"
+size_accounting = "unknown"
+size_visibility = "unknown"
 
 [tables.table-001.cols.col-1]
 ordinal = 1
 type = "bigint"
 nullable = false
+numeric_model = "integer"
+numeric_precision_radix = "decimal"
 
 [tables.table-001.idxs.idx-1]
 type = "btree"
@@ -488,7 +521,7 @@ Prezentacja dostosowuje się do wielkości schematu: szczegóły poszczególnych
 
 Zacznij tutaj:
 
-- [`docs/QUICKSTART.md`](QUICKSTART.md): pierwsze bezpieczne uruchomienie i pierwszy pakiet do przekazania.
+- [`docs/QUICKSTART.md`](QUICKSTART.md): pierwsze bezpieczne uruchomienie i co należy udostępnić.
 - [`docs/COOKBOOK.md`](COOKBOOK.md): praktyczne przepisy dla PostgreSQL, MySQL, SQL Server, TLS, prezentacji i przepływów bez próbkowania.
 - [`docs/DBA_REVIEW_GUIDE.md`](DBA_REVIEW_GUIDE.md): informacje potrzebne DBA lub recenzentowi bezpieczeństwa przed uruchomieniem narzędzia.
 - [`sql/grants/README.md`](../../sql/grants/README.md): uwzględniające wersję skrypty minimalnych uprawnień i usuwanie konta po przechwyceniu.

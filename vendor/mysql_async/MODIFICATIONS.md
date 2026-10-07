@@ -9,6 +9,10 @@ upstream project. DBWarp Blueprint modifies the following files:
 - `src/opts/mod.rs`: the return type of `PathOrBuf::read` names the elided
   `Cow<'_, [u8]>` lifetime explicitly for current Rust compiler compatibility;
   runtime behaviour is unchanged.
+- `Cargo.toml` and `Cargo.toml.orig` update the `lru` dependency metadata from
+  the 0.12 series to the compatible 0.18 series, which contains the maintained
+  iterator and cache-removal safety fixes. The prepared-statement cache API
+  used by this crate is unchanged.
 
 The upstream project is available at <https://github.com/blackbeam/mysql_async>.
 Its Apache-2.0 and MIT licence texts remain alongside this notice.

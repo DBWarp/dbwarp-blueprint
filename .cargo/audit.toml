@@ -1,0 +1,7 @@
+[advisories]
+# RUSTSEC-2025-0134 is an unmaintained notice, not a vulnerability. Blueprint
+# and the vendored MySQL driver use rustls-pemfile only to decode operator-
+# supplied PEM certificates and private keys. The advisory offers no patched
+# release. Remove this exception when both callers move to the PEM support in
+# rustls-pki-types.
+ignore = ["RUSTSEC-2025-0134"]

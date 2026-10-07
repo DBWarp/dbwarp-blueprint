@@ -1,0 +1,9 @@
+ERROR:
+ORA-28002: the password will expire within 7 days
+
+
+	 1
+
+1 row selected. (rowlimit reached)
+
+Elapsed: 00:00:00.00

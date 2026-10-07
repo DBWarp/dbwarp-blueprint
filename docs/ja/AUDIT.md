@@ -14,7 +14,7 @@ TLS・ID ライブラリ、動的ローダー、オペレーティングシス�
 
 ## ネットワークエグレス
 
-ライブ `--connect` モードでは、指定されたエンドポイントへのデータベース
+PostgreSQL、MySQL、および SQL Server のライブ `--connect` モードでは、指定されたエンドポイントへのデータベース
 ドライバーセッションを 1 つ確立します。バッチモードはソースを順次処理し、
 データベースソースごとに 1 つのセッションを確立します。DNS 名前解決では
 構成済みリゾルバーを使用する場合があり、統合 Kerberos/SSPI 認証では KDC や
@@ -22,6 +22,8 @@ TLS・ID ライブラリ、動的ローダー、オペレーティングシス�
 Avro、およびバンドル操作では、アプリケーションが開始するネットワーク接続は
 ありません。ただし、ネットワークファイルシステム上のパスは引き続きホストの
 ストレージスタックの対象です。
+
+明示的な確認が必要な Oracle プレビューは、`--oracle-sqlplus` で明示的に指定された SQL*Plus 実行ファイルだけを起動し（利用可能な場合は制限付きの `-V` プローブを含む）、カタログセッションに使用します。子プロセスは空のプライベートディレクトリを `TNS_ADMIN` として受け取ります。認証情報は標準入力に書き込まれ、プロセス引数には配置されません。環境は起動前に消去されます。存在する場合、`PATH`、`SystemRoot`、`WINDIR`、`ORACLE_HOME`、`LD_LIBRARY_PATH`、`DYLD_LIBRARY_PATH`、`LIBPATH`、`SHLIB_PATH` だけが転送されます。コレクターは固定のロケール、タイムゾーン、およびプライベートな `TNS_ADMIN` 値を別途設定します。
 
 バイナリにテレメトリ、ライセンス確認、バージョン更新、クラウド API 呼び出し、
 アップロード経路はありません。
@@ -37,7 +39,7 @@ Avro、およびバンドル操作では、アプリケーションが開始す�
 |---|---|---|
 | `--user-file PATH` | 指定された場合 | ユーザー名のみ。末尾の空白を除去し、空のファイルはエラー。 |
 | `--password-file PATH` | 指定された場合 | 1 回読み取ります。DBWarp が所有する `Secret` バッファーは破棄時にゼロ化されますが、ドライバーは SECURITY.md の説明どおり独自のコピーを保持する場合があります。Unix でグループまたは他ユーザーが読み取れるモードは拒否します。 |
-| `--anonymization-key-file PATH` | 指定された場合 | 顧客が保持する 32 バイトまたは 64 桁の 16 進 HMAC キー。Unix でグループまたは他ユーザーが読み取れる場合は拒否します。キーは出力されません。 |
+| `--anonymization-key-file PATH` | 指定された場合 | お手元で管理する 32 バイトまたは 64 桁の 16 進 HMAC キー。Unix でグループまたは他ユーザーが読み取れる場合は拒否します。キーは出力されません。 |
 | `--azure-token-file PATH` | 指定された場合 | SQL Server Entra ID トークン。1 回読み取ります。DBWarp が所有する `Secret` バッファーは破棄時にゼロ化されます。Unix でグループまたは他ユーザーが読み取れるモードは拒否します。 |
 | `--tls-ca PATH` | 指定された場合 | 接続時に読み取る信頼済み CA PEM。PostgreSQL/MySQL はバンドルを受け入れ、SQL Server は正確に 1 つの証明書を受け入れます。指定したファイルはエンジンの既定ルートを置き換えます。 |
 | `--tls-cert PATH` | 指定された場合 | PostgreSQL/MySQL のクライアント TLS 証明書（PEM）。接続時に読み取ります。SQL Server では `DBP1015E` で拒否されます。 |
@@ -48,7 +50,7 @@ Avro、およびバンドル操作では、アプリケーションが開始す�
 | `--batch-manifest PATH` | 指定された場合 | マニフェスト、およびマニフェストが参照するすべてのローカル入力、資格情報、トークン、TLS パス。 |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | 指定された場合 | バンドル TOML と、一覧表示、抽出、作成に必要な相対パスの Blueprint ファイル。 |
 | 制御端末/コンソール（Unix 系では `/dev/tty`） | パスワードソースが指定されていない場合 | echo を無効にしたプロンプト。 |
-| （ビルド時のみ）`rust-toolchain.toml`、`Cargo.toml`、`Cargo.lock`、vendored release の `.dbwarp-source-revision`、`vendor/mysql_async`、`vendor-crates/*` | `./build.sh` の実行時のみ | toolchain、source provenance、標準 Cargo ビルド入力。 |
+| （ビルド時のみ）`rust-toolchain.toml`、`Cargo.toml`、`Cargo.lock`、vendored release の `.dbwarp-source-revision`、`vendor/*`、`vendor-crates/*` | `./build.sh` の実行時のみ | toolchain、source provenance、標準 Cargo ビルド入力。 |
 
 アプリケーションには、次を明示的に読み取る経路がありません:
 - `~/.pgpass`、`~/.my.cnf`、`~/.aws/credentials`、`~/.azure/credentials`
@@ -174,6 +176,7 @@ artifact_inventory:
   external_prerequisites: 3
   inventory_complete: false
   dependencies_complete: false
+  requirements_complete: false
   analysis_complete: false
 
 database_operations_observed:
@@ -265,13 +268,7 @@ assertion できることはないためです。この行の有無と
 `auth.password_source` を併用して、その実行で資格情報処理が
 行われたかどうかを判断してください。
 
-**監査は運用上の成功経路と失敗経路で出力されます。** 起動後のコマンドライン
-解析エラーも含みます。help/version の終了、および組み込みローカライズ契約を
-読み込む前の失敗では完全な監査は出力されません。ツールが途中で失敗した場合
-（認証拒否、ネットワークエラーなど）でも、監査ログは stderr と、指定されていれば
-`--audit-log PATH` に `outcome: error: <stage>` の形式で出力されるため、
-顧客は失敗前に何が試行されたかのフォレンジック記録を常に手にできます。
-失敗時の outcome 行の例:
+**監査は、正常終了時と失敗時の両方の処理経路で出力されます**。これには、起動後のコマンドライン解析エラーも含まれます。ヘルプまたはバージョン表示による終了、および組み込みのローカライズ契約を読み込む前に発生した失敗では、完全な監査は出力されません。ツールが途中で失敗した場合（認証拒否、ネットワークエラーなど）でも、監査ログは stderr に出力され、`--audit-log PATH` が指定されている場合はそのパスにも出力されます。`outcome: error: <stage>` により、失敗前に何が試行されたかの記録が常に残ります。失敗時の出力行の例:
 
 ```
 outcome:             error: parsing --connect URI (value redacted to avoid logging embedded credentials)
@@ -292,16 +289,15 @@ outcome:             error: parsing --connect URI (value redacted to avoid loggi
 
 成果物収集は Tier 2 行サンプリングとは独立しています:
 
-- `--artifact-detail none` は成果物カタログと定義をスキップします。
+- `--artifact-detail none` は成果物インベントリのカタログと定義をスキップしますが、
+  件数だけを取得するトポロジプローブは引き続き実行されます。
 - `summary` はモデル化されたオブジェクトカタログを読みますが、定義テキストは読みません。
 - `graph` は依存カタログも読みますが、定義テキストは読みません。
 - `analyzed` は字句解析のため、利用可能な SQL/手続き定義を有界なプロセスメモリへ追加で読みます。
 
 監査は要求詳細、可視性、オブジェクト/依存/外部前提条件の件数、およびすべての完全性フラグを記録します。すべての成果物カタログ操作は `database_operations_observed` に表示されます。任意カタログの失敗は `DBP1410W` を出力し、`warnings` に記録され、不正確な完全性主張を防ぎます。
 
-analyzed モードでは、定義はゼロ化所有者に保持されて消去され、有界なバンドと閉じた機能トークンに削減されます。定義テキスト、ソースオブジェクト名、外部エンドポイント、アーティファクトのプリンシパル、資格情報、鍵/証明書素材、パッケージ/ライブラリ名、バイナリは Blueprint または監査ログへ決して書き込まれません。保持する正確なプリンシパル名は、上記の明示的な `auth` 監査ブロックにある 3 つの SQL Server セッション識別情報だけです。これらは Blueprint、デッキ、公開アーティファクトには決して書き込まれません。graph と analyzed モードは匿名トポロジでもアプリケーションを識別できるため `--yes` が必要です。
-
-監査は次のいずれかの信頼表明でプライバシー姿勢を区別します:
+分析モードでは、定義はゼロ化された所有者によってラップされ、不要な情報は削除され、制限された範囲とクローズドな特徴トークンに変換されます。定義テキスト、ソースオブジェクト名、外部エンドポイント、アーティファクトの主体、認証情報、キー/証明書情報、パッケージ/ライブラリ名、およびバイナリは、Blueprintまたは監査ログに決して書き込まれません。保持される正確な主体名は、明示的な`auth`監査ブロック内の3つのSQL Serverセッション識別子のみです。これらは、Blueprint、デッキ、またはバンドルファイルに決して書き込まれません。グラフモードと分析モードでは、匿名トポロジーでもアプリケーションを特定できる可能性があるため、`--yes`が必要です。
 
 - summary: 有界件数のみで、オブジェクト ID や定義なし;
 - graph: 匿名依存グラフ、定義なし;
@@ -387,12 +383,7 @@ PostgreSQL はセッション `statement_timeout` も設定し、MySQL は読み
    MySQL 接続を再利用します。完全な説明は SECURITY.md の
    **ドライバーが所有する資格情報のコピー**を参照してください。
 3. **ソースからビルド**: `./build.sh`。依存関係同梱ソースアーカイブでは、
-   `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh` を実行します。リリース CI は同じ
-   runner 上で独立した再ビルドを行います。ビルド間で同じ Cargo target
-   ディレクトリを空にして再利用し、最初の実行ファイルは別に保存します。
-   バイト差があれば拒否します。ローカル比較が有効なのは、source revision、
-   target、features、固定された Rust toolchain、linker、build flags が同一の
-   場合だけです。
+`DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh` を実行します。各リリースは2回ビルドされ、バイトの不一致があるとリリースは失敗します。ローカルでの比較は、同じソースのバージョン、ターゲット、機能、固定されたRustツールチェーン、リンカー、およびビルドオプションでのみ意味があります。
 4. **リリースと比較**: 対応するソースチェックアウトまたはソースツリーで
    `./verify.sh /path/to/extracted/dbwarp-blueprint` を実行します。必要な target、
    features、toolchain、linker、source-date epoch、build flags は BUILD.md の
@@ -407,6 +398,4 @@ PostgreSQL はセッション `statement_timeout` も設定し、MySQL は読み
    統合認証では、想定される KDC またはドメインコントローラーとの通信も考慮します。
    バッチモードでは、データベースソースごとに 1 つのセッションがあることを照合します。
 
-いずれかがこの文書と一致しない場合は、SECURITY.md に記載された窓口から
-相違を報告し、再現に必要な最小限の安全なトレースだけを添付してください。
-資格情報、顧客識別子、機密性のあるドライバー出力を公開 issue に含めないでください。
+もしこれらの内容がここに記載されているものと一致しない場合は、SECURITY.md で指定されたチャネルを通じてその差異を報告してください。再現に必要な最小限の情報を記載してください。認証情報、個人名、または機密性の高いドライバの出力情報を、公開された問題報告には記載しないでください。

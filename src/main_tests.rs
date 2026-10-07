@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn engine_kind_for_unknown_scheme_does_not_leak_password() {
         // Regression guard: a malformed URI with an embedded password must
-        // not appear verbatim in the error message — only the scheme prefix
+        // not appear verbatim in the error message: only the scheme prefix
         // (truncated to 64 chars) is acceptable in user-facing output.
         let leak = "ftp://app:s3cretP@ss@db.internal/payments";
         let err = engine_kind_for(leak).unwrap_err();
@@ -156,6 +156,7 @@ mod tests {
     fn empty_cli() -> Cli {
         // Build a Cli stub with all credential paths unset for unit tests.
         Cli {
+            tls_mode_explicit: false,
             lang: None,
             color: CliColorMode::Auto,
             banner: false,
@@ -168,6 +169,13 @@ mod tests {
             from_toml: None,
             from_parquet: None,
             from_avro: None,
+            from_oracle_basic: None,
+            oracle_basic_script_out: None,
+            oracle_basic_script_family: None,
+            acknowledge_oracle_preview: false,
+            oracle_sqlplus: None,
+            oracle_network_config_dir: None,
+            oracle_basic_capture_out: None,
             batch_manifest: None,
             out_dir: None,
             bundle_list: None,
@@ -330,6 +338,20 @@ mod tests {
         assert!(format!("{error:#}").contains("DBP1005E"));
     }
 
+    #[cfg(any(
+        all(unix, feature = "integrated-auth-gssapi"),
+        all(windows, feature = "winauth")
+    ))]
+    #[test]
+    fn integrated_auth_feature_accepts_sqlserver_without_a_secret() {
+        let mut cli = empty_cli();
+        cli.auth_mode = Some(AuthMode::Integrated);
+        assert_eq!(
+            resolve_auth_mode(&cli, EngineKind::Mssql).unwrap(),
+            AuthMode::Integrated
+        );
+    }
+
     #[test]
     fn expected_server_principal_is_sqlserver_only_and_audit_safe() {
         let mut cli = empty_cli();
@@ -436,6 +458,19 @@ mod tests {
         assert!(published.join("blueprints/new.blueprint.toml").is_file());
         assert!(!published.join("stale.txt").exists());
         assert!(!staging.exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn batch_staged_artifact_sync_uses_a_flush_capable_file_handle() {
+        let root = temp_test_dir("dbwarp-blueprint-batch-file-sync");
+        std::fs::create_dir_all(&root).unwrap();
+        let artifact = root.join("artifact.toml");
+        std::fs::write(&artifact, "kind = \"test\"\n").unwrap();
+
+        sync_batch_artifact_tree(&artifact).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&artifact).unwrap(), "kind = \"test\"\n");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -699,6 +734,7 @@ path = "erp.parquet"
             ..Default::default()
         };
         let mut table = dbwarp_blueprint_core::BlueprintTable {
+            schema: "schema-A".to_string(),
             rows,
             table_bytes: rows.saturating_mul(16),
             ..Default::default()
@@ -716,6 +752,15 @@ path = "erp.parquet"
         );
         blueprint.tables.insert(table_name.to_string(), table);
         recompute_blueprint_totals(&mut blueprint).expect("test Blueprint totals");
+        if matches!(engine, "parquet" | "avro") {
+            blueprint.initialize_v7_structured_contract(if engine == "parquet" {
+                "parquet-schema"
+            } else {
+                "avro-schema"
+            });
+        } else {
+            blueprint.initialize_v7_database_contract();
+        }
         blueprint
     }
 
@@ -742,13 +787,14 @@ path = "erp.parquet"
             ..Default::default()
         });
         let column = table.cols.get_mut("col-1").unwrap();
-        column.null_fraction = Some(0.25);
         column.length_sample_rows = rows;
         column.length_sample_method = "parquet-decoded-row-sample".to_string();
+        let non_null_rows = rows.saturating_mul(3) / 4;
+        column.null_fraction = Some(rows.saturating_sub(non_null_rows) as f64 / rows as f64);
         column.cardinality = Some(dbwarp_blueprint_core::BlueprintCardinality {
             measured: true,
             sample_rows: rows,
-            non_null_rows: rows.saturating_mul(3) / 4,
+            non_null_rows,
             observed_distinct_count: rows.saturating_mul(3) / 8,
             estimated_distinct_count: rows.saturating_mul(3) / 8,
             top_value_fraction: 0.2,
@@ -808,7 +854,7 @@ path = "erp.parquet"
         assert_eq!(table.row_group_count, 4);
         assert_eq!(table.source_codec, "snappy,zstd");
         assert_eq!(table.cols["col-1"].length_sample_rows, 30);
-        assert_eq!(table.cols["col-1"].null_fraction, Some(0.25));
+        assert_eq!(table.cols["col-1"].null_fraction, Some(8.0 / 30.0));
         let cardinality = table.cols["col-1"].cardinality.as_ref().unwrap();
         assert_eq!(cardinality.sample_rows, 30);
         assert_eq!(cardinality.non_null_rows, 22);
@@ -827,6 +873,35 @@ path = "erp.parquet"
             table.compression.as_ref().unwrap().ratio_storage,
             4_000.0 / 1_400.0
         );
+    }
+
+    #[test]
+    fn structured_dataset_merge_drops_partial_cardinality_coverage() {
+        let first = structured_test_blueprint(10, 1_000, 400, "zstd");
+        let mut second = structured_test_blueprint(20, 3_000, 1_000, "zstd");
+        second
+            .tables
+            .get_mut("table-001")
+            .unwrap()
+            .cols
+            .get_mut("col-1")
+            .unwrap()
+            .cardinality = None;
+
+        let merged = blueprint_merge_same_schema(
+            "parquet",
+            None,
+            vec![
+                (PathBuf::from("private-a.parquet"), first),
+                (PathBuf::from("private-b.parquet"), second),
+            ],
+        )
+        .expect("partial cardinality must degrade rather than contradict itself");
+        assert!(merged.tables["table-001"].cols["col-1"]
+            .cardinality
+            .is_none());
+        dbwarp_blueprint_core::blueprint_to_toml(&merged)
+            .expect("degraded dataset Blueprint remains contract-valid");
     }
 
     #[test]
@@ -1419,7 +1494,7 @@ path = "erp.parquet"
     fn run_with_audit_refuses_uri_embedded_password() {
         let mut cli = empty_cli();
         // Use a URI that would otherwise be valid, but with an embedded
-        // password. Pointing at a non-listening port is fine — we should
+        // password. Pointing at a non-listening port is fine: we should
         // bail before any connect attempt.
         cli.connect = Some("postgresql://app:supersecret123@127.0.0.1:9/postgres".to_string());
         cli.yes = true;
@@ -1528,13 +1603,13 @@ path = "erp.parquet"
         }
 
         // Independently confirm the Python's output round-trips through the
-        // canonical Rust deserializer — that's what the dbwarp estimator uses,
+        // canonical Rust deserializer: the same deserializer the tool uses,
         // so a parse failure here means the Python path silently produced a
         // file the customer can't actually consume.
         let body = actual.strip_prefix(format::FILE_HEADER).unwrap_or_else(|| {
             panic!(
                 "Python output for {engine} fixture must start with the canonical \
-                 dbwarp-blueprint v6 file header"
+                 dbwarp-blueprint v7 file header"
             )
         });
         let parsed: format::BlueprintFile = toml::from_str(body).unwrap_or_else(|e| {
@@ -1572,6 +1647,66 @@ path = "erp.parquet"
     #[test]
     fn blueprint_format_mssql_snapshot() {
         blueprint_format_snapshot("mssql");
+    }
+
+    #[test]
+    fn sqlserver_fallback_does_not_represent_external_data_as_local_tables() {
+        let sql = include_str!("../sql/blueprint.sqlserver.sql");
+        assert!(sql.contains("FROM sys.external_tables external_table"));
+        assert!(sql.contains("external_table.object_id = t.object_id"));
+        assert!(sql.contains("NOT EXISTS"));
+    }
+
+    #[test]
+    fn sqlserver_tier_verification_excludes_deliberately_ungranted_external_tables() {
+        let scripts = [
+            (
+                "sqlserver-2019/standard.sql",
+                include_str!("../sql/grants/sqlserver-2019/standard.sql"),
+            ),
+            (
+                "sqlserver-2019/enhanced.sql",
+                include_str!("../sql/grants/sqlserver-2019/enhanced.sql"),
+            ),
+            (
+                "sqlserver-2022/standard.sql",
+                include_str!("../sql/grants/sqlserver-2022/standard.sql"),
+            ),
+            (
+                "sqlserver-2022/enhanced.sql",
+                include_str!("../sql/grants/sqlserver-2022/enhanced.sql"),
+            ),
+        ];
+        let expected_anti_join = "FROM sys.tables t
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+LEFT JOIN sys.external_tables et ON et.object_id = t.object_id
+WHERE t.is_ms_shipped = 0
+  AND et.object_id IS NULL
+GROUP BY s.name ORDER BY s.name;";
+
+        for (name, script) in scripts {
+            let verification = script
+                .split("-- ---- verification (informational)")
+                .nth(1)
+                .unwrap_or_else(|| panic!("{name} must contain its verification query"));
+            assert!(
+                verification.contains(expected_anti_join),
+                "{name} verification must use a WHERE anti-join to exclude deliberately ungranted external tables"
+            );
+        }
+    }
+
+    #[test]
+    fn mysql_sql_fallback_is_database_scoped_and_omits_external_tables() {
+        let sql = include_str!("../sql/blueprint.mysql.sql");
+        assert!(
+            sql.contains("t.TABLE_SCHEMA = DATABASE()"),
+            "the MySQL fallback must not inventory every visible database"
+        );
+        assert!(
+            sql.contains("COALESCE(t.ENGINE, '') <> 'FEDERATED'"),
+            "the limited SQL fallback must not describe remote FEDERATED data as local"
+        );
     }
 
     #[test]

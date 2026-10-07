@@ -1,16 +1,16 @@
 # Third-party licence-file overrides
 
 Some crates in the locked graph declare a licence in `Cargo.toml` but omit the
-standalone text from the published crate. The notice generator uses the exact
+standalone text from the published crate. The notice builder uses the exact
 upstream licence files in this directory for those releases.
 
 | Package | Source |
 |---|---|
-| `alloc-stdlib 0.2.4` | `dropbox/rust-alloc-no-stdlib`, `LICENSE`; identical to the BSD-3-Clause file distributed by the companion `brotli` crate |
+| `alloc-stdlib 0.3.0` | `dropbox/rust-alloc-no-stdlib`, `LICENSE` at the exact source revision recorded in the published crate |
 | `keyed_priority_queue 0.4.2` | `AngelicosPhosphoros/keyed_priority_queue`, `LICENSE.md` on the upstream development branch |
-| `libgssapi 0.4.6` | `estokes/libgssapi`, `LICENSE` |
-| `libgssapi-sys 0.2.4` | same upstream repository and licence as `libgssapi` |
+| `libgssapi 0.11.0` | `estokes/libgssapi`, `LICENSE` at the exact source revision recorded in the published crate |
+| `quad-rand 0.2.3` | canonical MIT text with the package author's published name; the crate and its exact upstream source revision declare MIT but include no standalone licence file |
 
 Other packages without a bundled standalone file either select the complete
-Apache-2.0 text already shipped at the repository root or receive an explicit
-package-metadata notice when no upstream text was published with the crate.
+Apache-2.0 text already shipped at the repository root. The current locked
+graph has no package represented only by a package-metadata notice.

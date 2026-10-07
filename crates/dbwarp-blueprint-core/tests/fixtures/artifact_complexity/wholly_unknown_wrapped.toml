@@ -1,0 +1,97 @@
+# Hand-authored semantic oracle. Do not generate this file from the assessor.
+# A wrapped routine with incomplete graph and requirement evidence is wholly
+# unassessed; readable wrapped bytes must never become a false low score.
+
+[inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "analyzed"
+scope = "selected-schemas"
+visibility = "full"
+inventory_complete = true
+dependencies_complete = false
+requirements_complete = false
+analysis_complete = false
+object_count = 1
+
+[inventory.counts_by_kind]
+procedure = 1
+
+[inventory.artifacts.artifact-001]
+kind = "procedure"
+subkind = "stored_procedure"
+tier = "programmatic"
+definition_visibility = "encrypted"
+requirement_status = "partial"
+
+[[inventory.artifacts.artifact-001.requirements]]
+token = "oracle.source.wrapped"
+evidence = "syntax-confirmed"
+count_band = "1"
+
+[inventory.artifacts.artifact-001.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "unavailable"
+dialect = "plsql"
+grammar_profile = "oracle-19c"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+
+[expected]
+contract = "dbwarp-blueprint-artifact-complexity/v1"
+assessor_version = 1
+scope = "selected-schemas"
+population_policy = "exclude-known-engine-generated-and-secondary"
+assessment_population_complete = true
+eligible_object_count = 1
+fully_assessed_object_count = 0
+partially_assessed_object_count = 0
+unassessed_object_count = 1
+excluded_object_count = 0
+analyzer_version = "lexical-v2"
+analysis_spans = ["executable-body"]
+dialects = ["plsql"]
+grammar_profiles = ["oracle-19c"]
+overall_band = "unknown"
+limitations = ["graph-incomplete", "requirements-incomplete", "wrapped-source"]
+
+[expected.dimensions.volume]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.volume.histogram]
+unknown = 1
+
+[expected.dimensions.control_flow]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.control_flow.histogram]
+unknown = 1
+
+[expected.dimensions.feature_breadth]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.feature_breadth.histogram]
+unknown = 1
+
+[expected.dimensions.entanglement]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.entanglement.histogram]
+unknown = 1
+
+[expected.dimensions.environment_coupling]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.environment_coupling.histogram]
+unknown = 1
+
+[expected.dimensions.opacity]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.opacity.histogram]
+unknown = 1
+
+[expected.dimensions.dialect_coupling]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.dialect_coupling.histogram]
+unknown = 1

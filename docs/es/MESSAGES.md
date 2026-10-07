@@ -4,16 +4,7 @@
 
 **Idiomas:** [English](../MESSAGES.md) | [Deutsch](../de/MESSAGES.md) | [Français](../fr/MESSAGES.md) | **Español** | [Polski](../pl/MESSAGES.md) | [日本語](../ja/MESSAGES.md) | [中文](../zh/MESSAGES.md)
 
-`dbwarp-blueprint` utiliza identificadores estables de mensajes para operadores en los errores de validación y flujo de trabajo que pertenecen a DBWarp.
-El formato se inspira en los mensajes para operadores de estilo IBM: un prefijo de subsistema, un identificador numérico y un sufijo de gravedad.
-La documentación de IBM CICS describe un identificador de programa junto con un número de mensaje de cuatro dígitos y una letra de gravedad; IBM MQ utiliza de forma similar campos de componente/prefijo, un identificador numérico y un código final de tipo de mensaje. Las directrices de Microsoft sobre mensajes de error refuerzan la regla práctica de que un error debería describir el problema y proporcionar una acción que el usuario pueda realizar.
-
-Referencias:
-
-- Formato de mensajes de IBM CICS: https://www.ibm.com/docs/en/cics-pa/5.3.0?topic=messages-message-format
-- Disposición de la información de mensajes de IBM CICS: https://www.ibm.com/docs/en/cics-ts/6.x?topic=messages-format-cics-message-information
-- Formato de mensajes de IBM MQ para z/OS: https://www.ibm.com/docs/SSFKSJ_9.2.0/com.ibm.mq.ref.doc/q050270_.htm
-- Directrices de Microsoft sobre mensajes de error: https://learn.microsoft.com/en-us/windows/win32/uxguide/mess-error
+`dbwarp-blueprint` utiliza identificadores de mensajes estables para los fallos de validación y flujo de trabajo propios de DBWarp. Cada mensaje tiene un prefijo de subsistema, un identificador numérico y un sufijo de gravedad, y describe el problema y una acción correctiva.
 
 ## Formato
 
@@ -27,12 +18,7 @@ Campos:
 - `nnnn` es un número de mensaje estable de cuatro dígitos.
 - `S` es la gravedad: `E` error, `W` advertencia, `I` información.
 
-El código es estable y no depende del idioma. Su resumen, causa y acción
-correctiva se localizan cuando `--lang` o la configuración regional del proceso
-seleccionan un idioma admitido. Los detalles dinámicos del sistema operativo,
-del controlador de la base de datos, de rutas y de la cadena causal permanecen
-literales para que el personal de soporte pueda buscar el error original. El
-texto del mensaje no debe incluir secretos ni URI de conexión sin ocultar.
+El código es estable y no depende de un lenguaje específico. Su resumen, causa y acción correctiva se adaptan a la configuración regional cuando `--lang` o la configuración regional del proceso seleccionan un idioma compatible. Los detalles dinámicos del sistema operativo, el controlador de la base de datos, la ruta y la cadena de eventos se mantienen tal cual para que se pueda buscar el fallo original. El texto del mensaje no debe incluir secretos ni URI de conexión sin censurar.
 
 ## Intervalos
 
@@ -61,8 +47,8 @@ texto del mensaje no debe incluir secretos ni URI de conexión sin ocultar.
 | `DBP1004E` | Se utilizó una opción de token de Azure con un motor distinto de SQL Server. |
 | `DBP1005E` | El modo de autenticación no está disponible para el motor seleccionado. |
 | `DBP1006E` | Se solicitó muestreo de compresión de archivos estructurados sin `--yes` explícito. |
-| `DBP1007E` | Se solicitó un modo explícito de fidelidad de longitudes para un motor que aún no expone ese contrato. |
-| `DBP1008E` | El alias heredado de longitudes exactas entra en conflicto con la fidelidad de longitudes strict. |
+| `DBP1007E` | Se solicitó el modo de fidelidad de longitud explícita para un motor que no lo admite. |
+| `DBP1008E` | `--preserve-exact-lengths` entra en conflicto con la fidelidad estricta de la longitud. |
 | `DBP1009E` | Se solicitó fidelidad exacta de longitudes muestreadas sin `--yes` explícito. |
 | `DBP1010E` | El catálogo de localización integrado está incompleto o es incoherente. |
 | `DBP1011E` | Los argumentos de línea de comandos no son válidos. |
@@ -116,10 +102,20 @@ texto del mensaje no debe incluir secretos ni URI de conexión sin ocultar.
 | `DBP1419E` | La captura en vivo superó `--max-wall-secs`; el cliente cerró la conexión e informa del límite de servidor específico del motor. |
 | `DBP1420E` | Al menos un `--schema` solicitado no era visible, por lo que no se escribió ningún Blueprint con alcance ambiguo. |
 | `DBP1421W` | Las identidades de sesión de SQL Server no estaban disponibles; la captura continuó sin afirmar una identidad. |
+| `DBP1422W` | Falló la evaluación de complejidad de los artefactos; se conservó el inventario y las dimensiones agregadas afectadas quedan como desconocidas. |
+| `DBP1423W` | No estaba disponible un catálogo de estructura de índices o relaciones; se conservaron las tablas y columnas principales con cobertura explícitamente incompleta. |
+| `DBP1424W` | No se pudo demostrar la visibilidad completa del catálogo de políticas de seguridad de SQL Server; se omitió el muestreo de nivel 2 en cada tabla afectada. |
+| `DBP1425W` | SQL Server informó de un filtro de seguridad de filas activo; se omitió deliberadamente el muestreo de nivel 2 en lugar de medir un subconjunto filtrado. |
+| `DBP1426E` | La captura básica de Oracle falló durante la configuración, el inicio de SQL*Plus, la resolución del propietario, la captura o el mapeo. |
+| `DBP1427W` | No se pudo acreditar por completo la procedencia de la versión del cliente Oracle SQL*Plus; la captura continuó con una limitación explícita. |
+| `DBP1428W` | Oracle Basic se detuvo antes de que se completara cada consulta del catálogo prevista; las tablas, columnas, filas y tamaños ya leídos se conservaron y el Blueprint se marca como incompleto. |
+| `DBP1429W` | Oracle Basic mantuvo sus datos principales de tablas, columnas, filas y tamaño, mientras que una o más consultas adicionales del catálogo no estaban disponibles. |
+| `DBP1430W` | Oracle Basic publicó su Blueprint, pero no pudo escribir el archivo de transmisión sin conexión opcional. |
 | `DBP1501E` | Falló el límite de captura de archivos estructurados. |
 | `DBP1502E` | Falló la salida del Blueprint o el paquete. |
 | `DBP1503E` | Falló la generación de la presentación de PowerPoint. |
 | `DBP1504W` | No se pudo escribir el registro de auditoría. |
+| `DBP1505E` | El flujo básico offline de Oracle falló su validación de permisos de archivo, límite de tamaño, suma de comprobación, conjunto de consultas o estructura del catálogo. |
 | `DBP1601E` | Falló la adquisición de credenciales. |
 | `DBP1602E` | Falló la configuración TLS. |
 | `DBP1603E` | Falló la adquisición del nombre de usuario de la base de datos. |
@@ -131,15 +127,7 @@ texto del mensaje no debe incluir secretos ni URI de conexión sin ocultar.
 | `DBP1702E` | No se pudo leer la respuesta de consentimiento desde la entrada estándar. |
 | `DBP1801E` | No se pudo inicializar el entorno de ejecución asíncrono. |
 
-Cada idioma anunciado debe contener el resumen, la causa y la acción de todos
-los códigos DBP actuales. El binario lo valida al iniciarse y falla con
-`DBP1010E` en lugar de recurrir silenciosamente al inglés.
-
-Los errores predecibles en los límites de decisión se ejercitan mediante una
-matriz adversarial de la CLI. Una condición conocida debe emitir su código
-específico como primer código para el operador y no debe recurrir a `DBP0001E`.
-El componente que presenta el error también recorre toda la cadena de errores para que un contexto
-de implementación sin código no pueda ocultar una causa interna codificada.
+Cada lenguaje soportado incluye cada resumen, causa y acción de DBWarp. El programa verifica esto al inicio y falla con `DBP1010E` en lugar de cambiar silenciosamente al inglés.
 
 Las advertencias no fatales del muestreo de la base de datos se imprimen con su
 código de advertencia estable y se registran en la auditoría de la ejecución.
@@ -149,7 +137,7 @@ fallo total de recopilación.
 
 ## Lista de comprobación para soporte
 
-Cuando un cliente notifique un error, solicite:
+Cuando solicite soporte para un error, proporcione:
 
 - la salida completa de terminal, incluido el código `DBP`;
 - el registro de auditoría si se utilizó `--audit-log`;

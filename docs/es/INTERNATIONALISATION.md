@@ -85,7 +85,7 @@ intencionadamente claves distintas.
 Todos los catálogos se compilan dentro del binario. Al iniciar, el programa verifica
 que cada configuración regional no inglesa anunciada cubra exactamente:
 
-- el árbol de ayuda Clap activo en ese momento;
+- cada entrada de ayuda;
 - todos los códigos DBP estables y los tres campos de diagnóstico;
 - todas las claves estables de solicitudes, progreso, advertencias y presentaciones;
 - todos los marcadores de posición y tokens operativos protegidos necesarios.

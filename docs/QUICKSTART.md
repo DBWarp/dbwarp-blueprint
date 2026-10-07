@@ -1,6 +1,6 @@
 # Quickstart
 
-This quickstart is written for a sales engineer, DBA, or security reviewer who needs to produce a shareable DBWarp Blueprint file without exposing customer data.
+This quickstart is for a DBA or security reviewer who needs to produce a shareable DBWarp Blueprint file without exposing data.
 
 ## 1. Choose How to Run the Tool
 
@@ -32,15 +32,15 @@ later be turned into captures. Do not begin with an application owner,
 administrator, superuser, `root`, `sa`, or `db_owner` account.
 
 1. Identify the exact engine/version, database, and approved schema or schemas.
-2. Choose the capture tier: `basic` for table catalogs only, `standard` for a
-   synthetic-copy-ready bounded row sample, or `enhanced` for non-table object
+2. Choose the capture tier: `basic` for table catalogs only, `standard` to add a
+   bounded row sample, or `enhanced` for non-table object
    analysis as well.
 3. Have the DBA copy the matching script under `sql/grants/<engine>/`, edit all
    marked database, schema, principal, password, and role-toggle values, and
    run it through the normal change-control process.
 4. Use the dedicated account it creates and pass the same approved scope with
    one `--schema NAME` option per schema on every live command.
-5. After the capture and evidence review, have the DBA review and run the
+5. After the capture has been reviewed, have the DBA review and run the
    matching engine script under `sql/revoke/` to remove the account and grants.
 
 The scripts deliberately distinguish literal scoped grants from convenient
@@ -91,7 +91,7 @@ A dry run validates arguments and prints the planned action without connecting:
 
 For `--from-toml` deck mode, dry-run is a local preflight and does not read the database.
 
-For multiple customer sources, dry-run the batch manifest instead:
+For multiple sources, dry-run the batch manifest instead:
 
 ```bash
 ./dbwarp-blueprint \
@@ -125,7 +125,9 @@ Use this when a policy forbids row sampling or when you want a first security-re
 
 The default `--artifact-detail summary` reads non-table catalogs but not object
 definitions. It emits bounded counts and external-prerequisite classes. Use
-`--artifact-detail none` if policy forbids those catalogs.
+`--artifact-detail none` if policy forbids those catalogs. The count-only
+topology probe still runs; see the
+[grant reference](../sql/grants/README.md#topology-evidence).
 
 For anonymous dependency topology, use `graph`. For bounded language-feature
 and complexity bands, use `analyzed`. Both require explicit consent:
@@ -168,7 +170,7 @@ discards the sampled values:
   --audit-log blueprint.audit.txt
 ```
 
-Use Tier 2 when possible. It gives DBWarp better estimates of wire bytes, egress cost, and synthetic text/binary data generation.
+Use Tier 2 when possible. It gives more accurate transfer-size and egress-cost estimates.
 
 ## 8. Generate a Deck
 
@@ -218,16 +220,16 @@ Expected properties:
 - optional aggregate compression, null-density, cardinality/frequency, length,
   and style measurements, never sampled values.
 
-## 10. Handoff to DBWarp
+## 10. Share with DBWarp
 
-Minimum handoff:
+Minimum to share:
 
 ```text
 blueprint.toml
 ```
 
-For a multi-source customer review, create and inspect a packed bundle rather
-than handing off the working directory:
+For multiple sources, create and inspect a packed bundle rather
+than sharing the working directory:
 
 ```bash
 ./dbwarp-blueprint \
@@ -239,7 +241,7 @@ less customer-blueprint-bundle.packed.toml
 Bundle metadata retains the source ids, tags, and dataset-group ids chosen in
 the batch manifest. Use anonymous values and review them before transfer.
 
-Use `docs/BATCH_AND_BUNDLES.md` when the customer has multiple databases, multiple Parquet or Avro datasets, or wants to approve only selected sources/tables for benchmark generation.
+See [Batch Collection And Blueprint Bundles](BATCH_AND_BUNDLES.md) if you have several databases or several Parquet or Avro datasets, or want to share only selected sources or tables.
 
 ### Review and share
 
@@ -247,11 +249,9 @@ Share only the reviewed `blueprint.toml` or packed bundle by default. A deck
 may accompany it only after its content and confidentiality label have been
 reviewed and separately approved under your organization's policy.
 
-Keep audits, command records, reviewer notes, and unapproved decks as
-access-controlled local evidence. They may contain endpoints, authenticated
-principals, local paths, timing data, and manifest identifiers. Send operational
-evidence only for a specific support need through an approved secure channel.
-The tool does not create `command-used.redacted.txt`; that is an optional
-operator-authored record, not a standard handoff artifact. Never include
-password or token files, anonymization keys, CA private keys, customer dumps,
-or database logs in a Blueprint handoff.
+Keep audits, command records, and unapproved decks local and
+access-controlled. They may contain endpoints, authenticated principals, local
+paths, timing data, and manifest identifiers. Send them only for a specific
+support need through an approved secure channel. Never include password or
+token files, anonymization keys, CA private keys, database dumps, or database
+logs with a shared Blueprint.

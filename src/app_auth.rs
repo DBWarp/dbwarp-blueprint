@@ -73,6 +73,7 @@ fn acquire_secret(
         // Token files use the same sensitive-file mode check as
         // --password-file: refuse on group/other-readable Unix modes.
         let s = Secret::from_file(path)?;
+        record_sensitive_file_mode_warning(audit, path, "password file");
         audit.connection.credential_actually_read = true;
         return Ok((
             s,
@@ -97,12 +98,13 @@ fn acquire_secret(
     // Password paths.
     if let Some(path) = &cli.password_file {
         // Record the attempted read BEFORE the fallible call. If the
-        // file can't be read, the audit still shows what was attempted
-        // — which is what a forensic reader wants ("the tool tried to
+        // file can't be read, the audit still shows what was attempted,
+        // which is what a forensic reader wants ("the tool tried to
         // read X and failed").
         audit.record_file_read(&path.display().to_string());
         let mode = secret::file_mode(path);
         let s = Secret::from_file(path)?;
+        record_sensitive_file_mode_warning(audit, path, "password file");
         // Mark "credential actually read" so the trust assertion in
         // finalize() fires only on runs where we hit this path (not
         // on --dry-run).
@@ -155,9 +157,8 @@ enum AuthMode {
     /// exactly one --password-file/-env and --tls-mode verify-full.
     CloudToken,
     /// SQL Server engine only. Kerberos (Linux) / SSPI (Windows).
-    /// Requires a build compiled with --features
-    /// integrated-auth-gssapi (Linux) or winauth (Windows). On vanilla
-    /// builds this is rejected with a clear rebuild hint.
+    /// Linux release binaries load GSSAPI only when selected. Source builds
+    /// require --features integrated-auth-gssapi; Windows builds use winauth.
     Integrated,
 }
 
@@ -324,7 +325,7 @@ fn resolve_user(
         audit.record_file_read(&path.display().to_string());
         let raw = std::fs::read_to_string(path)
             .with_context(|| format!("DBP1603E reading --user-file '{}'", path.display()))?;
-        // Strip trailing whitespace only — usernames don't contain leading
+        // Strip trailing whitespace only: usernames don't contain leading
         // whitespace in any real DB system, but they CAN contain internal
         // characters (e.g. `domain\user`, `app+monitor`).
         let v = raw.trim_end().trim_start_matches('\n').to_string();
@@ -385,9 +386,7 @@ fn resolve_mssql_auth_mode(cli: &Cli) -> Result<AuthMode> {
             if !token_set {
                 bail!(
                     "DBP1604E --auth-mode=entra-token requires --azure-token-file or --azure-token-env. \
-                     Generate a token with: \
-                     az account get-access-token --resource https://database.windows.net/ \
-                     --query accessToken -o tsv > entra.token"
+                     Create a private token file as described in AUTH.md."
                 );
             }
             if pw_set {
@@ -413,14 +412,21 @@ fn resolve_mssql_auth_mode(cli: &Cli) -> Result<AuthMode> {
             }
             // The Integrated mode only works in a build compiled with
             // either tiberius's `integrated-auth-gssapi` (Linux) or
-            // `winauth` (Windows) feature. The vanilla build excludes
-            // these — error early with a clear rebuild hint.
+            // `winauth` (Windows) feature. The default build excludes
+            // these: error early with a clear rebuild hint.
             if !integrated_auth_available() {
                 bail!(
                     "DBP1604E this build was compiled WITHOUT integrated authentication support. \
                      Rebuild with: \
                      `cargo build --features integrated-auth-gssapi --release` (Linux, requires libkrb5-dev) \
                      or `cargo build --features winauth --release` (Windows). See AUTH.md."
+                );
+            }
+            #[cfg(all(target_os = "linux", feature = "integrated-auth-gssapi"))]
+            if !tiberius::integrated_auth_runtime_available() {
+                bail!(
+                    "DBP1604E --auth-mode=integrated requires the platform Kerberos/GSSAPI runtime, but no compatible library could be loaded. \
+                     Install the normal MIT Kerberos runtime package for this Linux distribution, then retry."
                 );
             }
         }
@@ -430,7 +436,7 @@ fn resolve_mssql_auth_mode(cli: &Cli) -> Result<AuthMode> {
 
 /// Whether this build has the underlying tiberius feature for
 /// integrated auth on the current target platform. False on the
-/// vanilla build; true under `--features integrated-auth-gssapi`
+/// default build; true under `--features integrated-auth-gssapi`
 /// (Linux) or `--features winauth` (Windows).
 fn integrated_auth_available() -> bool {
     cfg!(any(
@@ -449,8 +455,8 @@ fn engine_kind_for(uri: &str) -> Result<EngineKind> {
     {
         Ok(EngineKind::Mssql)
     } else {
-        // Echo only the scheme prefix (up to "://"), never the full URI —
-        // it can carry an embedded password.
+        // Echo only the scheme prefix (up to "://"), never the full URI,
+        // because it can carry an embedded password.
         let scheme_hint = match uri.find("://") {
             Some(end) => uri[..end].chars().take(64).collect::<String>(),
             None => "(no scheme)".to_string(),

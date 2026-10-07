@@ -4,8 +4,9 @@
 
 **语言：** [English](../INDEX.md) | [Deutsch](../de/INDEX.md) | [Français](../fr/INDEX.md) | [Español](../es/INDEX.md) | [Polski](../pl/INDEX.md) | [日本語](../ja/INDEX.md) | **简体中文**
 
-英文具有最高效力。机器翻译的文档集可以在经过多次独立审查后另行发布，但仍可能
-包含错误。请参阅[文档翻译](../TRANSLATIONS.md)。
+英文具有最高效力。机器翻译的文档集可在通过自动一致性检查和多次独立的机器辅助审查后
+另行发布。母语技术审校仍可能尚未完成，译文仍可能包含错误。请参阅
+[文档翻译](../TRANSLATIONS.md)。
 
 从这里开始：
 
@@ -36,4 +37,4 @@
 - [可视化摘要演示文稿](DECK.md)
 - [下载二进制文件](BINARIES.md)
 
-Blueprint 的交接和下游使用由客户协议以及经批准的下游 DBWarp 产品所附文档规定。本仓库仅记录 Blueprint 的采集、审阅和打包。
+本仓库仅记录 Blueprint 的采集、审查和打包过程。

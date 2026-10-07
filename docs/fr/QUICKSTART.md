@@ -4,7 +4,7 @@
 
 **Langues :** [English](../QUICKSTART.md) | [Deutsch](../de/QUICKSTART.md) | **Français** | [Español](../es/QUICKSTART.md) | [Polski](../pl/QUICKSTART.md) | [日本語](../ja/QUICKSTART.md) | [简体中文](../zh/QUICKSTART.md)
 
-Ce guide de démarrage rapide s'adresse aux ingénieurs commerciaux, DBA ou responsables de la sécurité qui doivent produire un fichier Blueprint DBWarp partageable sans exposer les données du client.
+Ce guide de démarrage rapide est destiné à un administrateur de base de données ou à un responsable de la sécurité qui a besoin de créer un fichier DBWarp Blueprint partageable sans exposer de données.
 
 ## 1. Choisir comment exécuter l'outil
 
@@ -39,10 +39,7 @@ avec un compte propriétaire de l'application, administrateur, superutilisateur,
 
 1. Identifiez précisément le moteur et sa version, la base de données et les
    schémas approuvés.
-2. Choisissez le niveau de capture : `basic` pour les catalogues de tables
-   uniquement, `standard` pour un échantillon de lignes borné adapté à une
-   copie synthétique, ou `enhanced` pour inclure l'analyse des objets hors
-   tables.
+2. Choisissez le niveau de capture : `basic` pour les catalogues de tables uniquement, `standard` pour ajouter un échantillon de lignes limité, ou `enhanced` pour l'analyse des objets non-table également.
 3. Demandez au DBA de copier le script correspondant sous
    `sql/grants/<engine>/`, de modifier toutes les valeurs marquées de base de
    données, schéma, principal, mot de passe et option de rôle, puis de
@@ -50,9 +47,7 @@ avec un compte propriétaire de l'application, administrateur, superutilisateur,
 4. Utilisez le compte dédié créé par le script et passez la même portée
    approuvée avec une option `--schema NAME` par schéma dans chaque commande
    réelle.
-5. Après la capture et la revue des preuves, demandez au DBA de vérifier puis
-   d'exécuter le script du moteur correspondant sous `sql/revoke/` afin de
-   supprimer le compte et ses autorisations.
+5. Une fois la collecte examinée, demandez à l'administrateur de base de données (DBA) de vérifier et d'exécuter, sous `sql/revoke/`, le script de révocation correspondant au moteur sélectionné afin de supprimer le compte et les autorisations.
 
 Les scripts distinguent volontairement les autorisations à portée précise des
 rôles intégrés plus pratiques et expliquent lorsqu'un rôle est plus large.
@@ -103,7 +98,7 @@ Une simulation valide les arguments et affiche l'action prévue sans établir de
 
 Pour le mode de présentation `--from-toml`, la simulation est une vérification préalable locale et ne lit pas la base de données.
 
-Pour plusieurs sources client, simulez plutôt le manifeste de lot :
+Pour plusieurs sources, effectuez un test préliminaire du manifeste par lots au lieu de l'exécuter directement :
 
 ```bash
 ./dbwarp-blueprint \
@@ -134,7 +129,7 @@ Utilisez ce mode lorsqu'une politique interdit l'échantillonnage de lignes ou l
 
 ## 6. Choisir le niveau de détail des artefacts hors tables
 
-Par défaut, `--artifact-detail summary` lit les catalogues hors tables mais pas les définitions d'objets. Il émet des comptages bornés et des classes de prérequis externes. Utilisez `--artifact-detail none` si la politique interdit ces catalogues.
+Par défaut, `--artifact-detail summary` lit les catalogues hors tables mais pas les définitions d'objets. Il émet des comptages bornés et des classes de prérequis externes. Utilisez `--artifact-detail none` si la politique interdit ces catalogues. La sonde de topologie limitée au comptage est néanmoins exécutée ; consultez la [référence des privilèges](../../sql/grants/README.md#topology-evidence).
 
 Pour une topologie de dépendances anonyme, utilisez `graph`. Pour des bandes bornées de caractéristiques du langage et de complexité, utilisez `analyzed`. Tous deux exigent un consentement explicite :
 
@@ -174,7 +169,7 @@ cardinalité/fréquence, longueur et style, puis supprime les valeurs échantill
   --audit-log blueprint.audit.txt
 ```
 
-Utilisez le Tier 2 lorsque cela est possible. Il permet à DBWarp de mieux estimer les octets transmis, le coût de sortie réseau et la génération de données texte/binaires synthétiques.
+Utilisez le niveau 2 lorsque cela est possible. Il fournit des estimations plus précises de la taille du transfert et des coûts de sortie.
 
 ## 8. Générer une présentation
 
@@ -224,15 +219,15 @@ Propriétés attendues :
 - des mesures agrégées facultatives de compression, densité de valeurs NULL,
   cardinalité/fréquence, longueur et style, jamais les valeurs échantillonnées.
 
-## 10. Transmettre à DBWarp
+## 10. Partagez avec DBWarp.
 
-Transmission minimale :
+Minimum à partager :
 
 ```text
 blueprint.toml
 ```
 
-Pour la revue d'un client comportant plusieurs sources, créez et vérifiez un bundle empaqueté au lieu de transmettre le répertoire de travail :
+Pour plusieurs sources, créez et examinez un ensemble compressé plutôt que de partager le répertoire de travail :
 
 ```bash
 ./dbwarp-blueprint \
@@ -243,14 +238,10 @@ less customer-blueprint-bundle.packed.toml
 
 Les métadonnées du bundle conservent les identifiants de source, les tags et les identifiants de groupe de jeux de données choisis dans le manifeste batch. Utilisez des valeurs anonymes et vérifiez-les avant le transfert.
 
-Utilisez `docs/BATCH_AND_BUNDLES.md` lorsque le client possède plusieurs bases de données, plusieurs jeux de données Parquet ou Avro, ou souhaite n'approuver que certaines sources/tables pour la génération du benchmark.
-
-<a id="review-and-share"></a>
+Consultez [les lots de collecte et les ensembles de plans](BATCH_AND_BUNDLES.md) si vous avez plusieurs bases de données ou plusieurs ensembles de données Parquet ou Avro, ou si vous souhaitez partager uniquement certaines sources ou tables.
 
 ### Vérifier et partager
 
 Par défaut, partagez uniquement le `blueprint.toml` vérifié ou le bundle empaqueté. Une présentation ne peut l’accompagner qu’après vérification de son contenu et de son niveau de confidentialité, puis approbation distincte conformément à la politique de votre organisation.
 
-Conservez localement, avec un accès contrôlé, les audits, commandes enregistrées, notes de revue et présentations non approuvées. Ils peuvent contenir des points de terminaison, identités authentifiées, chemins locaux, données temporelles et identifiants du manifeste. Envoyez les preuves opérationnelles uniquement pour un besoin précis d’assistance, via un canal sécurisé approuvé.
-
-L’outil ne crée pas `command-used.redacted.txt` ; il s’agit d’un enregistrement facultatif de l’opérateur, pas d’un élément standard du dossier. N’incluez jamais de fichiers de mots de passe ou de jetons, de clés d’anonymisation, de clés privées d’autorité de certification, de dumps du client ni de journaux de base de données.
+Conservez les audits, les enregistrements de commandes et les présentations non approuvées localement et avec un accès contrôlé. Ils peuvent contenir des points de terminaison, des principaux authentifiés, des chemins locaux, des données de synchronisation et des identifiants de manifeste. Ne les envoyez que pour un besoin de support spécifique via un canal sécurisé approuvé. N'incluez jamais de fichiers de mot de passe ou de jetons, de clés d'anonymisation, de clés privées de CA, de sauvegardes de bases de données ou de journaux de bases de données avec un manifeste partagé.

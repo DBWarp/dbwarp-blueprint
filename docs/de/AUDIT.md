@@ -8,7 +8,9 @@ Dieses Dokument beschreibt das Netzwerk-, Dateisystem-, Umgebungs-, Datenbank- u
 
 ## Ausgehender Netzwerkverkehr
 
-Der Live-Modus `--connect` öffnet eine Datenbanktreibersitzung zum angegebenen Endpunkt. Der konfigurierte Resolver kann für die DNS-Auflösung verwendet werden, und die integrierte Kerberos-/SSPI-Authentifizierung kann einen KDC oder Domänencontroller kontaktieren. Der Batch-Modus verarbeitet seine Quellen sequenziell und öffnet eine Sitzung für jede Datenbankquelle. Offline-Operationen mit TOML, Parquet, Avro und Bundles öffnen keine von der Anwendung initiierte Netzwerkverbindung; ein Pfad auf einem Netzwerk-Dateisystem unterliegt jedoch weiterhin dem Speicher-Stack des Hosts.
+Der Live-Modus `--connect` für PostgreSQL, MySQL und SQL Server öffnet eine Datenbanktreibersitzung zum angegebenen Endpunkt. Der Batch-Modus verarbeitet seine Quellen sequenziell und öffnet eine Sitzung für jede Datenbankquelle. Die DNS-Auflösung kann den konfigurierten Resolver verwenden, und die integrierte Kerberos-/SSPI-Authentifizierung kann einen KDC oder Domänencontroller kontaktieren. Offline-Operationen mit TOML, Parquet, Avro und Bundles öffnen keine von der Anwendung initiierte Netzwerkverbindung; ein Pfad auf einem Netzwerk-Dateisystem unterliegt jedoch weiterhin dem Speicher-Stack des Hosts.
+
+Die bestätigungspflichtige Oracle-Vorschau startet stattdessen nur die mit `--oracle-sqlplus` ausdrücklich angegebene SQL*Plus-Programmdatei (einschließlich einer begrenzten `-V`-Abfrage, sofern verfügbar) und verwendet sie für die Katalogsitzung. Der Kindprozess erhält ein leeres privates Verzeichnis als `TNS_ADMIN`; seine Anmeldeinformationen werden in die Standardeingabe geschrieben und niemals in Prozessargumenten abgelegt. Die Umgebung wird vor dem Start geleert. Nur `PATH`, `SystemRoot`, `WINDIR`, `ORACLE_HOME`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `LIBPATH` und `SHLIB_PATH` werden weitergereicht, wenn sie vorhanden sind; der Collector setzt seine feste Locale, Zeitzone und privaten `TNS_ADMIN`-Werte separat.
 
 Die Binärdatei besitzt keinen Telemetrie-, Lizenzprüfungs-, Versionsaktualisierungs-, Cloud-API- oder Uploadpfad.
 
@@ -22,7 +24,7 @@ Das Werkzeug liest die vom aktiven Modus ausgewählten Eingaben:
 |---|---|---|
 | `--user-file PATH` | Falls angegeben | Nur Benutzername. Nachfolgender Leerraum wird entfernt; eine leere Datei ist ein Fehler. |
 | `--password-file PATH` | Falls angegeben | Wird einmal gelesen. Der DBWarp-eigene `Secret`-Puffer wird beim Verwerfen genullt; Datenbanktreiber können eigene Kopien wie in SECURITY.md dokumentiert behalten. Wird unter Unix bei Lesezugriff für Gruppe/Andere abgelehnt. |
-| `--anonymization-key-file PATH` | Falls angegeben | Kundenseitig verwahrter HMAC-Schlüssel mit 32 Bytes oder 64 Hexadezimalzeichen. Wird unter Unix bei Lesezugriff für Gruppe/Andere abgelehnt. Der Schlüssel wird nie ausgegeben. |
+| `--anonymization-key-file PATH` | Falls angegeben | Ein HMAC-Schlüssel mit 32 Bytes oder 64 Hexadezimalzeichen, den Sie verwahren. Wird unter Unix bei Lesezugriff für Gruppe/Andere abgelehnt. Der Schlüssel wird nie ausgegeben. |
 | `--azure-token-file PATH` | Falls angegeben | SQL-Server-Entra-ID-Token. Wird einmal gelesen; der DBWarp-eigene `Secret`-Puffer wird beim Verwerfen genullt. Wird unter Unix bei Lesezugriff für Gruppe/Andere abgelehnt. |
 | `--tls-ca PATH` | Falls angegeben | Vertrauenswürdiges CA-PEM, das beim Verbindungsaufbau gelesen wird. PostgreSQL/MySQL akzeptieren ein Bundle; SQL Server akzeptiert genau ein Zertifikat. Die bereitgestellte Datei ersetzt die Standard-Stammzertifikate der Engine. |
 | `--tls-cert PATH` | Falls angegeben | PostgreSQL-/MySQL-TLS-Clientzertifikat (PEM), das beim Verbindungsaufbau gelesen wird. Wird bei SQL Server mit `DBP1015E` abgelehnt. |
@@ -33,7 +35,7 @@ Das Werkzeug liest die vom aktiven Modus ausgewählten Eingaben:
 | `--batch-manifest PATH` | Falls angegeben | Manifest sowie alle darin referenzierten lokalen Eingabe-, Anmeldedaten-, Token- und TLS-Pfade. |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Falls angegeben | Bundle-TOML und relative Blueprint-Dateien, die zum Auflisten, Extrahieren oder Packen benötigt werden. |
 | steuerndes Terminal/Konsole (`/dev/tty` auf Unix-ähnlichen Systemen) | Wenn keine Passwortquelle angegeben ist | Eingabeaufforderung mit deaktivierter Anzeige. |
-| (nur zur Build-Zeit) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` in vendorten Releases, `vendor/mysql_async`, `vendor-crates/*` in Offline-Bundles | Nur bei Ausführung von `./build.sh` | Toolchain-, Quellprovenienz- und übliche Cargo-Build-Eingaben |
+| (nur zur Build-Zeit) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` in vendorten Releases, `vendor/*`, `vendor-crates/*` in Offline-Bundles | Nur bei Ausführung von `./build.sh` | Toolchain-, Quellprovenienz- und übliche Cargo-Build-Eingaben |
 
 Die Anwendung besitzt keinen ausdrücklichen Pfad zum Lesen von:
 - `~/.pgpass`, `~/.my.cnf`, `~/.aws/credentials`, `~/.azure/credentials`
@@ -145,6 +147,7 @@ artifact_inventory:
   external_prerequisites: 3
   inventory_complete: false
   dependencies_complete: false
+  requirements_complete: false
   analysis_complete: false
 
 database_operations_observed:
@@ -224,7 +227,9 @@ Das Auditprotokoll:
 
 **Bedingte Ausgabe der Vertrauensaussage.** Die Zeile „credential entered through the Secret wrapper...“ wird nur bei Läufen ausgegeben, in denen tatsächlich Anmeldedaten gelesen wurden. Fehlerpfade, die vor der Erfassung von Anmeldedaten abbrechen (URI-Parsingfehler, Ablehnung von in URIs eingebetteten Passwörtern, Probelauf usw.), geben diese Zeile bewusst *nicht* aus — über Anmeldedaten, die nie abgerufen wurden, kann keine Aussage getroffen werden. Verwenden Sie das Vorhandensein/Fehlen der Zeile zusammen mit `auth.password_source`, um festzustellen, ob die Verarbeitung von Anmeldedaten in einem bestimmten Lauf ausgeübt wurde.
 
-**Das Audit wird bei operativen Erfolgs- und Fehlerpfaden ausgegeben**, einschließlich Befehlszeilen-Parsingfehlern nach dem Start. Hilfe-/Versionsausgaben und Fehler vor dem Laden des eingebetteten Lokalisierungsvertrags erzeugen kein vollständiges Audit. Bei einem späteren Fehler wird das Audit weiterhin auf stderr und gegebenenfalls nach `--audit-log PATH` geschrieben; das Ergebnis hat die Form `outcome: error: <stage>`.
+Der Audit-Prozess wird bei erfolgreichen und fehlgeschlagenen Abläufen ausgeführt, einschließlich Fehlern bei der Parsierung von Befehlszeilen nach dem Start. Wenn das Tool während der Ausführung fehlschlägt, wird das Audit-Protokoll weiterhin auf stderr und auf `--audit-log PATH` ausgegeben, falls angegeben, wobei `outcome: error: <stage>` verwendet wird, damit Sie einen Nachweis darüber haben, was versucht wurde, bevor der Fehler auftrat.
+
+Beispiel für eine Fehlerzeile:
 
 ```
 outcome:             error: parsing --connect URI (value redacted to avoid logging embedded credentials)
@@ -238,16 +243,15 @@ Optionale RTT-, Komprimierungs- und Textstilprüfungen können fehlschlagen, ohn
 
 Die Artefakterfassung ist von Tier-2-Zeilenstichproben unabhängig:
 
-- `--artifact-detail none` überspringt Artefaktkataloge und Definitionen.
+- `--artifact-detail none` überspringt Artefaktinventarkataloge und Definitionen;
+  die reine Zählprüfung der Topologie wird dennoch ausgeführt.
 - `summary` liest modellierte Objektkataloge, aber keinen Definitionstext.
 - `graph` liest zusätzlich Abhängigkeitskataloge, aber keinen Definitionstext.
 - `analyzed` liest verfügbare SQL-/Prozedurdefinitionen zusätzlich zur lexikalischen Analyse in begrenzten Prozessspeicher.
 
 Das Audit zeichnet Detailgrad, Sichtbarkeit, Objekt-/Abhängigkeits-/Extern-Anzahlen und alle Vollständigkeitsflags auf. Jede Artefaktkatalogoperation erscheint in `database_operations_observed`. Ein fehlgeschlagener optionaler Katalog gibt `DBP1410W` aus, erscheint unter `warnings` und verhindert eine falsche Vollständigkeitsbehauptung.
 
-Im analysierten Modus werden Definitionen von einem zeroisierenden Besitzer gehalten, bereinigt und auf begrenzte Bänder und geschlossene Feature-Token reduziert. Definitionstext, Quellobjektnamen, externe Endpunkte, Artefakt-Principals, Anmeldedaten, Schlüssel-/Zertifikatsmaterial, Paket-/Bibliotheksnamen und Binärdateien werden niemals in Blueprint oder Auditprotokoll geschrieben. Die einzigen exakten Principal-Namen sind die drei oben im ausdrücklichen Auditblock `auth` beschriebenen SQL-Server-Sitzungsidentitäten; sie werden niemals in Blueprint, Präsentation oder Publikationsartefakte geschrieben. Die Modi graph und analyzed erfordern `--yes`, weil anonyme Topologie eine Anwendung identifizieren kann.
-
-Das Audit unterscheidet die Datenschutzpositionen durch eine dieser Vertrauensaussagen:
+Im Analysemodus werden Definitionen in einen Nullwert-Eigentümer eingeschlossen, bereinigt und auf begrenzte Bereiche und geschlossene Feature-Token reduziert. Definitionstexte, Namen von Quellobjekten, externe Endpunkte, Artefakt-Prinzipale, Zugangsdaten, Schlüssel-/Zertifikatmaterial, Paket-/Bibliotheksnamen und Binärdateien werden niemals in die Blueprint oder das Auditprotokoll geschrieben. Die einzigen exakten Prinzipalnamen, die beibehalten werden, sind die drei SQL Server-Sitzungsidentitäten im expliziten `auth`-Auditblock; diese werden niemals in die Blueprint, Präsentations- oder Bundle-Dateien geschrieben. Die Graph- und Analysemodi erfordern `--yes`, da eine anonyme Topologie dennoch eine Anwendung identifizieren kann.
 
 - summary: nur begrenzte Anzahlen, keine Objektidentitäten oder Definitionen;
 - graph: anonymer Abhängigkeitsgraph, keine Definitionen;
@@ -345,15 +349,7 @@ Wenn Sie *nachweisen* möchten, dass das Werkzeug nur die dokumentierten Aktione
    MySQL-Verbindung. Die vollständige Erläuterung finden Sie unter
    **Treibereigene Kopien von Anmeldedaten** in SECURITY.md.
 3. **Aus Quellcode erstellen**: `./build.sh`. Bei Verwendung des Quellcodearchivs
-   mit gebündelten Abhängigkeiten führen Sie
-   `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh` aus. Die Release-CI führt auf demselben
-   Runner einen unabhängigen Neuaufbau durch. Dabei wird dasselbe Cargo-
-   Zielverzeichnis zwischen den Builds geleert und wiederverwendet; die erste
-   ausführbare Datei wird separat aufbewahrt. Byte-Abweichungen werden
-   zurückgewiesen. Ein lokaler Vergleich ist nur mit
-   derselben Quellrevision, demselben Ziel, denselben Features, derselben
-   festgeschriebenen Rust-Toolchain, demselben Linker und denselben Build-Flags
-   aussagekräftig.
+Führen Sie `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh` aus. Jede Version wird zweimal erstellt, und eine Byte-Differenz führt zum Fehlschlagen der Version. Ein lokaler Vergleich ist nur mit derselben Quellversion, dem gleichen Ziel, den gleichen Funktionen, der gleichen fixierten Rust-Toolchain, dem gleichen Linker und den gleichen Build-Optionen aussagekräftig.
 4. **Mit dem Release vergleichen**: Führen Sie im passenden Quellcode-Checkout
    oder Quellcodebaum `./verify.sh /path/to/extracted/dbwarp-blueprint` aus.
    Die erforderlichen Ziel-, Feature-, Toolchain-, Linker-, Source-Date-Epoch-
@@ -370,8 +366,4 @@ Wenn Sie *nachweisen* möchten, dass das Werkzeug nur die dokumentierten Aktione
    außerdem den erwarteten Verkehr zum KDC beziehungsweise Domänencontroller.
    Gleichen Sie im Batch-Modus eine Datenbanksitzung pro Datenbankquelle ab.
 
-Wenn eine dieser Prüfungen nicht mit der Dokumentation übereinstimmt, melden
-Sie die Abweichung über den in SECURITY.md genannten Kanal und fügen Sie nur
-den kleinsten sicheren Trace bei, der zur Reproduktion erforderlich ist. Geben
-Sie keine Anmeldedaten, Kundenkennungen oder vertraulichen Treiberausgaben in
-einem öffentlichen Issue an.
+Wenn eine dieser Angaben nicht mit dem hier dokumentierten übereinstimmt, melden Sie die Diskrepanz über den in SECURITY.md angegebenen Kanal und fügen Sie die kleinste, sichere Nachverfolgung hinzu, die erforderlich ist, um sie zu reproduzieren. Geben Sie keine Zugangsdaten, identifizierende Namen oder sensible Treiber-Ausgaben in einem öffentlichen Problem an.

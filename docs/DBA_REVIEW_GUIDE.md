@@ -21,7 +21,7 @@ Recommended properties:
 - read access limited to the database being assessed;
 - password or token supplied by file or prompt, not embedded in the URI.
 
-Exact grants vary by engine and customer policy. If the account cannot read some catalog views or sample some tables, the tool should fail clearly or emit a reduced Blueprint; keep the audit log.
+Exact grants vary by engine and your policy. If the account cannot read some catalog views or sample some tables, the tool fails clearly or emits a reduced Blueprint; keep the audit log.
 
 Use the version-aware scripts and caveats in
 [`../sql/grants/README.md`](../sql/grants/README.md). After the approved capture,
@@ -42,15 +42,36 @@ It reads:
 - column type families, nullability, and rounded length statistics where available;
 - index type, uniqueness, and anonymized column ordinals;
 - foreign-key graph shape where available;
+- best-effort coarse source-capacity bands returned by the database endpoint;
 - bounded non-table object and external-prerequisite counts from object
   catalogs under the default `--artifact-detail summary` (no definitions);
-- optional customer-side RTT probe unless `--no-rtt-probe` is set.
+- optional RTT probe unless `--no-rtt-probe` is set.
 
 It does not read row values.
 
+## Source Environment
+
+The schema-v7 `[source_environment]` block is derived only from values returned
+through the selected database connection. The collector never inspects its own
+host or presents that workstation as the database server.
+
+PostgreSQL and MySQL expose a database buffer setting under the normal minimum
+grants, so memory is partial evidence with basis `database-buffer-cache` and
+CPU remains unknown. SQL Server requests source-environment capacity only with
+`--artifact-detail graph` or `analyzed`, the enhanced-tier modes. The basic and
+standard modes do not issue an operating-system capacity query and record the
+capacity bands as `not-requested`. The enhanced script grants the required
+server-wide `VIEW SERVER STATE` (2019) or `VIEW SERVER PERFORMANCE STATE`
+(2022/2025) in a separate batch that a DBA can remove. If an enhanced capture
+cannot read the DMV, capture continues and records the catalog as unreadable
+rather than borrowing local-machine values or inventing capacity.
+
+No cloud, Kubernetes, hypervisor, or operating-system API is contacted by this
+capture path.
+
 ## Non-Table Artifact Inventory
 
-Since schema v4, Blueprints inventory non-table objects independently from row
+Blueprints inventory non-table objects independently from row
 sampling. The
 default `--artifact-detail summary` reads object catalogs but not definitions
 and emits only bounded counts and external-prerequisite classes.
@@ -62,10 +83,15 @@ source object names, endpoints, provider strings, principals, secrets, keys,
 certificates, package names, and binaries are never serialized.
 
 Catalog privileges affect absence claims. Review `visibility`,
-`inventory_complete`, `dependencies_complete`, `catalogs_unreadable`, and
-`families_not_inventoried`; do not interpret a zero count as proof when those
-fields disclose a gap. `DBP1410W` identifies an optional artifact catalog that
-could not be read.
+`inventory_complete`, `dependencies_complete`, `requirements_complete`,
+`catalogs_unreadable`, and `families_not_inventoried`; do not interpret a zero
+count or an empty requirements list as proof when those fields disclose a gap.
+At graph/analyzed detail, also review each object's `requirement_status`: only
+`complete` makes an empty list proof of zero requirements for that object.
+`partial` preserves known facts without claiming exhaustive coverage;
+`unavailable` means no usable coverage was established. Both leave that
+object's requirement-derived coupling assessment unknown.
+`DBP1410W` identifies an optional artifact catalog that could not be read.
 
 Anonymous dependency topology can still fingerprint an application. Approve
 `graph` or `analyzed` only when that risk is acceptable. See
@@ -80,7 +106,7 @@ Tier 2 is enabled only by the explicit pair:
 ```
 
 Tier 2 additionally reads bounded row samples into process memory. The sampled
-bytes are encoded into an internal row-frame buffer and used to derive
+bytes are encoded into an in-memory buffer and used to derive
 aggregate compression, null-density, cardinality/frequency, length, and style
 measurements before the values and temporary fingerprints are discarded.
 
@@ -92,7 +118,7 @@ The sample bytes are:
 - not sent over any network other than the database connection;
 - not retained after the sample is summarized.
 
-Tier 2 is valuable because DBWarp performance and egress cost depend on compressed bytes, not raw table bytes.
+Tier 2 is valuable because transfer time and egress cost depend on compressed bytes, not raw table bytes.
 
 ## RTT Probe
 
@@ -142,7 +168,7 @@ publication may create a sibling staging or recovery directory beside
 
 Before sharing `blueprint.toml`, verify:
 
-- header is the fixed `dbwarp-blueprint v6` header;
+- header is the fixed `dbwarp-blueprint v7` header;
 - table ids look like `table-001`;
 - column ids look like `col-1`;
 - schema ids look like `schema-A`;
@@ -162,12 +188,11 @@ Default balanced MySQL output contains exact declared capacities and index
 prefix lengths plus relatively rounded average/p95 samples. Review the three
 fidelity markers explicitly. If `--length-fidelity exact --yes` was used,
 approve exact sampled statistics as well. Row values and real object names must
-still be absent. Missing fidelity markers are legacy/unknown and must not be
-treated as benchmark-ready metadata.
+still be absent. A Blueprint without fidelity markers was produced by an older
+version; recapture it.
 
-The marker does not claim that sampling covered every table. A benchmark handoff
-must also show zero unsampled nonempty variable-width indexed columns in the estimator
-manifest; increase `--max-wall-secs` and recapture if that gate fails.
+The marker does not claim that sampling covered every table. If `DBP1406W` is
+reported, increase `--max-wall-secs` and recapture.
 
 ## Operational Safety
 

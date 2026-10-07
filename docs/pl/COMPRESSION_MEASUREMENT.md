@@ -30,36 +30,11 @@ te bufory algorytmem zstd na poziomie 3 i wyprowadza zagregowane pomiary kompres
 udziału NULL, kardynalności/częstotliwości, długości i stylu, po czym odrzuca
 próbkowane wartości i tymczasowe odciski.
 
-Dla wybranych kolumn tekstowych i binarnych Poziom 2 może również próbkować
-samą kolumnę. Pozwala to narzędziom planistycznym dalszego etapu dopasować
-entropię poszczególnych kolumn zamiast opierać się wyłącznie na średnich na
-poziomie tabeli.
+Dla wybranych kolumn text/binary, Tier 2 może również pobierać próbki tylko tej kolumny. Pozwala to na określenie stopnia kompresji dla każdej kolumny, zamiast tylko średnich wartości dla całego tabeli.
 
-Współczynniki tabel aktywnych baz danych korzystają z neutralnej sekwencji
-ograniczonych grup po 1000 wierszy, z jednym deskryptorem na kolumnę, długościami
-wartości o stałej szerokości i ładunkami ułożonymi kolumnowo. Mierzy to strukturę
-istotną dla kompresji, wspólną dla transportów masowych, bez odwzorowywania
-protokołu bazy ani formatu sieciowego DBWarp. Współczynniki kolumn zachowują
-`blueprint-compression-probe-v2`; oznaczone wartości z prefiksem długości nadal
-stanowią bardziej szczegółowe wejście entropii.
+Współczynniki tabel w bazach danych działających na żywo wykorzystują neutralną sekwencję ograniczonych grup po 1000 wierszy, z jednym opisem dla każdej kolumny, stałą długością wartości i sąsiadującymi danymi w kolumnach. To mierzy strukturę istotną dla kompresji, bez zbierania jakichkolwiek danych z bazy danych ani protokołu transferu. Współczynniki dla każdej kolumny zachowują wartość `blueprint-compression-probe-v2`, której oznaczona, długościowo poprzedzona wartość pozostaje bardziej szczegółowym źródłem entropii.
 
-Bloki tabel PostgreSQL używają obecnie
-`blueprint-columnar-transfer-probe-v2`, który przepuszcza grupy wierszy przez
-jeden trwały kontekst zstd poziomu 3 i opróżnia go po każdej grupie. MySQL i SQL
-Server używają `blueprint-columnar-transfer-probe-v3`: tych samych neutralnych
-bajtów i trwałego kontekstu, z dodatkowymi opróżnieniami na granicach bloków
-sondy o rozmiarze 256 KiB. Próbki SQL Server `nvarchar`, `nchar` i `ntext`
-są mierzone jako rozkłady bajtów UTF-16LE. `varchar`, `char` i `text` zachowują
-próbkowaną wąską szerokość bajtów; Blueprint zapisuje stronę kodową katalogu
-kolacji źródłowej jako `utf-8`, `windows-N` lub `code-page-N`, aby zatwierdzony
-konsument mógł wybrać zgodny natywny koder zamiast poszerzać wartości. Sterownik
-nadal udostępnia próbnikowi zdekodowane ciągi, więc nie deklaruje się identyczności
-bajtów dla starszych stron kodowych. Tabelowy `ratio_stddev` jest mierzony między
-wyjściami zewnętrznych grup wierszy. Bloki projekcji kolumn pozostają niezależnymi,
-jednoprzebiegowymi pomiarami entropii i emitują `0.0`. Starsze pomiary tabel
-oznaczone `blueprint-columnar-transfer-probe-v1` wykonywały jedną operację z
-zadeklarowanym rozmiarem na połączonych ramkach; jawna wersja zapobiega cichemu
-reinterpretowaniu tych współczynników zgodnie z obecną polityką strumieniową.
+Bloki tabel PostgreSQL używają `blueprint-columnar-transfer-probe-v2`, które przesyłają grupy wierszy przez jeden trwały kontekst zst z poziomem 3 i zrzucają dane po każdej grupie. MySQL i SQL Server używają `blueprint-columnar-transfer-probe-v3`: te same neutralne bajty i trwały kontekst, z dodatkowymi zrzutami danych w granicach bloków o rozmiarze 256 KiB. Próbki `nvarchar`, `nchar` i `ntext` dla SQL Server są mierzone jako rozkłady bajtów UTF-16LE. Próbki `varchar`, `char` i `text` dla SQL Server zachowują swoją zmierzoną szerokość bajtów; Blueprint zapisuje kod strony katalogu źródła jako `utf-8`, `windows-N` lub `code-page-N`. Sterownik bazy danych nadal udostępnia zdekodowane ciągi próbkującemu, więc nie można twierdzić, że bajty mają identyczność dla starszych kodowań stron. Tabela `ratio_stddev` jest mierzona w oparciu o wyjściowe grupy wierszy. Bloki projekcji dla poszczególnych kolumn pozostają niezależnymi, jednorazowymi pomiarami entropii i emitują `0.0`. Blueprinty z wcześniejszych wersji mogą zawierać `blueprint-columnar-transfer-probe-v1`; współczynniki z różnymi znacznikami nie są porównywalne.
 
 Próbkowane bajty trafiają do procesu lokalnego wyłącznie przez wybraną sesję
 bazy danych. Nie są zapisywane na dysku, dołączane do `blueprint.toml` ani do
@@ -114,9 +89,9 @@ style = "json"
 measured = true
 sample_rows = 1000
 sample_bytes = 65536
-sample_method = "column LIMIT N (engine-specific bounded sample)"
+sample_method = "LIMIT N (fallback after underfilled adaptive TABLESAMPLE; simple-query text fields; raw binary/vector decoded; server-side cell cap)"
 sampled_with_bias = true
-bias_reason = "unordered_limit_after_empty_TABLESAMPLE"
+bias_reason = "unordered_limit_after_underfilled_adaptive_TABLESAMPLE+server_side_cell_cap"
 ratio_zstd_3 = 12.35
 ratio_stddev = 0.2
 sample_encoding = "blueprint-compression-probe-v2"
@@ -132,9 +107,7 @@ ratio_stddev = 0.15
 sample_encoding = "blueprint-columnar-transfer-probe-v3"
 ```
 
-Wartości te pomagają zatwierdzonym narzędziom dalszego etapu oszacować rozmiar
-transferu sieciowego i generować syntetyczne dane tekstowe i binarne o podobnej
-podatności na kompresję.
+Te wartości są wykorzystywane do oszacowania rozmiaru przesyłanych danych przez sieć.
 
 ## Dlaczego ma to znaczenie
 
@@ -158,20 +131,15 @@ Niektóre silniki nie oferują idealnie równomiernego próbkowania tabel. MySQL
 rozkłada ograniczoną próbkę na cztery zakresy numerycznego klucza podstawowego,
 jeśli ta ścieżka dostępu jest dostępna; w przeciwnym razie przechodzi na
 `LIMIT N`. Obie metody są jawnie oznaczone jako obciążone, ponieważ żadna nie
-jest statystyczną próbką losową. Inne mniej idealne metody awaryjne silników są
-również zapisywane przez `sampled_with_bias` i `bias_reason`.
+jest statystyczną próbką losową. Każde okno zakresu poza ostatnim ma wyłączną
+górną granicę. Rzadkie lub nierównomierne obszary klucza podstawowego mogą więc
+dać niepełne okno, ale żadne okno nie odczyta ponownie wierszy z następnego. Inne
+mniej idealne metody awaryjne silników są również zapisywane przez
+`sampled_with_bias` i `bias_reason`.
 
-Gdy układ ograniczonej próbki wpływa na generowanie syntetyczne, Blueprint
-zapisuje go niezależnie od tych pól tekstowych. Próbkowanie zakresów numerycznego
-klucza podstawowego MySQL emituje
-`sample_layout = "primary-key-range-windows"` i porządkuje każde okno według
-pełnego klucza podstawowego. Pozwala to konsumentom zachować grupową lokalność
-kluczy złożonych bez analizowania `sample_method` ani `bias_reason`.
+Blueprint rejestruje strukturę ograniczonej próbki oddzielnie od pól tekstowych. Pobieranie próbek zakresów kluczy głównych w MySQL generuje `sample_layout = "primary-key-range-windows"` i sortuje każdy fragment według pełnego klucza głównego.
 
-Obciążone próbki są nadal przydatne, ale narzędzia dalszego etapu powinny
-traktować je z mniejszą ufnością. Dziennik audytu rejestruje, że próbkowanie
-wierszy było włączone, oraz liczbę lokalnie zakodowanych bajtów sondy.
-Bajty sesji bazy są oznaczone jako `unknown`, jeśli sterownik ich nie udostępnia.
+Próbki obciążone nadal są przydatne, ale charakteryzują się niższą wiarygodnością. Dziennik audytu rejestruje, że włączono próbkowanie wierszy oraz lokalnie zakodowaną liczbę bajtów sondy. Sumy bajtów sesji bazy danych są raportowane jako `unknown`, gdy sterownik ich nie udostępnia.
 
 ## Praktyczne ustawienia próbkowania
 
@@ -183,8 +151,7 @@ Pierwszy przebieg bezpieczny dla środowiska produkcyjnego:
 --max-wall-secs 120
 ```
 
-Lepsze dane wejściowe estymatora, gdy dostępna jest replika do odczytu lub okno
-konserwacyjne:
+Bardziej precyzyjne pomiary, gdy dostępna jest replika odczytu lub okno konserwacji:
 
 ```bash
 --measure-compression --yes \
@@ -213,17 +180,6 @@ narzut. Audyt zapisuje skonfigurowany limit ładunku, wykonane zapytania i dokł
 łączną liczbę lokalnie zakodowanych bajtów sondy; nie raportuje zmierzonego ruchu
 na połączeniu z bazą danych.
 
-## Jak konsumenci dalszego etapu wykorzystują te dane
+## Jak interpretowane są wyniki pomiarów.
 
-Konsument dalszego etapu powinien używać dowodów kompresji w następującej kolejności:
-
-1. rozpoznane bloki kompresji poszczególnych kolumn;
-2. rozpoznane bloki kompresji na poziomie tabeli;
-3. wartości domyślne typu i stylu, gdy nie istnieje zmierzony współczynnik.
-
-Pole `sample_encoding` jest częścią kontraktu. Konsumenci powinni używać tylko
-współczynników z rozpoznanym znacznikiem kodowania, ponieważ różne kodowania
-próbki mogą dawać różne współczynniki kompresji dla tych samych danych
-logicznych. W szczególności tabelowy współczynnik kolumnowej sondy transferowej i
-współczynniki v2 poszczególnych kolumn są pomiarami uzupełniającymi i nie wolno
-ich stosować zamiennie.
+Pole `sample_encoding` jest częścią umowy. Współczynniki są porównywalne tylko w obrębie jednego tagu kodowania, ponieważ różne sposoby kodowania próbek mogą dawać różne współczynniki kompresji dla tych samych danych logicznych. W szczególności, współczynnik transferu kolumnowego na poziomie tabeli oraz współczynniki v2 dla poszczególnych kolumn to uzupełniające się pomiary i nie powinny być ze sobą zamieniane.

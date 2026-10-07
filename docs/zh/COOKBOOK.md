@@ -20,7 +20,7 @@
   --out pg-appdb.blueprint.toml --yes
 ```
 
-对于无人值守运行，请设置 `DBWARP_BLUEPRINT_LANG=fr` 或标准进程区域设置。显式的 `--lang` 始终优先。DBP 代码和底层提供商详细信息保持规范形式，因此可以搜索本地化故障并将其分享给支持人员。
+对于无人值守运行，请设置 `DBWARP_BLUEPRINT_LANG=fr` 或标准进程区域设置。显式的 `--lang` 始终优先。DBP 代码和底层驱动程序详细信息保持规范形式，因此可以搜索本地化故障并将其分享给支持人员。
 
 ## 方案：使用内部 CA 的 PostgreSQL
 
@@ -55,23 +55,11 @@
   --audit-log mysql-appdb.audit.txt
 ```
 
-若要重建具有性能代表性的合成数据，请使用默认的 balanced 策略：精确的 MySQL 声明/索引元数据和紧密舍入的采样宽度：
+上述配置已经使用了默认的平衡策略：精确的 MySQL declaration/index 元数据，以及经过严格舍入的采样宽度。
 
-```bash
-./dbwarp-blueprint \
-  --connect mysql://mysql-primary.internal:3306/appdb \
-  --user-file /etc/dbwarp/mysql-blueprint.user \
-  --password-file /etc/dbwarp/mysql-blueprint.pass \
-  --tls-mode verify-full \
-  --tls-ca /etc/pki/mysql-ca.pem \
-  --measure-compression --yes \
-  --out mysql-appdb.blueprint.toml \
-  --audit-log mysql-appdb.audit.txt
-```
+确认 `declared_length_fidelity = "exact"`、`index_length_fidelity = "exact"` 和 `observed_length_fidelity = "relative-rounded-v2"`。 仅在您的组织批准共享精确的抽样长度统计信息后，才使用 `--length-fidelity exact --yes`。 姓名和值仍然被排除。
 
-确认 `declared_length_fidelity = "exact"`、`index_length_fidelity = "exact"` 和 `observed_length_fidelity = "relative-rounded-v2"`。只有在客户批准分享精确的采样长度统计信息后，才使用 `--length-fidelity exact --yes`。名称和值仍会被排除。
-
-对于拥有数千个表的数据资产，如有需要，请将 `--max-wall-secs` 提高到默认的 300 秒以上。保真度标记用于证明策略，而下游估算器会单独要求每个非空可变宽度索引列具备观测平均值/p95 长度，之后才会将测试数据集标记为基准测试就绪。
+在拥有数千张表的数据库中，如果需要，请将 `--max-wall-secs` 的值设置为高于其默认的 300 秒。 质量标志描述了策略；它们并不表明采样覆盖了所有表。
 
 ## 方案：SQL Server SQL 身份验证
 
@@ -96,10 +84,10 @@ SQL Server 的证书验证 TLS 模式在省略 `--tls-ca` 时使用操作系统�
 ```bash
 install -d -m 700 "$HOME/.cache/dbwarp-blueprint"
 TOKEN_FILE="$HOME/.cache/dbwarp-blueprint/sql-token"
+install -m 600 /dev/null "$TOKEN_FILE"
 az account get-access-token \
   --resource https://database.windows.net/ \
   --query accessToken -o tsv > "$TOKEN_FILE"
-chmod 600 "$TOKEN_FILE"
 
 ./dbwarp-blueprint \
   --connect sqlserver://sql-primary.database.windows.net,1433/appdb \
@@ -107,11 +95,14 @@ chmod 600 "$TOKEN_FILE"
   --auth-mode entra-token \
   --azure-token-file "$TOKEN_FILE" \
   --tls-mode verify-full \
-  --tls-ca /etc/pki/sqlserver-ca.pem \
   --measure-compression --yes \
   --out mssql-entra.blueprint.toml \
   --audit-log mssql-entra.audit.txt
 ```
+
+Azure SQL 提供由公共 CA 签发的证书，因此本方案不设置 `--tls-ca`，而是使用操作
+系统信任存储区。提供的 `--tls-ca` 文件会用单个证书替换该存储区；请参见
+[TLS](TLS.md)。
 
 ## 方案：仅目录安全审查
 
@@ -127,7 +118,7 @@ chmod 600 "$TOKEN_FILE"
   --yes
 ```
 
-这是阻力最低的审查模式。它避免行采样，但会降低下游压缩和出口流量估算的准确性。
+这是最便捷的审查模式。它避免了行采样，但会产生不太准确的压缩和数据传输量估算。
 
 ## 评估非表对象迁移复杂度
 
@@ -157,7 +148,7 @@ chmod 600 "$TOKEN_FILE"
 ```
 
 
-请检查 `visibility`、全部三个完整性标志、`catalogs_unreadable`、`families_not_inventoried` 和 `counts_by_external_class`。将每个外部类别视为明确的迁移任务。已清点的对象并不证明 DBWarp 能重建或转换它；请与迁移能力矩阵比较。参见 [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md)。
+审查 `visibility`，所有三个完整性选项，`catalogs_unreadable`、`families_not_inventoried` 和 `counts_by_external_class`。将每个外部类视为一个明确的迁移任务。不要将已记录的对象视为 DBWarp 能够重新创建或翻译的证明；请询问 DBWarp 哪些对象类型支持您的迁移。请参阅 [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md)。
 
 ## 方案：禁用 RTT 探测
 
@@ -192,9 +183,9 @@ RTT 探测绝不会读取行数据；每个查询只返回常量整数 `1`。
 
 如果输出将许多样本标记为有偏或缺失，请在只读副本上使用更大的时间预算重新运行。
 
-## 方案：一个客户、多个数据库
+## 食谱：在一个软件包中包含多个数据库。
 
-当客户希望针对多个数据库获得一个可审阅的软件包时，请使用批处理清单。
+当您希望对多个数据库进行审查时，可以使用批处理清单。
 
 `customer.batch.toml`：
 
@@ -249,9 +240,9 @@ tags = ["warehouse"]
 
 这会写出 `bundle.toml`、每个源对应的一个子 Blueprint，以及每个源对应的一份审计。每个子 Blueprint 仍可单独审阅。
 
-## 方案：一个客户、混合数据库和数据湖文件
+## 食谱：混合数据库和数据湖文件。
 
-当客户在实时数据库旁还有 Parquet 或 Avro 提取文件时，请在同一批处理中使用结构化文件源。
+当您需要同时处理 Parquet 或 Avro 抽取文件以及实时数据库时，请将结构化文件作为源，并将其放在同一个批处理中。
 
 ```toml
 [defaults]
@@ -270,7 +261,7 @@ tags = ["database"]
 [[source]]
 id = "orders_parquet"
 kind = "parquet"
-paths = ["/mnt/customer/orders/year=*/month=*/*.parquet"]
+paths = ["/data/orders/year=*/month=*/*.parquet"]
 dataset_mode = "partitioned_dataset"
 logical_table = "orders"
 tags = ["lake", "orders"]
@@ -278,12 +269,12 @@ tags = ["lake", "orders"]
 [[source]]
 id = "events_avro"
 kind = "avro"
-paths = ["/mnt/customer/events/*.avro"]
+paths = ["/data/events/*.avro"]
 dataset_mode = "one_table_per_file"
 tags = ["lake", "events"]
 ```
 
-`partitioned_dataset` 当前像 `merge_same_schema` 一样合并文件，但会在捆绑包中保留客户的意图。请将不相关的模式放在不同源中。
+`partitioned_dataset` 将文件合并，例如 `merge_same_schema`，并在输出包中记录声明的模式。 将不相关的模式保留在单独的源中。
 
 ## 方案：从捆绑包中仅提取一个源或表
 
@@ -311,11 +302,11 @@ tags = ["lake", "events"]
   --out erp_pg_table_042.blueprint.toml
 ```
 
-当客户仅批准数据资产的一部分用于基准测试，或者您希望从大型捆绑包生成小型、聚焦的测试数据集时，请使用此方式。
+仅当只有一部分数据包被批准用于共享时，才使用此方法。
 
-## 方案：打包经过单独审阅的捆绑包以供交接
+## 说明：打包并审查好后的集合包，以便分享。
 
-工作捆绑包目录包含子 Blueprint 和访问受控的审计。不要将其整体传输。审阅清单值和子 Blueprint 后，创建单文件交接包：
+工作包目录包含子蓝图和受访问控制的审计文件。请勿整体复制该目录。在查看清单中的值和子蓝图后，创建一个单独的文件进行共享：
 
 ```bash
 ./dbwarp-blueprint \
@@ -325,12 +316,12 @@ tags = ["lake", "events"]
 
 打包文件会保留运维人员提供的源 ID、标签、数据集组 ID 和审计路径元数据。请使用匿名值，检查打包后的 TOML，并且只通过批准的渠道传输。
 
-## 方案：批处理交接包
+## 配方：批量打包以供共享。
 
-请遵循[交接政策](QUICKSTART.md#review-and-share)。将工作清单、审计、命令记录和审阅笔记保留在本地，仅使用已审阅的打包 Blueprint 创建此独立目录。
+请按照[审查和分享指南](QUICKSTART.md#review-and-share)进行操作。将工作清单、审计记录和命令记录保存在本地；从已审查的打包好的Blueprint中，创建一个独立的目录。
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   customer-blueprint-bundle.packed.toml
 ```
 
@@ -346,7 +337,7 @@ customer-blueprint-handoff/
 
 ## 方案：字节级完全一致的可重现性
 
-固定时间戳，并重复使用同一个受保护、由客户保管的匿名化密钥：
+固定时间戳，并重复使用您持有的同一个受保护匿名化密钥：
 
 ```bash
 ./dbwarp-blueprint \
@@ -359,23 +350,15 @@ customer-blueprint-handoff/
   --yes
 ```
 
-密钥文件必须恰好包含 32 个原始字节或 64 个十六进制字符；在 Unix 上不得允许组用户
-或其他用户读取，并且绝不能包含在交接材料中。若不使用此选项，每次运行都会使用新的
-操作系统随机密钥，有意改变匿名标签的顺序。仅固定 `--generated-at` 并不足够。
-请使用完整方案生成经批准的取证快照；只要时间戳和语言不变，从完全相同的已审阅
-Blueprint 两次生成的演示文稿仍会逐字节完全相同。
+该密钥文件必须包含正好 32 个原始字节或 64 个十六进制字符，在 Unix 系统上不能为 group/world-readable，并且绝不能被共享。 如果不使用此选项，一个全新的、操作系统生成的密钥会故意在每次运行中改变匿名标签的顺序。 仅固定 `--generated-at` 是不够的。 请使用完整的配方来创建经过批准的取证快照；从完全相同的经过审查的 Blueprint 生成两次的输出，如果其时间戳和语言没有改变，则字节内容将完全相同。
 
-## 方案：DBWarp 交接包
+## 配方：用于与 DBWarp 共享的软件包。
 
-请遵循[交接政策](QUICKSTART.md#review-and-share)。
+请按照[审查和分享指南](QUICKSTART.md#review-and-share)进行操作。默认包仅包含经过批准的Blueprint：
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   blueprint.toml
 ```
 
-默认只分享已审阅的 `blueprint.toml` 或打包后的捆绑包。演示文稿 `blueprint.pptx` 只有在其内容和保密级别经过审阅，并依据组织政策单独获批后，才可一并提供。
-
-审计、命令记录、审阅笔记和未获批的演示文稿应作为受访问控制的本地证据保存。其中可能包含端点、已认证主体、本地路径、计时数据和清单标识符。仅在有明确的支持需求时，通过已批准的安全渠道发送运维证据。
-
-工具不会创建 `command-used.redacted.txt`；它是操作员可选记录的文件，而非标准交接成果。切勿包含密码或令牌文件、匿名化密钥、CA 私钥、客户数据转储或数据库日志。
+仅在单独审查和批准后，才添加 `blueprint.pptx`。 将审计记录、命令记录以及 credential/key 材料与共享目录隔离；仅在特定支持需求下，通过批准的安全渠道发送审计记录。

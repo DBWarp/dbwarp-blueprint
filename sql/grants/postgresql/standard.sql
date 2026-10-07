@@ -1,6 +1,6 @@
 -- =============================================================================
--- dbwarp-blueprint least-privilege grants — PostgreSQL 13-18
--- Tier: STANDARD  (catalog walk + bounded row samples => synthetic-copy-ready)
+-- dbwarp-blueprint least-privilege grants: PostgreSQL 13-18
+-- Tier: STANDARD  (catalog walk + bounded row samples)
 -- =============================================================================
 -- Authorizes this command:
 --
@@ -18,7 +18,7 @@
 -- Scope rule: make --schema match the edited schema list below. Omitting the
 -- selector retains the broader walk of every visible non-system schema. A
 -- selected table the account cannot read yields DBP1407W and fails the
--- synthetic-copy-ready acceptance gate.
+-- standard-tier acceptance criteria.
 --
 -- PRE-CAPTURE REQUIREMENTS (full engine/tier matrix: ../README.md): keep DDL
 -- stable; record expected table/index/FK counts; have the owner/DBA run ANALYZE
@@ -31,9 +31,9 @@
 -- BYPASSRLS, pg_read_all_stats or pg_monitor privilege. Audit pre-existing role
 -- memberships and PUBLIC ACLs separately; PostgreSQL 13/14 defaults may allow
 -- PUBLIC to create in schema public. Row-level security still applies.
--- Note: "ON ALL TABLES IN SCHEMA" also covers views, materialized views and
--- foreign tables in those schemas (read-only; broader than the literal
--- ordinary-table minimum).
+-- Note: "ON ALL TABLES IN SCHEMA" also covers ordinary views and foreign
+-- tables that Blueprint does not sample (read-only; broader than the literal
+-- ordinary-table/leaf-partition/materialized-view minimum).
 --
 -- Protect any edited copy containing a password; do not commit or share it.
 -- Remove that copy after use according to your secure-disposal policy.
@@ -109,10 +109,10 @@ GRANT CONNECT ON DATABASE :"database" TO :"role";
 -- ---- verification (informational) ------------------------------------------
 \echo
 \echo '--- dbwarp-blueprint STANDARD tier applied for role' :role 'on database' :database
-\echo '--- ordinary tables per schema and how many the role can SELECT:'
+\echo '--- sampled relations per schema and how many the role can SELECT:'
 SELECT n.nspname AS schema,
        count(*) AS tables,
        count(*) FILTER (WHERE has_table_privilege(:'role', c.oid, 'SELECT')) AS readable
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind = 'r' AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%'
+WHERE c.relkind IN ('r','m') AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%'
 GROUP BY 1 ORDER BY 1;

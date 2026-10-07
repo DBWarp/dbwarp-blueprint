@@ -26,10 +26,7 @@
 
 DBWarp Blueprint は、信頼を最優先に設計されたデータベース Blueprint コレクターです。PostgreSQL、MySQL、または SQL Server に対して、お客様自身の環境内で実行します。カタログメタデータを読み取り、圧縮測定を指定した場合は上限付きの行サンプルも読み取ります。その後、テーブルサイズ、行数、型ファミリー、インデックスと外部キーの構造を含む、データベースの匿名化された構造 Blueprint を書き出します。
 
-識別子はキー付き匿名ラベルに置き換えられ、行の値が Blueprint に書き込まれることはありません。
-既定では、実行ごとに新たに生成されるプロセス固有キーによって、オフラインの辞書照合を防ぎます。
-`--anonymization-key-file` を使うと、顧客は承認済みの複数の比較実行でラベルを維持できます。
-出力を共有する前に [`SECURITY.md`](SECURITY.md) をお読みください。各モードが開示する情報と、その範囲を拡大するオプションが正確に記載されています。
+識別子はキー付きの匿名ラベルに置き換えられ、Blueprintには行の値は一切書き込まれません。デフォルトでは、新しいプロセスローカルキーにより、オフライン辞書チェックは行われません。`--anonymization-key-file`を使用すると、承認された比較実行間でラベルを保持できます。出力の共有前に、[`SECURITY.md`](SECURITY.md)を必ずお読みください。各モードで何が公開されるか、およびどのオプションがそれを拡大するかについて詳細に説明されています。
 
 出力はプレーンテキストファイルです。共有するかどうかを決める前に、すべての行を確認できます。
 
@@ -46,11 +43,11 @@ Blueprint の出力を当社と共有していただければ、DBWarp がデー
 
 ---
 
-`dbwarp-blueprint` は、DBWarp の顧客側Blueprintコレクターです。顧客自身の環境内で実行し、境界付きで匿名化されレビュー可能な `blueprint.toml` ファイルを生成します。DBWarp はこのファイルを使用して、データベースアクセス、ダンプ、スキーマ名、行データを受け取ることなく、移行規模の算定、合成フィクスチャの生成、事前計画を行えます。
+`dbwarp-blueprint`を独自の環境で実行し、DBWarpがデータベースへのアクセス、ダンプ、スキーマ名、または行データを受け取ることなく、移行の規模決定と計画に使用できる、制限付きで匿名化された、レビュー可能な`blueprint.toml`ファイルを作成します。
 
 PostgreSQL、MySQL、または SQL Server に接続してカタログメタデータを読み取り、必要に応じて制限された行サンプルからローカル圧縮率を測定し、プレーンテキストの TOML を書き込みます。入力がライブデータベースではなく、すでに構造化データファイルである場合は、オフラインモードでローカルの Parquet または Avro ファイルからBlueprintを導出することもできます。出力を開いてすべての行をレビューし、共有するかどうかを判断できます。
 
-任意で `--deck blueprint.pptx` を指定すると、同じ匿名化Blueprintの PowerPoint サマリーも書き込みます。デッキはライブデータベース実行時に生成できるほか、レビュー済み TOML ファイルから `--from-toml blueprint.toml --deck blueprint.pptx` を使って後から生成できます。デッキジェネレーターは Rust バイナリに組み込まれており、ネットワーク接続を行いません。
+任意で `--deck blueprint.pptx` を指定すると、同じ匿名化Blueprintの PowerPoint サマリーも書き込みます。デッキはライブデータベース実行時に書き込めるほか、レビュー済み TOML ファイルから `--from-toml blueprint.toml --deck blueprint.pptx` を使って後から書き込めます。デッキ作成機能は Rust バイナリに組み込まれており、ネットワーク接続を行いません。
 
 ## 用途
 
@@ -63,9 +60,9 @@ DBWarp が転送を推定し計画するには、十分な構造情報が必要�
 - インデックスと外部キーの形状
 - 境界付きで名前を含まない非テーブル成果物の件数と外部デプロイ前提条件
 - 小さなローカルサンプルから得られる、任意のテーブルおよび列の圧縮サマリー
-- 任意の顧客側データベース RTT の根拠
+- オプションで、データ収集元からデータベースまでのラウンドトリップ時間を測定できます。
 
-これらの事実は、転送サイズを推定し、DBWarp の一括処理開始プランを選択し、代表的な合成ベンチマークフィクスチャを生成するには十分です。ソース名と行の値は省かれますが、特徴的な構造や統計はワークロードを識別し得ます。匿名化はリスク軽減であり、不可逆性の保証ではありません。
+それらの事実は、データ転送のサイズを推定し、転送を計画するのに十分です。ソース名と行の値は省略されていますが、特徴的な構造と統計情報は依然としてワークロードを特定する可能性があります。匿名化はリスク軽減であり、不可逆性の保証ではありません。
 
 ## 行わないこと
 
@@ -91,7 +88,7 @@ Avro、およびバンドル操作は、アプリケーションからネット�
 
 | 方法 | 最適な用途 | リンク |
 |---|---|---|
-| バイナリをダウンロード | 簡単な試用、セールスエンジニアリングの打ち合わせ、隔離されたテストホスト | [`binaries/README.md`](BINARIES.md) |
+| バイナリファイルをダウンロードしてください。 | クイックトライアル、隔離されたテストホスト。 | [`binaries/README.md`](BINARIES.md) |
 | 小規模なソースクローンからビルド | セキュリティレビュー、本番ポリシー、再現性確認 | [`BUILD.md`](BUILD.md) |
 | vendored ソースバンドルからビルド | 厳格なオフライン依存関係監査 | GitHub Releases |
 | SQL フォールバックをレビューして実行 | DBA ポリシーがサードパーティーのバイナリを拒否 | [`sql/blueprint.pg.sql`](../../sql/blueprint.pg.sql)、[`sql/blueprint.mysql.sql`](../../sql/blueprint.mysql.sql)、[`sql/blueprint.sqlserver.sql`](../../sql/blueprint.sqlserver.sql)、[`blueprint_format.py`](../../blueprint_format.py) |
@@ -100,7 +97,7 @@ Avro、およびバンドル操作は、アプリケーションからネット�
 
 SQL フォールバックはレビュー可能な最低限のカタログ経路であり、Rust コレクターと同等機能の代替ではありません。各 SQL スクリプトは実際のスキーマ、テーブル、列、インデックス名を含む中間 JSON を書きます。MySQL の `COLUMN_TYPE` には宣言された enum/set メンバーも含まれる場合があります。この JSON を機密性のあるスキーマ素材として扱い、ソース環境内に保持し、そこで `blueprint_format.py` により正規化して、レビュー済み TOML 出力だけを共有してください。
 
-フォールバックには `--schema` セレクターがありません。PostgreSQL は接続先データベースのすべての非システムスキーマ、MySQL と SQL Server は選択したデータベースのすべてのユーザーテーブルを対象とします。一部だけが承認されている場合は使用しないでください。その TOML にはテーブル/列/インデックス/FK 構造と概算ローカルサイズが含まれますが、行サンプリング、RTT 証拠、非テーブル成果物インベントリ、ライブトポロジプローブは含まれません。トポロジとデータセット完全性は明示的に `unknown` です。
+フォールバックには `--schema` セレクターがありません。PostgreSQL は接続先データベースのすべての非システムスキーマにある通常テーブル、MySQL と SQL Server は選択したデータベースの通常のローカルユーザーテーブルを対象とします。一部だけが承認されている場合は使用しないでください。その TOML には通常テーブルのサブセットについてテーブル/列/インデックス/FK 構造と概算ローカルサイズが含まれますが、v7 のすべてのテーブル種別をインベントリ化するものではありません。すべての構造ファミリーを不完全として扱い、MySQL FEDERATED テーブルと SQL Server 外部テーブルについては、リモートデータをローカルと誤表示せず除外します。また、行サンプリング、RTT 証拠、非テーブル成果物インベントリ、ライブトポロジプローブは含まれません。トポロジとデータセット完全性は明示的に `unknown` です。
 
 信頼を優先する方法は、ソースからビルドすることです。通常のリポジトリは小さく保たれ、`Cargo.lock` で依存関係のバージョンを固定します。より厳格なオフライン監査向けに、各リリースではすべての依存関係ソースファイルを含む vendored ソースバンドルも公開します。利便性のために SHA256 チェックサム付きのリリースバイナリも提供します。
 
@@ -128,23 +125,13 @@ SQL フォールバックはレビュー可能な最低限のカタログ経路�
 正規の英語トークンを維持します。これにより、すべての言語で自動化とサポート手順を
 同一に保てます。[`docs/INTERNATIONALISATION.md`](INTERNATIONALISATION.md)を参照してください。
 
-データベースへ接続する前に、[`samples/`](../../samples/) にチェックインされた
-サンプルを確認してください。通常の Blueprint TOML で、準備なしにレビューできます。
-バイナリ取得後の最初のオフライン実行では、データベースやネットワークを使わずに、
-その 1 つをデッキとしてレンダリングできます:
-
-まず [`samples/README.md`](../../samples/README.md) で説明する小さな schema v6 の
-例を確認してください。PostgreSQL のカタログのみの例、MySQL のサンプリング例、
-SQL Server のサンプリングとアーティファクト分析の例があります。これらは手作業で
-作成した合成データの例であり、顧客の取得データや適格性検証の結果ではありません。
-大きな schema v1 の例は互換性 fixture として残ります。顧客 capture の承認前には
-[`FORMAT.md`](FORMAT.md) で出力範囲全体を確認してください。すべての任意フィールドを
-網羅する例はありません。
+データベースに接続する前に、[`samples/`](../../samples/) の下の例を確認してください。これらは通常の Blueprint TOML ファイルであり、確認するために特別な設定は必要ありません。バイナリを入手した後、データベースやネットワークにアクセスすることなく、オフラインで最初の実行を行うことで、それらをデッキとして表示することができます。
 
 ```bash
 ./dbwarp-blueprint --from-toml samples/sqlserver-v6-analyzed.toml --deck sample.pptx
 ```
 
+[`samples/README.md`](../../samples/README.md)に記載されている、小さなBlueprintの例から始めます。これには、PostgreSQLのカタログのみ、MySQLのサンプル、および分析された成果物を含むSQL Serverのサンプルが含まれます。これらの例は、手作業で作成されたものであり、実際のデータ収集ではありません。より大きなschema-v1の例は、古い形式を示していますが、まだ読み取ることができます。キャプチャを承認する前に、[`FORMAT.md`](FORMAT.md)を使用して、完全な出力内容を確認してください。どの例にも、すべてのオプションフィールドが網羅されているわけではありません。
 最初にドライランしてください。接続せずにプランを表示します:
 
 ```bash
@@ -170,19 +157,7 @@ TLS、監査ログ、圧縮測定を使用する本番スタイルの推奨実�
   --audit-log audit.txt
 ```
 
-`--measure-compression --yes` を指定すると、出力にはテーブル単位の
-zstd 比率と列単位の圧縮予測が含まれます。列単位の
-ブロックは、テーブル単位の比率と同じ制限付きサンプルから計算されます。
-DBWarp のフィクスチャ推定を目的としており、サンプル値をディスクへ
-書き込みません。標準的な圧縮コンテナの認識済みシグネチャを持つ、バイト量で
-実質的に支配的なバイナリサンプルには、粗い `style = "precompressed"`
-ラベルだけが付与されます。ファイル形式、シグネチャ、サンプル値はシリアライズ
-されません。生成ツインは、このラベルを中立で決定論的な圧縮コンテナの
-フィクスチャへ変換し、顧客の元のコンテンツ形式を断定しません。スキーマ v3 以降は、境界付きで名前を含まない列単位のカーディナリティと
-偏りの集計、および推定されたインデックスプレフィックスとリレーションの要約も出力します。
-一時的な値ごとのハッシュはメモリ内で上限が設定され、破棄されます。サンプリング値と
-値ごとのハッシュが Blueprint TOML に含まれることはありませんが、文書化された
-集約値は含まれます。
+`--measure-compression --yes`を使用すると、出力にはテーブルレベルのzstd圧縮率と、各列ごとの圧縮予測が含まれます。各列のブロックは、テーブルレベルの圧縮率と同じ範囲のサンプルから計算されます。これらは転送量の見積もりを詳細化するものであり、サンプリングされた値をディスクに書き込むことはありません。明確に識別可能な標準的な圧縮コンテナのシグネチャを持つ主要なバイナリサンプルは、粗い`style = "precompressed"`ラベルのみを受け取り、ファイルタイプ、シグネチャ、またはサンプリングされた値はシリアル化されません。スキーマv3以降では、範囲に制限された、名前を含まない各列のcardinality/skew集計と、推測されたindex-prefix/relationshipサマリーも出力されます。一時的な各値のハッシュはメモリ内で範囲に制限され、破棄されます。サンプリングされた値と各値のハッシュは、ドキュメント化された集計とは異なり、Blueprint TOMLには表示されません。
 
 スキーマ v4 以降、Blueprint は非テーブルオブジェクトも収集します。既定の
 `--artifact-detail summary` は定義を読まず、オブジェクトクラスおよび外部前提条件
@@ -211,8 +186,8 @@ DBWarp のフィクスチャ推定を目的としており、サンプル値を�
 既定の `balanced` ポリシーは、宣言された文字/バイト容量と
 インデックスプレフィックス長を正確に保持します。サンプリングした average/p95 value length には
 relative-error bucket（最大誤差は約 3.2%、32 バイト以下の値は正確に保持）を使用します。
-これにより、通常 9 文字の `VARCHAR(3000)` キーを、生成データでは 9 文字付近に保ちながら、
-有効なソース DDL/インデックス制限を維持できます:
+これにより、通常 9 文字の `VARCHAR(3000)` キーを 9 文字付近に保ち、実際の値の幅を
+サイズに反映しながら、有効なソース DDL/インデックス制限を維持できます:
 
 ```bash
 ./dbwarp-blueprint \
@@ -236,25 +211,11 @@ relative-error bucket（最大誤差は約 3.2%、32 バイト以下の値は正
   --audit-log mysql-appdb-exact.audit.txt
 ```
 
-`--length-fidelity strict` を使用すると、宣言長、観測長、プレフィックス長に対して、
-従来の粗いプライバシーバケットを維持できます。strict モードは意図的に
-フィクスチャ/インデックス忠実度を犠牲にするため、顧客ベンチマークには対応していません。
-従来の `--preserve-exact-lengths --yes` という表記は、
-`--length-fidelity exact --yes` の互換エイリアスとして残っています。
+`--length-fidelity strict` を使用して、宣言された、観測された、およびプレフィックスの長さに対応する、粗いプライバシーバケットを適用します。厳密モードでは、結果の推定値の精度が低下します。`--preserve-exact-lengths --yes` という表記は、`--length-fidelity exact --yes` のエイリアスです。
 
-新しいBlueprintは、`declared_length_fidelity`、
-`index_length_fidelity`、`observed_length_fidelity` の各フィールドを
-個別に記録します。従来の `length_metadata` フィールドは、古い
-consumer との保守的な互換性のために残ります。
-PostgreSQL の文字型容量は正確なカタログ値ですが、エンコーディングに依存するバイト上限とインデックスプレフィックス長は引き続き利用できません。
+新しいBlueprintでは、`declared_length_fidelity`、`index_length_fidelity`、および`observed_length_fidelity`の各フィールドが個別に記録されます。また、`length_metadata`フィールドも書き込まれるため、以前の形式を読み取るツールも引き続き動作します。PostgreSQLの文字容量は、正確なカタログ値です。エンコーディングに依存するバイト数の上限と、インデックスのプレフィックスの長さは、依然として利用できません。
 
-顧客を代表する生成ベンチマークでは、`--measure-compression` は
-省略できません。これは観測された average/p95 value length を提供するため、実際の値が数文字しかない
-宣言上数キロバイトのキーを、その容量いっぱいで生成することを防ぎます。
-既定のサンプリング時間予算は 300 秒です。非常に大きなスキーマでは
-`--max-wall-secs` を増やしてください。空でない可変幅インデックス列が未サンプリングのままなら、
-後続の計画ツールはBlueprintを拒否する必要があります。その場合、smoke または互換性のための生成には
-後続ツールでの明示的な override が必要で、nonrepresentative と記録しなければなりません。
+最も正確な見積もりを得るには、`--measure-compression` オプションを指定して実行してください。これにより、観測された平均値と p95 値の長さが記録され、実際の値よりもはるかに広い幅で宣言された列が過大評価されるのを防ぎます。デフォルトのサンプリング時間制限は 300 秒です。非常に大規模なスキーマの場合は、`--max-wall-secs` の値を増やしてください。
 
 その後、ファイルをレビューします:
 
@@ -263,9 +224,7 @@ less blueprint.toml
 less audit.txt
 ```
 
-[引き渡し方針](QUICKSTART.md#review-and-share)に従ってください。
-既定では、レビュー済みの `blueprint.toml` またはパック済みバンドルのみを共有してください。デッキは、内容と機密区分を確認し、組織の方針に従って別途承認した場合に限り添付できます。
-運用証拠は既定でローカルに保管してください。
+[review-and-shareの手順](QUICKSTART.md#review-and-share) に従って、いかなる成果物も送信する前に確認・共有してください。承認されたBlueprintの内容のみを共有し、別途レビューおよび承認された場合は、プレゼンテーション資料（deck）を共有してください。運用に関する証拠は、原則としてローカルに保持してください。
 
 ## 構造化ファイルモード
 
@@ -288,7 +247,7 @@ less audit.txt
 Parquet モードは footer と row-group metadata を読み取ります。Avro object container には同等の footer row count がないため、Avro モードは container を走査して record 数を数え、writer schema を列構造に使用します。どちらのモードも、データベースへ接続せず、資格情報フラグも読み取りません。
 
 ポリシーでデコード済みサンプリングが許可されている場合、ファイルモードでも
-後続の計画に使用する、制限付きのローカル圧縮可能性を測定できます:
+転送計画に使用する、制限付きのローカル圧縮可能性を測定できます:
 
 ```bash
 ./dbwarp-blueprint \
@@ -306,8 +265,7 @@ Parquet モードは footer と row-group metadata を読み取ります。Avro 
 
 ## バッチおよびバンドルモード
 
-複数のデータベース、複数のテーブル/データセット、または顧客環境のレビューには、
-バッチマニフェストを使用し、バンドルディレクトリを書き込みます:
+複数のデータベース、複数のtables/datasets、または一連のデータベース全体のレビューを行う場合は、バッチマニフェストを使用し、出力ファイルをまとめて格納するディレクトリを作成してください。
 
 ```bash
 ./dbwarp-blueprint \
@@ -397,17 +355,17 @@ Kerberos、SSPI、Entra ID の例については [`AUTH.md`](AUTH.md) を参照�
   --yes
 ```
 
-このカタログのみのモードは、テーブルのメタデータと統計を読み取りますが、行の値や非テーブルオブジェクトのカタログは読みません。DBWarp はテーブルサイズ、行数、型ファミリー、インデックス/FK の形状から引き続き推定できますが、テキスト/バイナリのエントロピーを推論する必要があるため、圧縮と合成フィクスチャのリアリティは低下します。`--artifact-detail none` がない場合、既定のサマリーは非テーブルオブジェクトのカタログも読みますが、定義は読みません。
+このカタログのみモードでは、テーブルのメタデータ、統計情報、およびカウントのみのトポロジー調査を読み取りますが、行の値やテーブル以外のオブジェクトのインベントリは読み取りません。DBWarpは、テーブルのサイズ、行数、データ型、およびindex/FKの形状から依然として推定できますが、圧縮の推定はtext/binaryのエントロピーを推測する必要があるため、精度が低くなります。`--artifact-detail none`がない場合、既定の要約では、テーブル以外のオブジェクトのカタログも読み取りますが、定義は読み取りません。
 
 ## 出力プレビュー
 
 ```toml
-# dbwarp-blueprint v6
+# dbwarp-blueprint v7
 # Anonymous database Blueprint. Source object names and row values are excluded.
 # Review under your organization's data-classification policy before sharing.
 # https://github.com/DBWarp/dbwarp-blueprint
 
-schema_version = 6
+schema_version = 7
 generated_at = "2026-04-26T00:00:00Z"
 engine = "postgresql"
 engine_version = "16.2"
@@ -418,10 +376,72 @@ index_length_fidelity = "not-captured"
 observed_length_fidelity = "not-sampled"
 
 [totals]
-table_count = 28
+table_count = 1
 row_count = 12500000
-table_bytes = 4200000000
-index_bytes = 1100000000
+table_bytes = 4194304000
+index_bytes = 1048576000
+
+[database_topology]
+contract = "dbwarp-blueprint-topology/v2"
+deployment = "unknown"
+local_role = "unknown"
+visibility = "unknown"
+member_count = 0
+member_count_scope = "unknown"
+identifiers_redacted = true
+
+[dataset_scope]
+contract = "dbwarp-blueprint-dataset-scope/v1"
+layout = "unknown"
+table_inventory_completeness = "unknown"
+row_count_completeness = "unknown"
+size_completeness = "unknown"
+row_count_method = "postgres-planner-estimate"
+size_method = "postgres-local-relation-size"
+limitations = ["topology-unobserved", "topology-visibility-unknown"]
+
+[structure_scope]
+contract = "dbwarp-blueprint-structure-scope/v1"
+visibility = "unknown"
+table_inventory_completeness = "unknown"
+column_inventory_completeness = "unknown"
+index_inventory_completeness = "unknown"
+relationship_inventory_completeness = "unknown"
+limitations = ["metadata-visibility-unknown"]
+
+[source_environment]
+contract = "dbwarp-blueprint-source-environment/v1"
+evidence_origin = "database-endpoint"
+hosting_model = "unknown"
+infrastructure_location = "unknown"
+capacity_scope = "connected-instance"
+capacity_visibility = "partial"
+cpu_capacity_band = "unknown"
+cpu_capacity_basis = "unknown"
+memory_capacity_band = "under-2-gib"
+memory_capacity_basis = "database-buffer-cache"
+collector_machine_excluded = true
+catalogs_read = ["pg-capacity-settings"]
+
+[statistics_evidence]
+contract = "dbwarp-blueprint-statistics-evidence/v1"
+visibility = "unknown"
+table_count = 1
+counts_by_statistics_state = { unknown = 1 }
+counts_by_row_count_quality = { unknown = 1 }
+counts_by_size_quality = { unknown = 1 }
+limitations = ["statistics-provenance-unclassified"]
+
+[artifact_inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "none"
+scope = "all-visible-schemas"
+visibility = "unknown"
+inventory_complete = false
+dependencies_complete = false
+requirements_complete = false
+analysis_complete = false
+families_not_inventoried = ["non_table_objects"]
 
 [tables.table-001]
 rows = 12500000
@@ -429,11 +449,31 @@ table_bytes = 4194304000
 index_bytes = 1048576000
 schema = "schema-A"
 has_clustered_index = false
+object_kind = "ordinary-table"
+storage_organization = "unknown"
+partitioning = "none"
+segment_state = "unknown"
+
+[tables.table-001.statistics]
+row_count_method = "postgres-planner-estimate"
+row_count_quality = "unknown"
+statistics_state = "unknown"
+refresh_age_band = "unknown"
+modification_ratio_band = "unknown"
+sample_fraction_band = "unknown"
+statistics_scope = "unknown"
+size_method = "postgres-local-relation-size"
+size_quality = "unknown"
+size_scope = "unknown"
+size_accounting = "unknown"
+size_visibility = "unknown"
 
 [tables.table-001.cols.col-1]
 ordinal = 1
 type = "bigint"
 nullable = false
+numeric_model = "integer"
+numeric_precision_radix = "decimal"
 
 [tables.table-001.idxs.idx-1]
 type = "btree"
@@ -474,7 +514,7 @@ cols = [1]
 
 最初に読む文書:
 
-- [`docs/QUICKSTART.md`](QUICKSTART.md): 最初の安全な実行と最初の引き渡しパッケージ。
+- [`docs/QUICKSTART.md`](QUICKSTART.md): 最初の安全な実行と、共有すべき内容。
 - [`docs/COOKBOOK.md`](COOKBOOK.md): PostgreSQL、MySQL、SQL Server、TLS、デッキ、サンプリングなしのワークフローに関する実用的なレシピ。
 - [`docs/DBA_REVIEW_GUIDE.md`](DBA_REVIEW_GUIDE.md): ツール実行前に DBA/セキュリティレビュー担当者が知る必要のある事項。
 - [`sql/grants/README.md`](../../sql/grants/README.md): バージョン対応の最小権限付与スクリプトと、取得後のアカウント削除。

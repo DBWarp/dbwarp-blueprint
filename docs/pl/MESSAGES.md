@@ -4,16 +4,7 @@
 
 [English](../MESSAGES.md) | [Deutsch](../de/MESSAGES.md) | [Français](../fr/MESSAGES.md) | [Español](../es/MESSAGES.md) | [Polski](MESSAGES.md) | [日本語](../ja/MESSAGES.md) | [简体中文](../zh/MESSAGES.md)
 
-`dbwarp-blueprint` używa stabilnych identyfikatorów komunikatów operatorskich dla walidacji i awarii przepływu pracy będących pod kontrolą DBWarp.
-Format jest inspirowany komunikatami operatorskimi w stylu IBM: prefiks podsystemu, identyfikator liczbowy i sufiks ważności.
-Dokumentacja IBM CICS opisuje identyfikator programu, czterocyfrowy numer komunikatu i literę ważności; IBM MQ podobnie używa pól komponentu/prefiksu, identyfikatora liczbowego i końcowego kodu typu komunikatu. Wytyczne Microsoft dotyczące komunikatów błędów wzmacniają praktyczną zasadę, że błąd powinien opisywać problem i podawać działanie, które użytkownik może wykonać.
-
-Materiały referencyjne:
-
-- Format komunikatów IBM CICS: https://www.ibm.com/docs/en/cics-pa/5.3.0?topic=messages-message-format
-- Układ informacji komunikatów IBM CICS: https://www.ibm.com/docs/en/cics-ts/6.x?topic=messages-format-cics-message-information
-- Format komunikatów IBM MQ for z/OS: https://www.ibm.com/docs/SSFKSJ_9.2.0/com.ibm.mq.ref.doc/q050270_.htm
-- Wytyczne Microsoft dotyczące komunikatów błędów: https://learn.microsoft.com/en-us/windows/win32/uxguide/mess-error
+`dbwarp-blueprint` wykorzystuje stabilne identyfikatory komunikatów dla błędów walidacji i przepływu pracy związanych z DBWarp. Każdy komunikat zawiera prefiks podsystemu, identyfikator numeryczny oraz wskaźnik ważności, opisuje problem i proponuje działanie naprawcze.
 
 ## Format
 
@@ -27,12 +18,7 @@ Pola:
 - `nnnn` jest stabilnym czterocyfrowym numerem komunikatu.
 - `S` oznacza ważność: `E` błąd, `W` ostrzeżenie, `I` informacja.
 
-Kod jest stabilny i niezależny od języka. Jego podsumowanie, przyczyna i
-działanie naprawcze są lokalizowane, gdy `--lang` lub ustawienia regionalne
-procesu wybierają obsługiwany język. Dynamiczne szczegóły systemu operacyjnego,
-sterownika bazy danych, ścieżki i łańcucha przyczyn pozostają niezmienione, aby
-inżynierowie pomocy technicznej mogli wyszukać oryginalną awarię. Tekst
-komunikatu nie może zawierać sekretów ani URI połączeń, z których nie usunięto danych wrażliwych.
+Kod jest stabilny i niezależny od języka. Jego podsumowanie, przyczyna i działanie naprawcze są lokalizowane, gdy `--lang` lub ustawienia językowe procesu wybiorą obsługiwany język. Dynamiczne informacje dotyczące systemu operacyjnego, sterowników baz danych, ścieżek i łańcucha przyczyn pozostają niezmienione, aby można było wyszukać oryginalny błąd. Tekst wiadomości nie może zawierać poufnych informacji ani niezaanonimizowanych adresów połączeń.
 
 ## Zakresy
 
@@ -61,8 +47,8 @@ komunikatu nie może zawierać sekretów ani URI połączeń, z których nie usu
 | `DBP1004E` | Flaga tokenu Azure użyta z silnikiem innym niż SQL Server. |
 | `DBP1005E` | Tryb uwierzytelniania jest niedostępny dla wybranego silnika. |
 | `DBP1006E` | Zażądano próbkowania kompresji plików strukturalnych bez jawnego `--yes`. |
-| `DBP1007E` | Zażądano jawnego trybu wierności długości dla silnika, który nie udostępnia jeszcze tego kontraktu. |
-| `DBP1008E` | Starszy alias dokładnej długości jest sprzeczny z rygorystyczną wiernością długości. |
+| `DBP1007E` | Żądany tryb zachowania dokładnej długości dla silnika, który go nie obsługuje. |
+| `DBP1008E` | `--preserve-exact-lengths` powoduje konflikt z wymogiem ścisłego zachowania długości. |
 | `DBP1009E` | Zażądano dokładnej wierności długości próbek bez jawnego `--yes`. |
 | `DBP1010E` | Wbudowany katalog lokalizacji jest niekompletny lub niespójny. |
 | `DBP1011E` | Argumenty wiersza poleceń są nieprawidłowe. |
@@ -116,10 +102,20 @@ komunikatu nie może zawierać sekretów ani URI połączeń, z których nie usu
 | `DBP1419E` | Przechwytywanie na żywo przekroczyło `--max-wall-secs`; klient zerwał połączenie i zgłasza limit serwera właściwy dla silnika. |
 | `DBP1420E` | Co najmniej jeden żądany `--schema` nie był widoczny, dlatego nie zapisano Blueprint o niejednoznacznym zakresie. |
 | `DBP1421W` | Tożsamości sesji SQL Server były niedostępne; przechwytywanie kontynuowano bez potwierdzenia tożsamości. |
+| `DBP1422W` | Ocena złożoności artefaktów nie powiodła się; inwentarz zachowano, a dotknięte wymiary agregatów są nieznane. |
+| `DBP1423W` | Katalog struktury indeksów lub relacji był niedostępny; podstawowe tabele i kolumny zachowano z jawnym oznaczeniem niepełnego pokrycia. |
+| `DBP1424W` | Nie można było potwierdzić pełnej widoczności katalogu zasad bezpieczeństwa SQL Server; próbkowanie Tier 2 pominięto dla każdej dotkniętej tabeli. |
+| `DBP1425W` | SQL Server zgłosił aktywny filtr zabezpieczeń wierszy; próbkowanie Tier 2 celowo pominięto zamiast mierzyć przefiltrowany podzbiór. |
+| `DBP1426E` | Podczas konfiguracji, uruchamiania SQL*Plus, rozwiązywania nazw właścicieli, przechwytywania lub mapowania wystąpił błąd podstawowego przechwytywania danych Oracle. |
+| `DBP1427W` | Nie można było w pełni potwierdzić pochodzenia wersji klienta Oracle SQL*Plus; przechwytywanie kontynuowano z jawnym ograniczeniem. |
+| `DBP1428W` | Oracle Basic zatrzymał się przed wykonaniem każdego z planowanych zapytań do katalogu; odczytane tabele, kolumny, wiersze i rozmiary zostały zachowane, a Blueprint został oznaczony jako niekompletny. |
+| `DBP1429W` | Wersja Oracle Basic zachowała podstawowe dane dotyczące tabel, kolumn, wierszy i rozmiarów, gdy co najmniej jedno dodatkowe zapytanie katalogowe było niedostępne. |
+| `DBP1430W` | Oracle Basic opublikowało swój Blueprint, ale nie mogło utworzyć opcjonalnego pliku strumienia offline. |
 | `DBP1501E` | Awaria na granicy przechwytywania pliku strukturalnego. |
 | `DBP1502E` | Niepowodzenie danych wyjściowych Blueprint lub pakietu. |
 | `DBP1503E` | Niepowodzenie generowania prezentacji PowerPoint. |
 | `DBP1504W` | Nie można zapisać dziennika audytu. |
+| `DBP1505E` | Strumień offline Oracle Basic nie przeszedł walidacji dotyczącej uprawnień do plików, limitu rozmiaru, sum kontrolnych, zestawu zapytań lub struktury katalogu. |
 | `DBP1601E` | Niepowodzenie uzyskania poświadczeń. |
 | `DBP1602E` | Niepowodzenie konfiguracji TLS. |
 | `DBP1603E` | Niepowodzenie uzyskania nazwy użytkownika bazy danych. |
@@ -131,15 +127,7 @@ komunikatu nie może zawierać sekretów ani URI połączeń, z których nie usu
 | `DBP1702E` | Nie można odczytać odpowiedzi na monit o zgodę ze standardowego wejścia. |
 | `DBP1801E` | Nie można zainicjować asynchronicznego środowiska uruchomieniowego. |
 
-Każdy reklamowany język musi zawierać podsumowanie, przyczynę i działanie dla
-każdego bieżącego kodu DBP. Plik binarny sprawdza to podczas uruchamiania i
-kończy się błędem `DBP1010E`, zamiast po cichu wracać do języka angielskiego.
-
-Przewidywalne awarie na granicach decyzji są sprawdzane przez adwersarialną
-macierz testów CLI. Znany warunek musi emitować swój konkretny kod jako pierwszy kod
-operatorski i nie może wracać do `DBP0001E`. Moduł renderujący przegląda również
-pełny łańcuch błędów, dzięki czemu niekodowany kontekst implementacji nie może
-ukryć zakodowanej przyczyny wewnętrznej.
+Każdy obsługiwany język zawiera wszystkie podsumowania, przyczyny i działania związane z DBP. Program sprawdza to podczas uruchamiania i w przypadku błędu wyświetla komunikat `DBP1010E` zamiast cicho przełączać się na język angielski.
 
 Niekrytyczne ostrzeżenia dotyczące próbkowania bazy danych są wypisywane ze
 stabilnym kodem ostrzeżenia i zapisywane w audycie uruchomienia. Pozwala to
@@ -149,7 +137,7 @@ awarię zbierania.
 
 ## Lista kontrolna dla pomocy technicznej
 
-Gdy klient zgłasza awarię, poproś o:
+Przy zgłaszaniu awarii do pomocy technicznej podaj:
 
 - kompletne dane wyjściowe terminala, w tym kod `DBP`;
 - dziennik audytu, jeśli użyto `--audit-log`;

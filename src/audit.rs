@@ -1,4 +1,4 @@
-//! Audit log — deterministic per-run record of everything the tool did.
+//! Audit log: deterministic per-run record of everything the tool did.
 //!
 //! Emitted to stderr on operational runs, and to `--audit-log PATH` if specified.
 //! Help/version exits and failures before localization initialization do not
@@ -98,7 +98,7 @@ pub struct ConnectionAudit {
     /// have been" (set on dry-run via the `describe_secret_source`
     /// preview) from "we actually read a credential on this run" (set
     /// only by `acquire_secret` on success). The credential-handling
-    /// trust assertion gates on this boolean — emitting it on a
+    /// trust assertion gates on this boolean: emitting it on a
     /// dry-run that never read anything would be a false claim.
     pub credential_actually_read: bool,
     pub tls_mode: String,
@@ -172,6 +172,7 @@ pub struct ArtifactInventoryAudit {
     pub external_prerequisite_count: u64,
     pub inventory_complete: bool,
     pub dependencies_complete: bool,
+    pub requirements_complete: bool,
     pub analysis_complete: bool,
 }
 
@@ -245,6 +246,15 @@ impl AuditLog {
         self.connection.database_principal = Some(single_line_identity(database));
         self.connection.expected_server_principal = expected_server.map(single_line_identity);
         self.connection.principal_assertion = Some(assertion.to_string());
+    }
+
+    /// Record the connected database identity (for example an Oracle
+    /// DB_NAME/CON_NAME pair) separately from the principals above.
+    pub fn record_database_identity(&mut self, identity: &str) {
+        let assertion = format!("database_identity={}", single_line_identity(identity));
+        if !self.trust_assertions.contains(&assertion) {
+            self.trust_assertions.push(assertion);
+        }
     }
 
     pub fn record_query(&mut self, summary: &str, elapsed_ms: u64, rows: u64) {
@@ -345,7 +355,7 @@ impl AuditLog {
 
     /// Enumerate any TLS PEM files the tool will open. Called by
     /// each engine module just before constructing rustls config (or, for
-    /// MySQL, just before `std::fs::read(ca)`). Idempotent — duplicates
+    /// MySQL, just before `std::fs::read(ca)`). Idempotent: duplicates
     /// are filtered.
     pub fn record_tls_file_reads(
         &mut self,
@@ -395,6 +405,7 @@ impl AuditLog {
             external_prerequisite_count: inventory.external_prerequisite_count,
             inventory_complete: inventory.inventory_complete,
             dependencies_complete: inventory.dependencies_complete,
+            requirements_complete: inventory.requirements_complete,
             analysis_complete: inventory.analysis_complete,
         });
     }
@@ -438,7 +449,7 @@ impl AuditLog {
         self.finished_at_unix_ms = finished_at_unix_ms;
         self.run_duration_ms = finished_at_unix_ms.saturating_sub(self.started_at_unix_ms);
         if self.outcome.is_none() {
-            // Caller didn't explicitly set an outcome — assume success.
+            // Caller didn't explicitly set an outcome: assume success.
             self.outcome = Some(Outcome::Ok);
         }
         // Default trust assertions; engine module can append more.
@@ -471,7 +482,7 @@ impl AuditLog {
                     .to_string(),
             ),
             Some("customer-key-file") => self.trust_assertions.push(
-                "identifier ordering uses domain-separated HMAC-SHA256 with a customer-held key; labels are stable only when that key is reused"
+                "identifier ordering uses domain-separated HMAC-SHA256 with a key supplied by you; labels are stable only when that key is reused"
                     .to_string(),
             ),
             _ => {}
@@ -519,7 +530,7 @@ impl AuditLog {
         // Only emit the credential-handling assertion when a credential
         // was *actually* read on this run. Gates on
         // `credential_actually_read` (set only by `acquire_secret` on
-        // success) — NOT on `password_source.is_some()`, which is also
+        // success): NOT on `password_source.is_some()`, which is also
         // set on the `--dry-run` path via `describe_secret_source`
         // preview. Gating on `password_source` would fire the assertion
         // on dry-run even though no credential had been read.
@@ -771,6 +782,12 @@ impl AuditLog {
                 s,
                 "  dependencies_complete: {}",
                 inventory.dependencies_complete
+            )
+            .ok();
+            writeln!(
+                s,
+                "  requirements_complete: {}",
+                inventory.requirements_complete
             )
             .ok();
             writeln!(s, "  analysis_complete: {}", inventory.analysis_complete).ok();
@@ -1158,8 +1175,8 @@ mod tests {
         );
     }
 
-    /// Mirror test: when credential_actually_read IS set (the
-    /// production success path), the trust assertion DOES fire.
+    /// Counterpart test: when credential_actually_read is set, the trust
+    /// assertion is emitted.
     #[test]
     fn real_run_emits_credential_trust_assertion() {
         let mut a = AuditLog::new("tier-1", 1_000);
@@ -1186,7 +1203,7 @@ mod tests {
             ),
             (
                 "customer-key-file",
-                "customer-held key; labels are stable only when that key is reused",
+                "key supplied by you; labels are stable only when that key is reused",
             ),
         ] {
             let mut audit = AuditLog::new("tier-1", 1_000);

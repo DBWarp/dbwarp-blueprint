@@ -5,8 +5,11 @@
 [English](../INDEX.md) | [Deutsch](../de/INDEX.md) | [Français](../fr/INDEX.md) | [Español](../es/INDEX.md) | [Polski](INDEX.md) | [日本語](../ja/INDEX.md) | [简体中文](../zh/INDEX.md)
 
 Angielski tekst jest wiążący. Zestawy dokumentów tłumaczonych maszynowo mogą
-być publikowane oddzielnie po wielu niezależnych przeglądach, ale nadal mogą
-zawierać błędy. Zobacz [zasady tłumaczenia dokumentacji](../TRANSLATIONS.md).
+być publikowane oddzielnie po automatycznych kontrolach spójności i wielu
+niezależnych przeglądach wspomaganych maszynowo. Weryfikacja techniczna przez
+osobę biegle posługującą się danym językiem może nadal być nieukończona, a
+tłumaczenia mogą zawierać błędy. Zobacz
+[zasady tłumaczenia dokumentacji](../TRANSLATIONS.md).
 
 Zacznij tutaj:
 
@@ -37,4 +40,4 @@ Podstawowe materiały referencyjne:
 - [Wizualne podsumowanie](DECK.md)
 - [Pobieranie plików binarnych](BINARIES.md)
 
-Przekazanie Blueprintów i ich dalsze użycie regulują umowa z klientem oraz dokumentacja dostarczona z zatwierdzonym produktem DBWarp dalszego etapu. To repozytorium dokumentuje wyłącznie przechwytywanie, przegląd i pakowanie Blueprintów.
+To repozytorium dokumentuje jedynie proces zbierania, przeglądania i pakowania danych Blueprint.

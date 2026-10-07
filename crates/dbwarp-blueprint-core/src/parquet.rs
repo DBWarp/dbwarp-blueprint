@@ -333,9 +333,8 @@ fn open_preflighted_parquet(path: &Path, purpose: &str) -> Result<File> {
 
 /// Build a DBWarp Blueprint model from Parquet footer and row-group metadata.
 ///
-/// This does not read row data. It gives the estimator/generator a cheap,
-/// deterministic view of row counts, column types, nullability and stored-file
-/// compression ratios before a full Parquet ingest path is selected.
+/// This does not read row data. It derives row counts, column types, nullability
+/// and stored-file compression ratios from metadata only.
 pub fn parquet_blueprint_from_path(path: impl AsRef<Path>) -> Result<BlueprintFile> {
     parquet_blueprint_from_path_with_deadline(path, &SamplingDeadline::unlimited())
 }
@@ -392,7 +391,9 @@ fn parquet_blueprint_from_path_metadata(
     let mut table = BlueprintTable {
         rows: row_count,
         storage_bytes: std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0),
-        schema: "parquet".to_string(),
+        // Structured inputs have one anonymous logical namespace. Never
+        // serialize the source format name as a schema identifier.
+        schema: "schema-A".to_string(),
         source_partitions: 1,
         row_group_count: metadata.num_row_groups() as u64,
         ..Default::default()
@@ -478,7 +479,7 @@ fn parquet_blueprint_from_path_metadata(
     let mut tables = BTreeMap::new();
     tables.insert(STRUCTURED_TABLE_ID.to_string(), table);
     deadline.check("finishing Parquet metadata")?;
-    Ok(BlueprintFile {
+    let mut blueprint = BlueprintFile {
         schema_version: SCHEMA_VERSION,
         engine: "parquet".to_string(),
         source_kind: "parquet".to_string(),
@@ -494,7 +495,9 @@ fn parquet_blueprint_from_path_metadata(
         )),
         tables,
         ..Default::default()
-    })
+    };
+    blueprint.initialize_v7_structured_contract("parquet-schema");
+    Ok(blueprint)
 }
 
 #[cfg(feature = "sampling")]
@@ -628,7 +631,7 @@ fn apply_parquet_decoded_compression(
                 column.compression = Some(compression);
                 column.len_avg = statistics.len_avg;
                 column.len_p95 = statistics.len_p95;
-                column.null_fraction = Some(statistics.null_fraction);
+                column.null_fraction = Some(statistics.emitted_null_fraction(cardinality.as_ref()));
                 column.length_sample_rows = statistics.sample_rows;
                 column.length_p95_sample_rows = statistics.len_p95_sample_rows;
                 column.length_sample_method = options.column_sample_method.clone();
@@ -739,19 +742,18 @@ fn parquet_column_blueprint(descriptor: &ColumnDescriptor) -> BlueprintColumn {
         column.source_semantics = "nested-json".to_string();
     }
     match descriptor.logical_type_ref() {
-        Some(LogicalType::Integer {
-            bit_width,
-            is_signed,
-        }) => {
-            column.bit_width = (*bit_width).max(0) as u64;
-            column.numeric_unsigned = !*is_signed;
+        Some(LogicalType::Integer(integer)) => {
+            column.bit_width = integer.bit_width.max(0) as u64;
+            column.numeric_unsigned = !integer.is_signed;
         }
-        Some(LogicalType::Decimal { scale, precision }) => {
-            column.numeric_precision = (*precision).max(0) as u64;
-            column.numeric_scale = (*scale).max(0) as u64;
+        Some(LogicalType::Decimal(decimal)) => {
+            column.numeric_model = "fixed-decimal".to_string();
+            column.numeric_precision = Some(decimal.precision.max(0) as u64);
+            column.numeric_scale = Some(i64::from(decimal.scale));
+            column.numeric_precision_radix = "decimal".to_string();
         }
-        Some(LogicalType::Time { unit, .. }) | Some(LogicalType::Timestamp { unit, .. }) => {
-            column.datetime_precision = parquet_time_precision(unit);
+        Some(LogicalType::Time(time)) | Some(LogicalType::Timestamp(time)) => {
+            column.datetime_precision = parquet_time_precision(&time.unit);
         }
         Some(LogicalType::Uuid) => {
             column.declared_max_chars = 36;
@@ -762,8 +764,10 @@ fn parquet_column_blueprint(descriptor: &ColumnDescriptor) -> BlueprintColumn {
     if descriptor.logical_type_ref().is_none() {
         match descriptor.converted_type() {
             ConvertedType::DECIMAL => {
-                column.numeric_precision = descriptor.type_precision().max(0) as u64;
-                column.numeric_scale = descriptor.type_scale().max(0) as u64;
+                column.numeric_model = "fixed-decimal".to_string();
+                column.numeric_precision = Some(descriptor.type_precision().max(0) as u64);
+                column.numeric_scale = Some(i64::from(descriptor.type_scale()));
+                column.numeric_precision_radix = "decimal".to_string();
             }
             ConvertedType::UINT_8 | ConvertedType::INT_8 => {
                 column.bit_width = 8;
@@ -807,22 +811,22 @@ fn parquet_type_label(descriptor: &ColumnDescriptor) -> String {
     if let Some(logical) = descriptor.logical_type_ref() {
         return match logical {
             LogicalType::String | LogicalType::Enum => "string",
-            LogicalType::Json
-            | LogicalType::Map
-            | LogicalType::List
-            | LogicalType::Variant { .. } => "json",
+            LogicalType::Json | LogicalType::Map | LogicalType::List | LogicalType::Variant(_) => {
+                "json"
+            }
             LogicalType::Date => "date",
-            LogicalType::Timestamp { .. } => "timestamp",
-            LogicalType::Time { .. } => "time",
-            LogicalType::Decimal { .. } => "decimal",
+            LogicalType::Timestamp(_) => "timestamp",
+            LogicalType::Time(_) => "time",
+            LogicalType::Decimal(_) => "decimal",
             LogicalType::Uuid => "uuid",
-            LogicalType::Integer { bit_width, .. } if *bit_width <= 8 => "tinyint",
-            LogicalType::Integer { bit_width, .. } if *bit_width <= 16 => "smallint",
-            LogicalType::Integer { bit_width, .. } if *bit_width <= 32 => "int",
-            LogicalType::Integer { .. } => "bigint",
+            LogicalType::Integer(integer) if integer.bit_width <= 8 => "tinyint",
+            LogicalType::Integer(integer) if integer.bit_width <= 16 => "smallint",
+            LogicalType::Integer(integer) if integer.bit_width <= 32 => "int",
+            LogicalType::Integer(_) => "bigint",
             LogicalType::Bson
-            | LogicalType::Geometry { .. }
-            | LogicalType::Geography { .. }
+            | LogicalType::Geometry(_)
+            | LogicalType::Geography(_)
+            | LogicalType::File
             | LogicalType::Unknown
             | LogicalType::_Unknown { .. } => "bytes",
             LogicalType::Float16 => "float",
@@ -864,7 +868,7 @@ fn parquet_type_label(descriptor: &ColumnDescriptor) -> String {
 fn parquet_style_label(descriptor: &ColumnDescriptor) -> String {
     match descriptor.logical_type_ref() {
         Some(
-            LogicalType::Json | LogicalType::Map | LogicalType::List | LogicalType::Variant { .. },
+            LogicalType::Json | LogicalType::Map | LogicalType::List | LogicalType::Variant(_),
         ) => "json".to_string(),
         Some(LogicalType::String | LogicalType::Enum | LogicalType::Uuid) => "text".to_string(),
         _ => match descriptor.converted_type() {
@@ -877,25 +881,21 @@ fn parquet_style_label(descriptor: &ColumnDescriptor) -> String {
 
 fn parquet_native_type(descriptor: &ColumnDescriptor) -> String {
     match descriptor.logical_type_ref() {
-        Some(LogicalType::Timestamp {
-            is_adjusted_to_u_t_c,
-            unit,
-        }) => format!(
-            "parquet:timestamp[unit={},adjusted_to_utc={is_adjusted_to_u_t_c}]",
-            parquet_time_unit_label(unit)
+        Some(LogicalType::Timestamp(timestamp)) => format!(
+            "parquet:timestamp[unit={},adjusted_to_utc={}]",
+            parquet_time_unit_label(&timestamp.unit),
+            timestamp.is_adjusted_to_u_t_c
         ),
-        Some(LogicalType::Time {
-            is_adjusted_to_u_t_c,
-            unit,
-        }) => format!(
-            "parquet:time[unit={},adjusted_to_utc={is_adjusted_to_u_t_c}]",
-            parquet_time_unit_label(unit)
+        Some(LogicalType::Time(time)) => format!(
+            "parquet:time[unit={},adjusted_to_utc={}]",
+            parquet_time_unit_label(&time.unit),
+            time.is_adjusted_to_u_t_c
         ),
         // CRS is producer-supplied free text. Preserve the useful logical
         // family without copying that unbounded source string into the
-        // transferable Blueprint.
-        Some(LogicalType::Geometry { .. }) => "parquet:geometry".to_string(),
-        Some(LogicalType::Geography { .. }) => "parquet:geography".to_string(),
+        // shareable Blueprint.
+        Some(LogicalType::Geometry(_)) => "parquet:geometry".to_string(),
+        Some(LogicalType::Geography(_)) => "parquet:geography".to_string(),
         Some(logical) => format!("parquet:{}", format!("{logical:?}").to_ascii_lowercase()),
         None if descriptor.converted_type() != ConvertedType::NONE => {
             match descriptor.converted_type() {
@@ -1058,10 +1058,7 @@ mod tests {
     fn logical_integer_metadata_preserves_signedness_and_width() {
         let unsigned = Type::primitive_type_builder("small_code", PhysicalType::INT32)
             .with_repetition(Repetition::REQUIRED)
-            .with_logical_type(Some(LogicalType::Integer {
-                bit_width: 16,
-                is_signed: false,
-            }))
+            .with_logical_type(Some(LogicalType::integer(16, false)))
             .build()
             .unwrap();
         let descriptor =
@@ -1073,10 +1070,7 @@ mod tests {
 
         let signed = Type::primitive_type_builder("signed_code", PhysicalType::INT32)
             .with_repetition(Repetition::REQUIRED)
-            .with_logical_type(Some(LogicalType::Integer {
-                bit_width: 8,
-                is_signed: true,
-            }))
+            .with_logical_type(Some(LogicalType::integer(8, true)))
             .build()
             .unwrap();
         let descriptor =
@@ -1100,17 +1094,14 @@ mod tests {
             .with_length(8)
             .with_precision(18)
             .with_scale(5)
-            .with_logical_type(Some(LogicalType::Decimal {
-                precision: 18,
-                scale: 5,
-            }))
+            .with_logical_type(Some(LogicalType::decimal(5, 18)))
             .build()
             .unwrap();
         let descriptor = ColumnDescriptor::new(Arc::new(decimal), 0, 0, ColumnPath::from("amount"));
         let column = parquet_column_blueprint(&descriptor);
         assert_eq!(column.column_type, "decimal");
-        assert_eq!(column.numeric_precision, 18);
-        assert_eq!(column.numeric_scale, 5);
+        assert_eq!(column.numeric_precision, Some(18));
+        assert_eq!(column.numeric_scale, Some(5));
 
         let fixed = Type::primitive_type_builder("digest", PhysicalType::FIXED_LEN_BYTE_ARRAY)
             .with_repetition(Repetition::REQUIRED)
@@ -1124,10 +1115,7 @@ mod tests {
 
         let timestamp = Type::primitive_type_builder("created", PhysicalType::INT64)
             .with_repetition(Repetition::REQUIRED)
-            .with_logical_type(Some(LogicalType::Timestamp {
-                is_adjusted_to_u_t_c: true,
-                unit: TimeUnit::MICROS,
-            }))
+            .with_logical_type(Some(LogicalType::timestamp(true, TimeUnit::MICROS)))
             .build()
             .unwrap();
         let descriptor =
@@ -1166,9 +1154,7 @@ mod tests {
         let secret_crs = "urn:customer:tenant-42:private-projection";
         let geometry = Type::primitive_type_builder("location", PhysicalType::BYTE_ARRAY)
             .with_repetition(Repetition::OPTIONAL)
-            .with_logical_type(Some(LogicalType::Geometry {
-                crs: Some(secret_crs.to_string()),
-            }))
+            .with_logical_type(Some(LogicalType::geometry(Some(secret_crs.to_string()))))
             .build()
             .unwrap();
         let geometry_descriptor =
@@ -1181,10 +1167,10 @@ mod tests {
 
         let geography = Type::primitive_type_builder("region", PhysicalType::BYTE_ARRAY)
             .with_repetition(Repetition::OPTIONAL)
-            .with_logical_type(Some(LogicalType::Geography {
-                crs: Some(secret_crs.to_string()),
-                algorithm: None,
-            }))
+            .with_logical_type(Some(LogicalType::geography(
+                Some(secret_crs.to_string()),
+                None,
+            )))
             .build()
             .unwrap();
         let geography_descriptor =
@@ -1197,7 +1183,7 @@ mod tests {
     }
 
     #[test]
-    fn parquet_storage_provenance_is_not_transport_compression() {
+    fn parquet_storage_provenance_is_not_a_compression_probe_ratio() {
         let path = test_path("observed");
         let schema = parse_message_type(
             "message test { OPTIONAL BYTE_ARRAY name (UTF8); REQUIRED INT64 id; }",
@@ -1321,6 +1307,43 @@ mod tests {
             assert_eq!(partial.bias_reason, crate::FIRST_N_BIAS_REASON);
         }
 
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(feature = "sampling")]
+    #[test]
+    fn incomplete_sample_near_quantization_boundary_stays_contract_valid() {
+        let path = test_path("partial-5050");
+        let schema = parse_message_type("message test { REQUIRED INT64 id; }").unwrap();
+        let file = File::create(&path).unwrap();
+        let mut writer = SerializedFileWriter::new(
+            file,
+            schema.into(),
+            Arc::new(WriterProperties::builder().build()),
+        )
+        .unwrap();
+        let mut row_group = writer.next_row_group().unwrap();
+        let mut id_writer = row_group.next_column().unwrap().unwrap();
+        let values = (0..5_050_i64).collect::<Vec<_>>();
+        id_writer
+            .typed::<Int64Type>()
+            .write_batch(&values, None, None)
+            .unwrap();
+        id_writer.close().unwrap();
+        row_group.close().unwrap();
+        writer.close().unwrap();
+
+        let blueprint = parquet_blueprint_from_path_with_options(
+            &path,
+            &DecodedCompressionOptions::enabled(5_000, "table-first", "column-first"),
+        )
+        .unwrap();
+        let table = &blueprint.tables[STRUCTURED_TABLE_ID];
+        let cardinality = table.cols["col-1"].cardinality.as_ref().unwrap();
+        assert_eq!(table.rows, 5_050);
+        assert_eq!(cardinality.sample_rows, 5_000);
+        crate::validate_blueprint_contract(&blueprint)
+            .expect("partial Parquet samples must not exceed exact footer rows");
         std::fs::remove_file(path).unwrap();
     }
 }

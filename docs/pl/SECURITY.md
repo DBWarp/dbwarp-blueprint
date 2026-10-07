@@ -24,7 +24,8 @@ i najmniejszy bezpieczny zestaw dowodów potrzebny do oceny zgłoszenia.
 
 | Tryb | Wykorzystanie sieci podczas działania |
 |---|---|
-| Baza danych na żywo `--connect` | Jedna sesja sterownika bazy danych ze wskazanym punktem końcowym. Rozwiązywanie nazw DNS może kontaktować się ze skonfigurowanym resolverem. Zintegrowane uwierzytelnianie Kerberos/SSPI może także kontaktować się ze skonfigurowaną infrastrukturą tożsamości, na przykład KDC lub kontrolerem domeny. |
+| Aktywne połączenie `--connect` z bazą danych PostgreSQL, MySQL lub SQL Server | Jedna sesja sterownika bazy danych ze wskazanym punktem końcowym. Rozwiązywanie nazw DNS może kontaktować się ze skonfigurowanym resolverem. Zintegrowane uwierzytelnianie Kerberos/SSPI może także kontaktować się ze skonfigurowaną infrastrukturą tożsamości, na przykład KDC lub kontrolerem domeny. |
+| Wersja zapoznawcza Oracle wymagająca wyraźnego potwierdzenia | Uruchamia jedynie wybrany przez operatora program `--oracle-sqlplus` jako proces potomny (wraz z ograniczonym testem `-V`, jeśli jest dostępny), a następnie używa go do sesji katalogu. Dane uwierzytelniające są wysyłane na standardowe wejście, nigdy w argumentach procesu. Proces potomny otrzymuje pusty prywatny katalog jako `TNS_ADMIN`; jego środowisko jest czyszczone, a następnie przekazywane są tylko obecne zmienne `PATH`, `SystemRoot`, `WINDIR`, `ORACLE_HOME`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `LIBPATH` i `SHLIB_PATH`. Stałe ustawienia regionalne, strefa czasowa i prywatne wartości `TNS_ADMIN` są ustawiane oddzielnie. |
 | `--batch-manifest` | Jedna sesja sterownika bazy danych dla każdego źródła bazodanowego w manifeście, przetwarzana sekwencyjnie. Lokalne źródła Parquet i Avro nie używają sieci. Nadal obowiązują powyższe zastrzeżenia dotyczące DNS i uwierzytelniania zintegrowanego. |
 | `--from-toml`, `--from-parquet`, `--from-avro`, `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Brak połączeń sieciowych inicjowanych przez aplikację. Dane wejściowe na sieciowych systemach plików pozostają kwestią systemu operacyjnego lub warstwy pamięci masowej. |
 
@@ -54,7 +55,7 @@ poleceń lub wskazane przez dane wejściowe przetwarzania wsadowego albo pakietu
 |---|---|
 | `--user-file` | źródło nazwy użytkownika |
 | `--password-file` | źródło hasła |
-| `--anonymization-key-file` | opcjonalny klucz HMAC przechowywany przez klienta, używany przez plik binarny lub normalizator zapasowej ścieżki SQL do zachowania anonimowych etykiet obiektów między zatwierdzonymi uruchomieniami; w systemie Unix tryb pliku nie może zezwalać na odczyt grupie ani innym użytkownikom |
+| `--anonymization-key-file` | Opcjonalny klucz HMAC, który Państwo posiadają, używany przez binarny lub SQL fallback normalizer w celu zachowania anonimowych etykiet obiektów podczas zatwierdzonych uruchomień; tryb musi zapobiegać odczytowi group/other na systemach Unix. |
 | `--azure-token-file` | źródło tokenu Entra ID dla SQL Server |
 | `--tls-ca` | zaufany pakiet CA |
 | `--tls-cert` | certyfikat TLS klienta |
@@ -154,15 +155,7 @@ wierności długości do tych długości, a nie tylko do długości zwróconych
 prefiksów. Informacje o pochodzeniu próbkowania dokumentują odpowiednie
 ograniczenia; ograniczony wynik nie jest dowodem pomiaru pełnej wartości.
 
-Kolejność tabel, schematów, indeksów i obiektów innych niż tabele wykorzystuje
-HMAC-SHA256 z separacją domen. Domyślnie narzędzie pobiera z systemu operacyjnego
-nowy klucz lokalny dla procesu i nigdy go nie emituje, co uniemożliwia
-czytelnikowi offline sprawdzanie potencjalnych nazw źródłowych. Używaj
-`--anonymization-key-file` tylko wtedy, gdy te same anonimowe etykiety muszą
-zostać zachowane między zatwierdzonymi uruchomieniami porównawczymi. Plik musi
-zawierać dokładnie 32 surowe bajty lub 64 znaki szesnastkowe i musi być chroniony
-jak poświadczenie. Audyt zapisuje jedynie, czy użyto klucza efemerycznego, czy
-przechowywanego przez klienta; nigdy nie zapisuje wartości klucza.
+Tabela, schemat, indeks oraz kolejność obiektów nietablicowych używają HMAC-SHA256 oddzielonego domenami. Domyślnie narzędzie pobiera nowy, lokalny dla procesu klucz z systemu operacyjnego i nigdy go nie wyświetla, co uniemożliwia czytelnikowi działającemu w trybie offline sprawdzenie proponowanych nazw źródłowych. Używaj `--anonymization-key-file` tylko wtedy, gdy te same anonimowe etykiety muszą pozostać niezmienione podczas zatwierdzonych porównań. Plik musi zawierać dokładnie 32 bajty lub 64 znaki szesnastkowe i musi być chroniony jak hasło. Rejestr audytu zapisuje, czy użyto tymczasowego klucza, czy klucza dostarczonego przez użytkownika, ale nigdy nie zapisuje wartości klucza.
 
 Normalizator `blueprint_format.py` zapasowej ścieżki SQL, używający wyłącznie biblioteki standardowej, stosuje ten sam kontrakt kolejności chronionej kluczem. Domyślnie pobiera nowy losowy klucz z systemu operacyjnego, chyba że podano `--anonymization-key-file`, i po kanonicznym nagłówku dodaje stały komentarz z producentem i źródłem klucza, aby jego wyniku nie można było pomylić z wynikiem kolektora Rust.
 

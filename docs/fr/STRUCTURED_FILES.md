@@ -24,7 +24,7 @@ Il s'agit d'un mode hors ligne :
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
@@ -55,34 +55,18 @@ DBWarp, et ils ne sont jamais émis comme `ratio_zstd_3`.
 
 ```bash
 dbwarp-blueprint \
-  --from-avro /data/customer-sample.avro \
+  --from-avro /data/events.avro \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
 
-Les conteneurs d'objets Avro n'exposent pas un nombre de lignes dans un pied de
-page comme Parquet. Le mode Avro parcourt donc le conteneur une fois pour compter
-les enregistrements, calculer les `table_bytes` logiques et observer `len_avg`,
-`len_p95` et `null_fraction` par colonne. Le schéma d'écriture fournit les
-métadonnées de type logique. `storage_bytes` et `ratio_storage` décrivent le
-conteneur Avro, et non une estimation de transfert DBWarp. Cette méthode
-convient à la planification de l'estimateur et des fixtures synthétiques.
+Les conteneurs d'objets Avro n'exposent pas un nombre de lignes dans un pied de page comme Parquet. Le mode Avro parcourt donc le conteneur une fois pour compter les enregistrements, calculer les `table_bytes` logiques et observer `len_avg`, `len_p95` et `null_fraction` par colonne. Le schéma d'écriture fournit les métadonnées de type logique. `storage_bytes` et `ratio_storage` décrivent le conteneur Avro, et non une estimation de transfert DBWarp.
 
 ## Fidélité des types logiques
 
-La capture de fichiers structurés conserve les métadonnées logiques bornées
-nécessaires à l'estimateur : précision/échelle décimale, familles de dates et
-d'heures, précision des horodatages et sémantique UTC/locale, UUID, largeur
-binaire fixe, chaînes UTF-8 et octets bruts. Les champs contenant uniquement
-des valeurs NULL restent `type = "null"` au lieu de devenir du texte synthétique.
+La capture de fichiers structurés conserve les métadonnées logiques limitées nécessaires pour le dimensionnement : nombres décimaux precision/scale, familles de dates et d'heures, précision des horodatages et sémantique UTC/local, UUID, largeur binaire de taille fixe, chaînes UTF-8 et octets bruts. Les champs contenant uniquement des valeurs nulles restent `type = "null"` au lieu de devenir du texte synthétique.
 
-Les feuilles Parquet imbriquées et les tableaux, maps, enregistrements ou unions
-multitypes Avro ne peuvent pas être représentés par un seul scalaire SQL exact.
-Le Blueprint enregistre un type `json` normalisé et une valeur
-`source_semantics` telle que `"repeated-leaf"`, `"nested-json"` ou
-`"multi-type-union"`. Les générateurs en aval doivent présenter ces valeurs
-comme une charge JSON représentative, sans revendiquer un aller-retour exact du
-schéma imbriqué.
+Les structures imbriquées Parquet et les tableaux, les tableaux associatifs, les enregistrements ou les unions multi-types Avro ne peuvent pas être représentés comme un scalaire SQL exact unique. Le Blueprint enregistre un type `json` normalisé, ainsi que `source_semantics` tels que `"repeated-leaf"`, `"nested-json"` ou `"multi-type-union"`. Ces colonnes sont dimensionnées en JSON ; le schéma imbriqué n'est pas reproduit exactement.
 
 Les noms de fichiers source, chemins Parquet, noms de champs Avro et libellés
 `logical_table` d'un lot ne sont pas écrits comme identifiants Blueprint. Un jeu
@@ -97,7 +81,7 @@ Le mode fichier structuré prend en charge un échantillonnage facultatif de la 
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --measure-compression --yes \
   --sample-rows 5000 \
   --out blueprint.toml \
@@ -116,20 +100,15 @@ Lorsque cette fonction est activée, `dbwarp-blueprint` :
 - enregistre `sample_encoding = "blueprint-compression-probe-v2"` dans le TOML généré ;
 - conserve les octets échantillonnés uniquement en mémoire et n'écrit jamais les valeurs de lignes sur disque.
 
-`--measure-compression` exige `--yes`, car cette fonction lit les valeurs client
-décodées. Elle conserve des mesures agrégées de compression, de densité NULL,
-de cardinalité/fréquence, de longueur et de style, jamais les valeurs
-échantillonnées.
+`--measure-compression` nécessite `--yes` car il lit des valeurs de données décodées. Il conserve les mesures relatives à la compression agrégée, à la densité des valeurs nulles, à cardinality/frequency, à la longueur et au style, et non les valeurs échantillonnées.
 
-L'échantillonneur actuel utilise un échantillon déterministe constitué des N premiers éléments. Cette méthode est reproductible et peu coûteuse, mais peut être biaisée si un fichier est trié ou regroupé. Pour les estimations à enjeux élevés, privilégiez un fichier représentatif ou générez plusieurs fichiers Blueprint à partir de fragments différents. Une version future pourra ajouter un échantillonnage stratifié par groupe de lignes ou par bloc.
+L'échantillonneur actuel utilise un échantillon déterministe des N premiers éléments. C'est reproductible et peu coûteux, mais il peut être biaisé si un fichier est trié ou regroupé. Pour les estimations importantes, il est préférable d'utiliser un fichier représentatif ou de générer plusieurs fichiers Blueprint à partir de différentes partitions.
 
 ## Périmètre
 
 Le mode Blueprint à partir de fichiers structurés est utile pour :
 
 - dimensionner une importation Parquet/Avro avant une exécution DBWarp ;
-- générer une fixture synthétique représentative sans copier les noms de la
-  source ni les valeurs de lignes ;
-- planifier des flux Parquet/Avro -> DBWarp columnar -> base de données cible.
+- planification d'un transfert de données vers une base de données Parquet/Avro.
 
 Il ne remplace pas la capture Blueprint depuis une base de données active lorsque la véritable source est une base de données prise en charge, c’est-à-dire PostgreSQL, MySQL ou SQL Server. Le catalogue d'une base de données contient des informations sur les index, les clés, les clés étrangères, la fraîcheur des statistiques et l'organisation propre au moteur qui ne figurent pas dans les métadonnées génériques d'un fichier.

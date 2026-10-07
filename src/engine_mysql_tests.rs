@@ -3,6 +3,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn numeric_contract_separates_exact_float_and_non_numeric_columns() {
+        assert_eq!(
+            mysql_blueprint_numeric_contract("numeric", 12, 2),
+            (
+                "fixed-decimal".to_string(),
+                Some(12),
+                Some(2),
+                "decimal".to_string()
+            )
+        );
+        assert_eq!(
+            mysql_blueprint_numeric_contract("double", 53, 0),
+            ("binary-float".to_string(), None, None, "binary".to_string())
+        );
+        assert_eq!(
+            mysql_blueprint_numeric_contract("text", 0, 0).0,
+            "not-applicable"
+        );
+    }
+
+    #[test]
     fn cloud_token_mode_is_the_only_path_that_enables_cleartext_auth() {
         let normal: mysql_async::Opts = apply_mysql_auth_mode(OptsBuilder::default(), false).into();
         let cloud_token: mysql_async::Opts =
@@ -23,6 +44,19 @@ mod tests {
     }
 
     #[test]
+    fn udf_origin_is_excluded_only_with_positive_catalog_proof() {
+        assert_eq!(mysql_udf_generated_by_engine(false, None), Some(false));
+        assert_eq!(mysql_udf_generated_by_engine(true, Some(true)), Some(true));
+        assert_eq!(mysql_udf_generated_by_engine(true, Some(false)), None);
+        assert_eq!(mysql_udf_generated_by_engine(true, None), None);
+
+        let source = include_str!("engine_mysql_artifacts.rs");
+        assert!(source.contains("SELECT COUNT(*) FROM mysql.component"));
+        assert!(source.contains("PLUGIN_LIBRARY IS NOT NULL"));
+        assert!(!source.contains("library presence only; names not selected"));
+    }
+
+    #[test]
     fn numeric_primary_key_range_windows_span_the_source_domain() {
         assert_eq!(
             mysql_range_sample_thresholds(1, 60_000_000, 4),
@@ -33,6 +67,33 @@ mod tests {
             vec![-100, -50, 0, 50]
         );
         assert_eq!(mysql_range_sample_thresholds(7, 7, 4), vec![7; 4]);
+    }
+
+    #[test]
+    fn numeric_primary_key_range_windows_are_disjoint_and_collapse_duplicates() {
+        assert_eq!(
+            mysql_range_sample_windows(1, 60_000_000, 4),
+            vec![
+                (1, Some(15_000_000)),
+                (15_000_000, Some(30_000_000)),
+                (30_000_000, Some(45_000_000)),
+                (45_000_000, None),
+            ]
+        );
+        assert_eq!(mysql_range_sample_windows(7, 7, 4), vec![(7, None)]);
+        assert_eq!(mysql_range_sample_windows(1, 2, 4), vec![(1, None)]);
+    }
+
+    #[test]
+    fn only_a_single_bounded_mysql_statement_can_prove_a_complete_read() {
+        assert!(mysql_bounded_result_is_complete(24, 25));
+        assert!(!mysql_bounded_result_is_complete(25, 25));
+        assert!(mysql_sample_layout_can_prove_complete_read(
+            format::BlueprintSampleLayout::Unknown
+        ));
+        assert!(!mysql_sample_layout_can_prove_complete_read(
+            format::BlueprintSampleLayout::PrimaryKeyRangeWindows
+        ));
     }
 
     #[test]
@@ -100,6 +161,39 @@ mod tests {
     }
 
     #[test]
+    fn mysql_projection_budget_floors_prefixes_on_pathologically_wide_text_schemas() {
+        let columns = (0..1_600)
+            .map(|_| ColumnRow {
+                col_type: "text".into(),
+                native_type: "longtext".into(),
+                char_max_length: u32::MAX.into(),
+                char_octet_length: u32::MAX.into(),
+                character_set_name: "utf8mb4".into(),
+                ..ColumnRow::default()
+            })
+            .collect::<Vec<_>>();
+        let (rows, limits) = mysql_sample_projection_budget(4_096, &columns).unwrap();
+        // The regime under test: the per-column budget is below one utf8mb4
+        // character, where an unfloored prefix becomes LEFT(col, 0) and
+        // silently samples always-empty text. Post-floor, every cell carries
+        // exactly the one-character byte cover and the re-clamped row count
+        // keeps the floored row cost inside the probe ceiling.
+        assert!(limits.iter().all(|limit| limit.byte_limit == 4));
+        assert!(limits.iter().all(|limit| limit.char_limit == 1));
+        let row_bytes = limits
+            .iter()
+            .map(|limit| {
+                limit.byte_limit as u64 + dbwarp_blueprint_core::TRANSFER_PROBE_CELL_OVERHEAD_BYTES
+            })
+            .sum::<u64>();
+        assert!(rows >= 1);
+        assert!(
+            rows.saturating_mul(row_bytes)
+                <= dbwarp_blueprint_core::TRANSFER_PROBE_MAX_SAMPLE_BYTES as u64
+        );
+    }
+
+    #[test]
     fn mysql_original_octet_length_is_independent_of_sampled_payload() {
         assert_eq!(mysql_observed_octet_length(&Value::UInt(291)), Some(291));
         assert_eq!(mysql_observed_octet_length(&Value::Int(226)), Some(226));
@@ -149,6 +243,36 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn adaptive_retry_provenance_describes_the_retained_rows() {
+        let first = MysqlRetainedSampleProvenance {
+            method: "range-window method".to_string(),
+            bias_reason: "range_window_bias".to_string(),
+            layout: format::BlueprintSampleLayout::PrimaryKeyRangeWindows,
+            complete_row_read: false,
+        };
+        let limit_retry = MysqlRetainedSampleProvenance {
+            method: "LIMIT N".to_string(),
+            bias_reason: "limit_bias".to_string(),
+            layout: format::BlueprintSampleLayout::Unknown,
+            complete_row_read: true,
+        };
+
+        let retained = mysql_retained_sample_provenance(first.clone(), Some(limit_retry));
+        assert_eq!(retained.layout, format::BlueprintSampleLayout::Unknown);
+        assert!(retained.complete_row_read);
+        assert_eq!(
+            retained.method,
+            "LIMIT N; adaptive byte-bounded retry from observed octet lengths"
+        );
+        assert_eq!(
+            retained.bias_reason,
+            "limit_bias+adaptive_observed_octet_length_retry"
+        );
+
+        assert_eq!(mysql_retained_sample_provenance(first.clone(), None), first);
     }
 
     #[test]
@@ -339,11 +463,28 @@ mod tests {
         TableRow {
             schema_name: "app".to_string(),
             table_name: "events".to_string(),
-            rows_estimate: 1_000,
-            data_length: 65_536,
-            index_length: 16_384,
+            rows_estimate: Some(1_000),
+            data_length: Some(65_536),
+            index_length: Some(16_384),
             storage_engine: storage_engine.to_string(),
+            partition_method: String::new(),
+            subpartition_method: String::new(),
+            partition_count: 0,
+            partition_rows_max: None,
+            check_count: 0,
         }
+    }
+
+    #[test]
+    fn mysql_table_semantics_distinguish_external_and_partition_methods() {
+        assert_eq!(mysql_storage_organization("InnoDB"), "clustered");
+        assert_eq!(mysql_storage_organization("FEDERATED"), "external");
+        assert_eq!(mysql_partitioning("RANGE COLUMNS", "", 4), "range");
+        assert_eq!(mysql_partitioning("LINEAR KEY", "", 8), "linear-key");
+        assert_eq!(mysql_partitioning("RANGE", "HASH", 16), "composite");
+        assert_eq!(mysql_partitioning("FUTURE METHOD", "", 4), "unknown");
+        assert_eq!(mysql_partitioning("", "", 0), "none");
+        assert!(mysql_table("federated").is_external());
     }
 
     fn ordinary_mysql_evidence() -> MysqlTopologyEvidence {
@@ -373,6 +514,21 @@ mod tests {
             .dataset_scope
             .limitations
             .contains(&"statistics-stale".to_string()));
+    }
+
+    #[test]
+    fn complete_reads_cannot_erase_mysql_external_or_distributed_row_gaps() {
+        let mut scope =
+            classify_mysql_topology(&ordinary_mysql_evidence(), &[mysql_table("InnoDB")])
+                .dataset_scope;
+        assert!(!mysql_row_scope_intrinsically_incomplete(&scope));
+        scope.limitations.push("external-data-unmeasured".to_string());
+        assert!(mysql_row_scope_intrinsically_incomplete(&scope));
+        scope.limitations.clear();
+        scope
+            .limitations
+            .push("distributed-row-count-unavailable".to_string());
+        assert!(mysql_row_scope_intrinsically_incomplete(&scope));
     }
 
     #[test]
@@ -465,13 +621,108 @@ mod tests {
         let mut tables = vec![mysql_table("InnoDB")];
         let mut audit = AuditLog::default();
         assessment.qualify_table_statistics(&mut tables, &mut audit);
-        assert_eq!(tables[0].rows_estimate, 0);
-        assert_eq!(tables[0].data_length, 0);
-        assert_eq!(tables[0].index_length, 0);
+        assert_eq!(tables[0].rows_estimate, None);
+        assert_eq!(tables[0].data_length, None);
+        assert_eq!(tables[0].index_length, None);
         assert!(audit
             .warnings
             .iter()
             .any(|warning| warning.starts_with("DBP1412W ")));
+    }
+
+    #[test]
+    fn null_mysql_catalog_values_are_unavailable_per_table() {
+        let mut table = mysql_table("InnoDB");
+        table.rows_estimate = None;
+        table.data_length = None;
+        table.index_length = None;
+        let assessment = classify_mysql_topology(&ordinary_mysql_evidence(), &[table]);
+        assert_eq!(assessment.dataset_scope.row_count_completeness, "incomplete");
+        assert_eq!(assessment.dataset_scope.size_completeness, "incomplete");
+        assert!(assessment
+            .dataset_scope
+            .limitations
+            .contains(&"row-count-evidence-incomplete".to_string()));
+        assert!(assessment
+            .dataset_scope
+            .limitations
+            .contains(&"size-evidence-incomplete".to_string()));
+
+        let mut blueprint = BlueprintFile {
+            schema_version: SCHEMA_VERSION,
+            engine: "mysql".to_string(),
+            dataset_scope: Some(assessment.dataset_scope),
+            tables: BTreeMap::from([(
+                "table-001".to_string(),
+                BlueprintTable {
+                    object_kind: "ordinary-table".to_string(),
+                    storage_organization: "clustered".to_string(),
+                    partitioning: "none".to_string(),
+                    segment_state: "created".to_string(),
+                    statistics: Some(
+                        dbwarp_blueprint_core::TableStatisticsEvidence::unknown_database(
+                            "mysql-table-statistics",
+                            "mysql-information-schema",
+                        ),
+                    ),
+                    ..BlueprintTable::default()
+                },
+            )]),
+            ..BlueprintFile::default()
+        };
+        qualify_v7_statistics(
+            &mut blueprint,
+            &BTreeMap::from([("table-001".to_string(), (false, false))]),
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        let evidence = blueprint.tables["table-001"].statistics.as_ref().unwrap();
+        assert_eq!(evidence.row_count_method, "unknown");
+        assert_eq!(evidence.row_count_quality, "unavailable");
+        assert_eq!(evidence.size_method, "unknown");
+        assert_eq!(evidence.size_quality, "unavailable");
+        assert_eq!(evidence.size_visibility, "unavailable");
+    }
+
+    #[test]
+    fn complete_bounded_read_restores_mysql_row_provenance() {
+        let mut assessment =
+            classify_mysql_topology(&ordinary_mysql_evidence(), &[mysql_table("InnoDB")]);
+        assessment.dataset_scope.row_count_method = "bounded-complete-read".to_string();
+        let mut blueprint = BlueprintFile {
+            schema_version: SCHEMA_VERSION,
+            engine: "mysql".to_string(),
+            dataset_scope: Some(assessment.dataset_scope),
+            tables: BTreeMap::from([(
+                "table-001".to_string(),
+                BlueprintTable {
+                    rows: 149,
+                    object_kind: "ordinary-table".to_string(),
+                    storage_organization: "clustered".to_string(),
+                    partitioning: "none".to_string(),
+                    segment_state: "created".to_string(),
+                    statistics: Some(
+                        dbwarp_blueprint_core::TableStatisticsEvidence::unknown_database(
+                            "mysql-table-statistics",
+                            "mysql-information-schema",
+                        ),
+                    ),
+                    ..BlueprintTable::default()
+                },
+            )]),
+            ..BlueprintFile::default()
+        };
+        qualify_v7_statistics(
+            &mut blueprint,
+            &BTreeMap::from([("table-001".to_string(), (true, true))]),
+            &BTreeSet::from(["table-001".to_string()]),
+        )
+        .unwrap();
+        let evidence = blueprint.tables["table-001"].statistics.as_ref().unwrap();
+        assert_eq!(evidence.row_count_method, "bounded-complete-read");
+        assert_eq!(evidence.row_count_quality, "exact-read");
+        assert_eq!(evidence.sample_fraction_band, "full");
+        assert_eq!(blueprint.tables["table-001"].rows, 149);
     }
 
     /// `is_mysql_utf8_charset` correctly classifies common UTF-8
@@ -656,7 +907,7 @@ mod tests {
         assert!(
             src.contains("DBWarp Blueprint patch:"),
             "vendor/mysql_async/src/io/tls/rustls_io.rs is missing the dbwarp-blueprint \
-             trust-restriction patch — `--tls-ca` will silently fall back to the \
+             trust-restriction patch: `--tls-ca` will silently fall back to the \
              upstream behavior (system + webpki_roots also trusted)."
         );
         assert!(

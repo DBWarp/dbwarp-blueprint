@@ -46,31 +46,25 @@ cargo test --locked --all-targets
 python3 tools/check_public_tree.py
 ```
 
-El núcleo compartido tiene su propia suite de pruebas unitarias:
+El módulo principal tiene sus propias pruebas unitarias:
 
 ```bash
 cargo test --locked --manifest-path crates/dbwarp-blueprint-core/Cargo.toml --lib
 ```
 
-El éxito de las pruebas locales no valida versiones de bases de datos ni
-plataformas. Describa lo que se probó realmente y marque explícitamente las
-demás configuraciones como no probadas. No publique artefactos, actualice
-etiquetas de versión ni cambie los ajustes de seguridad del repositorio como
-parte de un parche sin la aprobación de los responsables del mantenimiento.
+Pasar las pruebas locales no demuestra que un cambio funcione en todas las versiones de la base de datos o plataformas. Describa lo que se probó realmente y deje explícitamente indicadas las otras configuraciones que no se probaron. No publique artefactos, actualice las etiquetas de lanzamiento ni cambie la configuración de seguridad del repositorio como parte de una corrección sin la aprobación del mantenedor.
 
 ## Flujo de trabajo de mantenimiento
 
 La fuente canónica es la ayuda en inglés de Rust y las definiciones de mensajes e interfaz de usuario
-en `src/i18n.rs`. Cuando cambia cualquier frase visible para el cliente:
+en `src/i18n.rs`. Cuando cambia cualquier frase visible para el usuario:
 
 1. actualice cada catálogo de configuración regional bajo `locales/` en el mismo commit;
 2. conserve exactamente todos los marcadores de posición y tokens operativos canónicos;
 3. ejecute la prueba específica de cobertura exacta;
-4. añada o actualice el caso pertinente del límite del operador en
+4. agregar o actualizar el caso de prueba relevante en.
    `tests/cli_errors.rs` cuando cambie un error o una advertencia;
-5. ejecute todo el conjunto de pruebas e inspeccione resultados representativos de ayuda y presentaciones;
-6. obtenga una revisión técnica por una persona nativa antes de considerar definitivo el nuevo texto para un
-   contrato de cliente, una presentación reglamentaria o material público de marketing.
+5. ejecute la suite de pruebas completa e inspeccione la salida representativa help/deck.
 
 Este proceso de cobertura exacta se aplica a los catálogos de ejecución
 integrados en el binario. El Markdown traducido es complementario; consulte

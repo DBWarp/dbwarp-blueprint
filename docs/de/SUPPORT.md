@@ -33,15 +33,8 @@ Weitergabe.
 
 ## Unterstützte Konfigurationen
 
-[STATUS.md](../../STATUS.md) beschreibt Funktionen und die Matrix qualifizierter
-Engines. [BUILD.md](BUILD.md) beschreibt plattform- und
-authentifizierungsspezifische Build-Anforderungen. Rust ist auf die genaue
-Version in `rust-toolchain.toml` festgeschrieben; das Feld `rust-version` des
-Pakets verspricht nicht, dass jede neuere Toolchain qualifiziert ist.
+[STATUS.md](../../STATUS.md) beschreibt die Fähigkeiten und die unterstützten Datenbankversionen. [BUILD.md](BUILD.md) beschreibt plattform- und authentifizierungs-spezifische Build-Anforderungen. Rust ist auf die exakte Version in `rust-toolchain.toml` festgelegt; andere Toolchains wurden möglicherweise nicht getestet.
 
-Berechtigungshinweise für verwaltete Dienste behaupten nicht, dass jeder Dienst
-oder jede Konfiguration getestet wurde. Verwenden Sie die passenden
-[Berechtigungsanforderungen](../../sql/grants/DATABASE_PERMISSIONS.md) und
-qualifizieren Sie die genaue Konfiguration vor dem Produktionseinsatz.
+Anleitungen zu Berechtigungen für Managed-Services sind keine Aussage darüber, dass jeder Dienst oder jede Konfiguration getestet wurde. Verwenden Sie die entsprechenden [Berechtigungsanforderungen](../../sql/grants/DATABASE_PERMISSIONS.md) und testen Sie die genaue Konfiguration, bevor Sie sie in der Produktion einsetzen.
 
 Änderungen zwischen Collector-Versionen finden Sie in [CHANGELOG.md](CHANGELOG.md).

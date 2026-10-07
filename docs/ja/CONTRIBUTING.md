@@ -37,32 +37,25 @@ cargo test --locked --all-targets
 python3 tools/check_public_tree.py
 ```
 
-共有コアには独自のユニットテスト一式があります:
+コアモジュールには、独自の単体テストがあります。
 
 ```bash
 cargo test --locked --manifest-path crates/dbwarp-blueprint-core/Cargo.toml --lib
 ```
 
-ローカルテストの成功は、データベースバージョンやプラットフォームの資格検証ではありません。
-実際にテストした内容を説明し、それ以外の構成は明示的に未テストとしてください。
-メンテナーの承認なしに、パッチの一環として成果物を公開したり、リリースタグを更新したり、
-リポジトリのセキュリティ設定を変更したりしないでください。
+ローカルテストに合格したからといって、その変更がすべてのデータベースバージョンやプラットフォームで動作することを証明するものではありません。実際にテストした内容を記述し、それ以外の構成は明示的に未テストと記してください。
 
 ## メンテナーのワークフロー
 
 正規のソースは、英語の Rust help と `src/i18n.rs` にある message/UI definition です。
-顧客向けの文言を変更する場合:
+ユーザー向けの文言を変更する場合:
 
 1. 同じコミットで `locales/` 以下のすべての locale catalog を更新する。
 2. すべての placeholder と正規の operational token を正確に保持する。
 3. focused exact-coverage test を実行する。
+4. 関連するテストケースを追加または更新します。
 4. failure または warning を変更した場合は、`tests/cli_errors.rs` に関連する operator-boundary case を追加または更新する。
-5. 完全な test suite を実行し、代表的な help/deck output を確認する。
-6. 新しい文言を顧客契約、規制当局への提出、または公開マーケティング向けの最終版として扱う前に、ネイティブによる技術レビューを受ける。
-
-この完全網羅性のワークフローは、バイナリに組み込まれる実行時カタログに適用されます。
-翻訳された Markdown は補足資料です。
-[`docs/TRANSLATIONS.md`](../TRANSLATIONS.md) を参照してください。
+5. フルテストスイートを実行し、代表的なhelp/deckの出力を確認してください。
 
 重点的な検証:
 

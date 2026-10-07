@@ -21,7 +21,7 @@
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
@@ -47,18 +47,18 @@ Parquet モードは footer および row-group metadata を読み取ります�
 
 ```bash
 dbwarp-blueprint \
-  --from-avro /data/customer-sample.avro \
+  --from-avro /data/events.avro \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
 
-Avro object container は、Parquet 形式の footer row count を公開しません。そのため、Avro モードは container を一度走査し、record 数を数え、論理 `table_bytes` を導出し、列ごとの `len_avg`、`len_p95`、`null_fraction` を観測します。writer schema は論理型メタデータを提供します。`storage_bytes` と `ratio_storage` は Avro container を表すもので、DBWarp の転送見積もりではありません。これは estimator と synthetic-fixture planning に適しています。
+Avro object container は、Parquet 形式の footer row count を公開しません。そのため、Avro モードは container を一度走査し、record 数を数え、論理 `table_bytes` を導出し、列ごとの `len_avg`、`len_p95`、`null_fraction` を観測します。writer schema は論理型メタデータを提供します。`storage_bytes` と `ratio_storage` は Avro container を表すもので、DBWarp の転送見積もりではありません。
 
 ## 論理型の忠実度
 
-構造化ファイル取得は、estimator が必要とする上限付き論理メタデータを保持します。対象は decimal precision/scale、日付と時刻のファミリー、timestamp precision と UTC/ローカルセマンティクス、UUID、固定長 binary width、UTF-8 string、raw bytes です。NULL だけのフィールドは合成テキストにはならず、`type = "null"` のままです。
+構造化されたファイルからのデータ取得は、サイズ決定に必要な、以下の範囲に限定された論理メタデータを保持します。小数点precision/scale、日付と時刻の種類、タイムスタンプの精度、UTC/localの意味、UUID、固定サイズのバイナリ幅、UTF-8文字列、および生のバイト。NULL値のみを含むフィールドは、合成テキストに変換されるのではなく、`type = "null"`のままになります。
 
-ネストされた Parquet leaf、および Avro の array、map、record、multi-type union は、1 つの正確な SQL scalar として表現できません。Blueprint は正規化された `json` 型と、`"repeated-leaf"`、`"nested-json"`、`"multi-type-union"` などの `source_semantics` を記録します。下流の generator は、これらを代表的な JSON pressure として識別し、ネストされた schema の正確な round trip を主張してはなりません。
+ネストされたParquetのデータや、Avroの配列、マップ、レコード、または複数のデータ型を持つユニオンは、単一の正確なSQLのスカラー値として表現できません。Blueprintは、正規化された`json`型と、`source_semantics`のような要素（例：`"repeated-leaf"`、`"nested-json"`、または`"multi-type-union"`）を記録します。これらの列はJSONとしてサイズ設定され、ネストされたスキーマは正確に再現されません。
 
 ソースファイルの stem、Parquet path、Avro field name、batch の `logical_table` label は Blueprint identifier として書き込まれません。複数ファイルの dataset は秘密キーで保護された `table-NNN` identifier を出力し、object bytes、partition、row group、codec、幅、NULL 比率、互換な compression provenance を集約し、構造化された論理 column contract が異なるファイルを拒否します。
 
@@ -68,7 +68,7 @@ Avro object container は、Parquet 形式の footer row count を公開しま�
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --measure-compression --yes \
   --sample-rows 5000 \
   --out blueprint.toml \
@@ -87,18 +87,15 @@ dbwarp-blueprint \
 - 生成した TOML に `sample_encoding = "blueprint-compression-probe-v2"` を記録する。
 - サンプリングしたバイトはメモリ内だけに保持し、行の値をディスクへ決して書き込まない。
 
-`--measure-compression` はデコードされた顧客値を読み取るため、`--yes` が必要です。
-永続化するのは集約された圧縮、NULL 密度、カーディナリティ／頻度、長さ、スタイルの
-測定値であり、サンプリング値ではありません。
+`--measure-compression` は、デコードされたデータ値を読み取るため、`--yes` が必要です。これは、集計圧縮、NULL値の密度、cardinality/frequency、長さ、およびスタイルに関する測定値を永続化しますが、サンプリングされた値は永続化しません。
 
-現在の sampler は、決定論的な first-N sample を使用します。これは再現可能で低コストですが、ファイルがソートまたはクラスタ化されている場合、バイアスが生じる可能性があります。重要度の高い見積もりでは、代表的なファイルを使用するか、異なる shard から複数のBlueprintファイルを生成してください。将来のバージョンでは、row-group/block-stratified sampling が追加される可能性があります。
+現在のサンプリング機能は、決定的な最初のN件のサンプルを使用します。これは再現性が高く、安価ですが、ファイルがソートまたはクラスタリングされている場合、偏りが生じる可能性があります。重要な見積もりを行う場合は、代表的なファイルを使用するか、異なるシャードから複数のBlueprintファイルを生成することを推奨します。
 
 ## 適用範囲
 
 構造化ファイルのBlueprintモードは、次の用途に有用です:
 
 - DBWarp 実行前に Parquet/Avro import のサイズを見積もる。
-- ソース名や行値をコピーせずに、代表的な合成フィクスチャを生成する。
-- Parquet/Avro -> DBWarp columnar -> target database フローを計画する。
+- Parquet/Avroへのデータベース移行の計画。
 
 実際のソースがサポート対象データベース（PostgreSQL、MySQL、または SQL Server）である場合、これはライブデータベースの Blueprint 取得を置き換えるものではありません。データベースカタログには、汎用ファイルメタデータには存在しないインデックス、キー、FK、statistics-freshness、engine-layout の詳細があります。

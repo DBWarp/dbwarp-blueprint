@@ -1,4 +1,4 @@
-//! PostgreSQL engine — catalog reader (Tier 1) + compression sampler (Tier 2).
+//! PostgreSQL engine: catalog reader (Tier 1) + compression sampler (Tier 2).
 //!
 //! Connects via `tokio-postgres`. Reads catalog tables only in Tier 1.
 //! Tier 2 additionally runs an estimate-aware bounded `TABLESAMPLE SYSTEM`
@@ -12,7 +12,7 @@
 //! No row content is ever written to the output file. The style classifier
 //! returns ONE LABEL per column.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -20,8 +20,8 @@ use tokio_postgres::{Config as PgConfig, NoTls, SimpleQueryMessage};
 use zeroize::Zeroizing;
 
 use crate::artifacts::{
-    self, ArtifactDetail, CaptureCompleteness, RawArtifact, RawExternalPrerequisite,
-    RawLanguageAnalysis,
+    self, ArtifactDetail, CaptureCompleteness, RawArtifact, RawArtifactRequirement,
+    RawDefinitionSpan, RawExternalPrerequisite, RawLanguageAnalysis,
 };
 use crate::audit::AuditLog;
 use crate::engine_common::{
@@ -45,17 +45,16 @@ use crate::topology::{
     warn_incomplete_dataset_scope,
 };
 
-/// Classify a PG column type (catalog-string form) into a row-frame
-/// TypeTag. The string is `format_type(atttypid, atttypmod)` — examples:
+/// Classify a PG column type (catalog-string form) into a compression-probe
+/// TypeTag. The string is `format_type(atttypid, atttypmod)`: examples:
 /// "integer", "bigint", "text", "character varying(64)",
 /// "timestamp with time zone", "numeric(12,4)", "uuid", "jsonb", "bytea",
 /// "boolean", "double precision", "real", "date".
 ///
 /// We strip any "(...)" length/precision suffix before matching.
-/// Unknown types fall back to `UnknownText` — the tool still samples
+/// Unknown types fall back to `UnknownText`: the tool still samples
 /// them via simple_query (which returns the textual representation
-/// for any type), they just don't carry a precise type-tag to the
-/// estimator.
+/// for any type); they just carry no precise type tag.
 fn type_tag_for_pg_str(type_str: &str) -> TypeTag {
     let head = type_str
         .split('(')
@@ -102,7 +101,7 @@ fn normalized_pg_type(type_str: &str) -> String {
                 if let Some(args) = args.strip_suffix(')') {
                     if args
                         .chars()
-                        .all(|c| c.is_ascii_digit() || c == ',' || c == ' ')
+                        .all(|c| c.is_ascii_digit() || matches!(c, ',' | ' ' | '-'))
                     {
                         return format!("numeric({})", args.replace(' ', ""));
                     }
@@ -123,6 +122,38 @@ fn normalized_pg_type(type_str: &str) -> String {
         "vector" => "vector".to_string(),
         _ => "user-defined".to_string(),
     }
+}
+
+fn pg_blueprint_numeric_contract(column_type: &str) -> (String, Option<u64>, Option<i64>, String) {
+    // A parenthesized spelling declares precision and scale; bare numeric is
+    // unconstrained. Keep those cases distinct so the declared form emits
+    // fixed-decimal facets.
+    if let Some(args) = column_type
+        .strip_prefix("numeric(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    {
+        let mut parts = args.split(',').map(str::trim);
+        let precision = parts.next().and_then(|part| part.parse::<u64>().ok());
+        let scale = parts.next().and_then(|part| part.parse::<i64>().ok());
+        if let Some(precision) = precision {
+            // PostgreSQL numeric(p) declares scale 0; numeric(p,s) carries
+            // both. Either way the model is fixed-decimal by declaration.
+            return (
+                "fixed-decimal".to_string(),
+                Some(precision),
+                Some(scale.unwrap_or(0)),
+                "decimal".to_string(),
+            );
+        }
+    }
+    let (model, radix) = match column_type {
+        "smallint" | "integer" | "bigint" => ("integer", "decimal"),
+        "numeric" => ("unconstrained-decimal", "decimal"),
+        "real" | "double precision" => ("binary-float", "binary"),
+        value if value == "user-defined" || value.starts_with("array<") => ("unknown", ""),
+        _ => ("not-applicable", ""),
+    };
+    (model.to_string(), None, None, radix.to_string())
 }
 
 /// Return PostgreSQL's declared character capacity when `format_type` exposes
@@ -424,7 +455,7 @@ pub async fn run(
                 }
             }
             (TlsMode::Prefer, None) => {
-                // Shouldn't happen — Prefer always returns Some — but be safe.
+                // This should not happen because Prefer always returns Some, but be safe.
                 let (c, connection) = cfg
                     .connect(NoTls)
                     .await
@@ -472,7 +503,7 @@ pub async fn run(
         0,
     );
 
-    // RTT probe — 5× SELECT 1 for customer-side observed round-trip
+    // RTT probe: 5× SELECT 1 for customer-side observed round-trip
     // statistics. Captured BEFORE catalog queries so the timings are
     // not skewed by cache warmup.
     let network_probe = if opts.rtt_probe {
@@ -504,6 +535,7 @@ pub async fn run(
     // engine_version
     let engine_version = fetch_engine_version(&client, audit).await?;
     let schemas = resolve_pg_schemas(&client, &opts.schemas, audit).await?;
+    let source_environment = capture_pg_source_environment(&client, audit).await;
 
     // Establish the meaning of the local catalog totals before reading them.
     // In particular, ordinary PostgreSQL size functions materially undercount
@@ -511,38 +543,60 @@ pub async fn run(
     let topology_evidence = probe_pg_topology(&client, &schemas, audit).await;
     let mut sizing = classify_pg_topology(&topology_evidence);
 
-    // Catalog walk.
-    let mut table_capture = list_tables(&client, audit, sizing.table_size_mode).await?;
-    table_capture
-        .tables
-        .retain(|table| schemas.includes(&table.schema_name));
+    // Catalog walk. Freshness classification is anchored to a parseable
+    // pinned --generated-at so identical inputs serialize identically.
+    let stats_reference = format::stats_freshness_reference(opts.generated_at_pin.as_deref());
+    let table_capture = list_tables(
+        &client,
+        audit,
+        sizing.table_size_mode,
+        stats_reference,
+        &schemas,
+    )
+    .await?;
     sizing.record_table_capture(&table_capture, audit);
     schemas.qualify_dataset_scope(&mut sizing.dataset_scope);
-    warn_incomplete_dataset_scope(&sizing.dataset_scope, audit);
     let tables = table_capture.tables;
-    let columns = list_columns(&client, audit).await?;
-    let indexes = list_indexes(&client, audit).await?;
-    let fks = list_foreign_keys(&client, audit).await?;
+    let columns = list_columns(&client, audit, &schemas).await?;
+    let (indexes, indexes_complete) = match list_indexes(&client, audit, &schemas).await {
+        Ok(indexes) => (indexes, true),
+        Err(_) => (Vec::new(), false),
+    };
+    let (fks, relationships_complete) = match list_foreign_keys(&client, audit, &schemas).await {
+        Ok(fks) => (fks, true),
+        Err(_) => (Vec::new(), false),
+    };
 
     // Anonymize: assign stable ordinals.
     let mut sorted = tables.clone();
     sorted.sort_by_key(|t| format::table_hash(&t.schema_name, &t.table_name));
     let mut id_by_oid: BTreeMap<u32, String> = BTreeMap::new();
-    let mut schema_id_by_name: BTreeMap<String, String> = BTreeMap::new();
-    {
-        let mut schema_seen: Vec<String> = sorted
-            .iter()
-            .map(|t| t.schema_name.clone())
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        schema_seen.sort_by_key(|s| format::schema_hash(s));
-        for (i, name) in schema_seen.iter().enumerate() {
-            schema_id_by_name.insert(name.clone(), format::schema_id(i + 1));
-        }
-    }
+    let mut schema_id_by_name = artifacts::schema_ids_for_capture(
+        sorted.iter().map(|table| table.schema_name.as_str()),
+        &[],
+        ArtifactDetail::None,
+    );
     for (i, t) in sorted.iter().enumerate() {
         id_by_oid.insert(t.oid, format::table_id(i + 1));
+    }
+    let mut child_ids_by_parent: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+    for table in &sorted {
+        let Some(parent_oid) = table.parent_oid else {
+            continue;
+        };
+        let Some(child_id) = id_by_oid.get(&table.oid) else {
+            continue;
+        };
+        if id_by_oid.contains_key(&parent_oid) {
+            child_ids_by_parent
+                .entry(parent_oid)
+                .or_default()
+                .push(child_id.clone());
+        }
+    }
+    for children in child_ids_by_parent.values_mut() {
+        children.sort();
+        children.dedup();
     }
 
     // Group columns + indexes by table OID.
@@ -563,6 +617,10 @@ pub async fn run(
 
     // Tier-2 compression sampling, if enabled.
     let mut compression_by_oid: BTreeMap<u32, CompressionSample> = BTreeMap::new();
+    // Row-population proof is database evidence, not a compression-worker
+    // result. Keep it independently so an empty table or a later local zstd
+    // failure cannot erase a successful complete read.
+    let mut complete_source_rows_by_oid: BTreeMap<u32, u64> = BTreeMap::new();
     if opts.measure_compression {
         match CompressionWorkerPool::new(opts.compression_workers) {
             Ok(compression_pool) => {
@@ -583,6 +641,16 @@ pub async fn run(
                         tracing_eprintln(detail.clone());
                         audit.record_warning("DBP1406W", detail);
                         break;
+                    }
+                    if !t.sampling_allowed {
+                        if t.row_security_active || t.sampling_blocked_by_ancestor_row_security {
+                            let table_id = id_by_oid
+                                .get(&t.oid)
+                                .map(String::as_str)
+                                .unwrap_or("table-unknown");
+                            warn_compression_unavailable(table_id, audit);
+                        }
+                        continue;
                     }
                     if t.sampling_empty_proven {
                         audit.record_proven_empty_table_skipped();
@@ -606,13 +674,19 @@ pub async fn run(
                     )
                     .await
                     {
-                        Ok(Some(pending)) => {
+                        Ok(PgCompressionSampleOutcome::Pending(pending)) => {
+                            if let Some(rows) = pending.complete_source_rows {
+                                complete_source_rows_by_oid.insert(t.oid, rows);
+                            }
                             if pipeline_started.is_none() {
                                 pipeline_started = Some(pending.submitted_at);
                             }
                             pending_samples.push((t.oid, table_id.to_string(), pending));
                         }
-                        Ok(None) => { /* table empty; skip */ }
+                        Ok(PgCompressionSampleOutcome::CompleteEmpty) => {
+                            complete_source_rows_by_oid.insert(t.oid, 0);
+                        }
+                        Ok(PgCompressionSampleOutcome::Unavailable) => {}
                         Err(_) => {
                             warn_compression_unavailable(table_id, audit);
                         }
@@ -647,7 +721,7 @@ pub async fn run(
 
     // Style classification: a small bounded peek per text/jsonb/xml column,
     // bytes never leave the process. Only the label is emitted.
-    // To keep Tier 1 catalog-only, skip style classification by default — only
+    // To keep Tier 1 catalog-only, skip style classification by default: only
     // run it under --measure-compression so behavior matches the consent prompt.
     let mut style_by_col: BTreeMap<(u32, i16), &'static str> = BTreeMap::new();
     if opts.measure_compression {
@@ -662,6 +736,9 @@ pub async fn run(
                 tracing_eprintln(detail.clone());
                 audit.record_warning("DBP1406W", detail);
                 break;
+            }
+            if !t.sampling_allowed {
+                continue;
             }
             if t.sampling_empty_proven {
                 continue;
@@ -706,6 +783,9 @@ pub async fn run(
 
     // Build BlueprintFile.
     let mut tables_out: BTreeMap<String, BlueprintTable> = BTreeMap::new();
+    let mut bounded_row_count_tables = BTreeSet::new();
+    let mut used_catalog_row_count = false;
+    let mut row_count_still_unavailable = false;
     let mut totals = Totals::default();
     for t in &sorted {
         let tid = id_by_oid.get(&t.oid).cloned().unwrap_or_default();
@@ -755,18 +835,23 @@ pub async fn run(
                 } else {
                     0
                 };
+                let column_type = normalized_pg_type(&c.type_str);
+                let (numeric_model, numeric_precision, numeric_scale, numeric_precision_radix) =
+                    pg_blueprint_numeric_contract(&column_type);
                 col_map.insert(
                     format::col_id(c.attnum as u32),
                     BlueprintColumn {
                         ordinal: c.attnum as u32,
-                        column_type: normalized_pg_type(&c.type_str),
+                        column_type,
                         nullable: !c.not_null,
                         null_fraction,
                         native_type: String::new(),
                         declared_max_chars: declared_pg_max_chars(&c.type_str),
                         declared_max_bytes: declared_pg_max_bytes(&c.type_str),
-                        numeric_precision: 0,
-                        numeric_scale: 0,
+                        numeric_model,
+                        numeric_precision,
+                        numeric_scale,
+                        numeric_precision_radix,
                         datetime_precision: 0,
                         charset: String::new(),
                         collation: String::new(),
@@ -811,11 +896,67 @@ pub async fn run(
                 );
             }
         }
+        let external = t.object_kind() == "external-table";
+        let partitioning = t.partitioning();
+        let counted_row_input = !external && !matches!(t.relkind.as_str(), "p" | "m");
+        let complete_source_rows = complete_source_rows_by_oid.get(&t.oid).copied();
+        if complete_source_rows.is_some() && counted_row_input {
+            bounded_row_count_tables.insert(tid.clone());
+        } else if pg_catalog_row_estimate_available(t) && counted_row_input {
+            used_catalog_row_count = true;
+        } else if counted_row_input {
+            row_count_still_unavailable = true;
+        }
         let table_blueprint = BlueprintTable {
-            rows: format::round_rows(t.reltuples.max(0.0) as u64),
-            table_bytes: format::round_bytes(t.table_bytes),
-            index_bytes: format::round_bytes(t.index_bytes),
+            rows: if external {
+                0
+            } else {
+                complete_source_rows.unwrap_or_else(|| {
+                    format::round_estimated_rows(
+                        pg_reltuples_row_estimate(t.reltuples).unwrap_or(0),
+                    )
+                })
+            },
+            table_bytes: if external {
+                0
+            } else {
+                format::round_bytes(t.table_bytes.unwrap_or(0))
+            },
+            index_bytes: if external {
+                0
+            } else {
+                format::round_bytes(t.index_bytes.unwrap_or(0))
+            },
             schema: schema_anon,
+            object_kind: t.object_kind().to_string(),
+            storage_organization: if external { "external" } else { "heap" }.to_string(),
+            partitioning: partitioning.to_string(),
+            segment_state: if external || t.relkind == "p" {
+                "unavailable"
+            } else if t.relkind == "m" && !t.relispopulated {
+                "deferred"
+            } else {
+                "created"
+            }
+            .to_string(),
+            parent_table: t
+                .parent_oid
+                .and_then(|parent_oid| id_by_oid.get(&parent_oid).cloned())
+                .unwrap_or_default(),
+            child_tables: child_ids_by_parent.get(&t.oid).cloned().unwrap_or_default(),
+            unlogged: Some(t.relpersistence == "u"),
+            partition_count: (partitioning != "none" && partitioning != "unknown")
+                .then_some(t.partition_count),
+            partition_key_cols: if partitioning != "none"
+                && partitioning != "unknown"
+                && !t.partition_key_has_expression
+            {
+                t.partition_key_cols.clone()
+            } else {
+                Vec::new()
+            },
+            counted_in_totals: (external || t.relkind == "m").then_some(false),
+            check_count: Some(t.check_count),
             has_clustered_index: false, // PG always false (heap-only)
             stats_freshness: t.stats_freshness.clone(),
             cols: col_map,
@@ -826,8 +967,6 @@ pub async fn run(
         accumulate_table_totals(&mut totals, &table_blueprint)?;
         tables_out.insert(tid, table_blueprint);
     }
-    totals.table_count = tables_out.len() as u64;
-
     // FK edges, anonymized.
     let mut fk_edges: BTreeMap<String, Vec<FkEdge>> = BTreeMap::new();
     for fk in &fks {
@@ -860,6 +999,42 @@ pub async fn run(
         });
     }
 
+    let artifact_capture = if opts.artifact_detail == ArtifactDetail::None {
+        None
+    } else {
+        let (mut raw, completeness) = capture_artifacts(
+            &client,
+            opts.artifact_detail,
+            &engine_version,
+            &schemas,
+            audit,
+        )
+        .await;
+        raw.retain(|item| {
+            item.schema_identity
+                .as_deref()
+                .is_none_or(|schema| schemas.includes(schema))
+        });
+        schema_id_by_name = artifacts::schema_ids_for_capture(
+            sorted.iter().map(|table| table.schema_name.as_str()),
+            &raw,
+            opts.artifact_detail,
+        );
+        for table in &sorted {
+            let table_id = id_by_oid
+                .get(&table.oid)
+                .expect("table id assigned before schema remap");
+            tables_out
+                .get_mut(table_id)
+                .expect("table emitted before schema remap")
+                .schema = schema_id_by_name
+                .get(&table.schema_name)
+                .expect("table schema included in anonymous schema map")
+                .clone();
+        }
+        Some((raw, completeness))
+    };
+
     let table_artifact_ids: BTreeMap<String, String> = sorted
         .iter()
         .filter_map(|table| {
@@ -871,30 +1046,27 @@ pub async fn run(
             })
         })
         .collect();
-    let artifact_inventory = if opts.artifact_detail == ArtifactDetail::None {
-        None
-    } else {
-        let (mut raw_artifacts, completeness) = capture_artifacts(
-            &client,
-            opts.artifact_detail,
-            &engine_version,
-            &schemas,
-            audit,
-        )
-        .await;
-        raw_artifacts.retain(|item| {
-            item.schema_identity
-                .as_deref()
-                .is_none_or(|schema| schemas.includes(schema))
-        });
-        Some(artifacts::build_inventory(
-            opts.artifact_detail,
-            raw_artifacts,
-            &schema_id_by_name,
-            &table_artifact_ids,
-            completeness,
-        ))
-    };
+    let artifact_inventory = artifact_capture
+        .map(|(raw_artifacts, completeness)| {
+            artifacts::build_inventory(
+                opts.artifact_detail,
+                raw_artifacts,
+                &schema_id_by_name,
+                &table_artifact_ids,
+                &schemas,
+                completeness,
+                audit,
+            )
+        })
+        .transpose()?;
+
+    apply_pg_bounded_row_scope(
+        &mut sizing.dataset_scope,
+        !bounded_row_count_tables.is_empty(),
+        used_catalog_row_count,
+        row_count_still_unavailable,
+    );
+    warn_incomplete_dataset_scope(&sizing.dataset_scope, audit);
 
     let mut blueprint = BlueprintFile {
         schema_version: SCHEMA_VERSION,
@@ -915,11 +1087,39 @@ pub async fn run(
         network: network_probe,
         database_topology: Some(sizing.topology),
         dataset_scope: Some(sizing.dataset_scope),
+        structure_scope: None,
+        source_environment: Some(source_environment),
+        statistics_evidence: None,
+        activity_snapshot: None,
         tables: tables_out,
         fk_edges,
         artifact_inventory,
     };
     crate::statistics::enrich_relational_statistics(&mut blueprint);
+    blueprint.initialize_v7_database_contract();
+    if !indexes_complete {
+        crate::topology::mark_structure_unavailable(
+            blueprint
+                .structure_scope
+                .as_mut()
+                .context("schema-v7 PostgreSQL structure scope is missing")?,
+            crate::topology::StructureFamily::Index,
+            "postgresql-indexes",
+            audit,
+        );
+    }
+    if !relationships_complete {
+        crate::topology::mark_structure_unavailable(
+            blueprint
+                .structure_scope
+                .as_mut()
+                .context("schema-v7 PostgreSQL structure scope is missing")?,
+            crate::topology::StructureFamily::Relationship,
+            "postgresql-foreign-keys",
+            audit,
+        );
+    }
+    qualify_v7_statistics(&mut blueprint, &bounded_row_count_tables)?;
 
     // Wrap up the connection driver (it'll exit when the client is dropped).
     drop(client);
@@ -948,6 +1148,176 @@ pub async fn run(
     Ok(blueprint)
 }
 
+fn pg_catalog_row_estimate_available(table: &TableRow) -> bool {
+    pg_reltuples_row_estimate(table.reltuples).is_some()
+        && table.stats_freshness != "never_analyzed"
+}
+
+fn pg_reltuples_row_estimate(reltuples: Option<f64>) -> Option<u64> {
+    reltuples
+        .filter(|rows| rows.is_finite() && *rows >= 0.0)
+        .map(|rows| rows.round() as u64)
+}
+
+fn pg_row_scope_intrinsically_incomplete(scope: &format::DatasetScope) -> bool {
+    scope.limitations.iter().any(|limitation| {
+        matches!(
+            limitation.as_str(),
+            "external-data-unmeasured"
+                | "local-member-only"
+                | "logical-partition-root-unmeasured"
+                | "shard-membership-incomplete"
+                | "distributed-row-count-unavailable"
+        )
+    })
+}
+
+fn apply_pg_bounded_row_scope(
+    scope: &mut format::DatasetScope,
+    has_bounded_row_count: bool,
+    used_catalog_row_count: bool,
+    row_count_still_unavailable: bool,
+) {
+    if !has_bounded_row_count {
+        return;
+    }
+    if !pg_row_scope_intrinsically_incomplete(scope) {
+        scope.row_count_method = if used_catalog_row_count {
+            "mixed-catalog-and-bounded-read"
+        } else {
+            "bounded-complete-read"
+        }
+        .to_string();
+        if !row_count_still_unavailable {
+            scope.row_count_completeness = "complete".to_string();
+            scope
+                .limitations
+                .retain(|item| item != "row-count-evidence-incomplete");
+        }
+        if !used_catalog_row_count {
+            scope
+                .limitations
+                .retain(|item| item != "row-counts-statistical");
+        }
+    }
+    crate::topology::sort_dedup(&mut scope.limitations);
+}
+
+fn qualify_v7_statistics(
+    blueprint: &mut BlueprintFile,
+    bounded_row_count_tables: &BTreeSet<String>,
+) -> Result<()> {
+    let dataset = blueprint
+        .dataset_scope
+        .as_ref()
+        .context("schema-v7 PostgreSQL statistics require dataset_scope")?;
+    let row_method = dataset.row_count_method.clone();
+    let size_method = dataset.size_method.clone();
+    let distributed = dataset.layout == "distributed";
+    let distributed_aggregate = size_method == "citus-distributed-relation-size";
+    let mut saw_stale = false;
+    let mut saw_unavailable = false;
+    for (table_id, table) in &mut blueprint.tables {
+        let evidence = table
+            .statistics
+            .as_mut()
+            .context("schema-v7 PostgreSQL table statistics are missing")?;
+        if table.object_kind == "external-table" || table.partitioning != "none" {
+            evidence.row_count_method = "unknown".to_string();
+            evidence.row_count_quality = "unavailable".to_string();
+            evidence.statistics_state = "not-applicable".to_string();
+            evidence.refresh_age_band = "not-applicable".to_string();
+            evidence.modification_ratio_band = "not-applicable".to_string();
+            evidence.sample_fraction_band = "not-applicable".to_string();
+            evidence.statistics_scope = "selected-object".to_string();
+            evidence.size_method = "unknown".to_string();
+            evidence.size_quality = "unavailable".to_string();
+            evidence.size_scope = "unknown".to_string();
+            evidence.size_accounting = "unknown".to_string();
+            evidence.size_visibility = "unavailable".to_string();
+            saw_unavailable = true;
+            continue;
+        }
+        let bounded_complete_read = bounded_row_count_tables.contains(table_id);
+        let row_estimate_available = evidence.statistics_state != "never-analyzed";
+        if bounded_complete_read {
+            evidence.row_count_method = "bounded-complete-read".to_string();
+            evidence.row_count_quality = "exact-read".to_string();
+            evidence.sample_fraction_band = "full".to_string();
+        } else {
+            if !row_estimate_available {
+                evidence.row_count_method = "unknown".to_string();
+                saw_unavailable = true;
+            } else {
+                evidence.row_count_method = "postgres-planner-estimate".to_string();
+            }
+            evidence.row_count_quality = if row_estimate_available {
+                "engine-estimate"
+            } else {
+                "unavailable"
+            }
+            .to_string();
+        }
+        evidence.statistics_scope = if distributed {
+            "local-member"
+        } else {
+            "global"
+        }
+        .to_string();
+        evidence.size_quality = if size_method == "unknown" {
+            "unavailable"
+        } else {
+            "engine-counter"
+        }
+        .to_string();
+        evidence.size_scope = if distributed_aggregate {
+            "logical-dataset"
+        } else if distributed {
+            "local-member"
+        } else {
+            "table-and-lob"
+        }
+        .to_string();
+        evidence.size_accounting = if size_method == "unknown" {
+            "unknown"
+        } else {
+            "allocated-segment"
+        }
+        .to_string();
+        evidence.size_visibility = if size_method == "unknown" {
+            "unavailable"
+        } else if distributed && !distributed_aggregate {
+            "partial"
+        } else {
+            "full"
+        }
+        .to_string();
+        saw_stale |= matches!(
+            evidence.statistics_state.as_str(),
+            "known-stale" | "never-analyzed"
+        );
+    }
+    let mut limitations = vec![
+        "modification-evidence-unavailable",
+        "optimizer-statistics-not-row-counter",
+        "refresh-age-unavailable",
+    ];
+    if row_method == "unknown" || size_method == "unknown" || saw_unavailable {
+        limitations.push("statistics-partial");
+    }
+    if saw_stale {
+        limitations.push("statistics-stale");
+    }
+    crate::statistics::rebuild_statistics_evidence(
+        blueprint,
+        "partial",
+        &["pg-stat-all-tables"],
+        &[],
+        &[],
+        &limitations,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Catalog reads
 // ---------------------------------------------------------------------------
@@ -957,13 +1327,62 @@ struct TableRow {
     oid: u32,
     schema_name: String,
     table_name: String,
-    reltuples: f64,
-    table_bytes: u64,
-    index_bytes: u64,
+    relkind: String,
+    relpersistence: String,
+    relispopulated: bool,
+    /// PostgreSQL inheritance parents must be sampled with ONLY. Without it,
+    /// the sample includes descendant rows while the parent's reltuples and
+    /// size evidence describe only the parent relation.
+    has_subclasses: bool,
+    parent_oid: Option<u32>,
+    partition_strategy: String,
+    partition_count: u64,
+    partition_key_cols: Vec<u32>,
+    partition_key_has_expression: bool,
+    check_count: u64,
+    // Keep catalog absence distinct from a measured zero until the final
+    // Blueprint boundary. The serialized zero is meaningful only beside the
+    // per-table unavailable provenance written below.
+    reltuples: Option<f64>,
+    table_bytes: Option<u64>,
+    index_bytes: Option<u64>,
     stats_freshness: String,
     /// True only when statistics prove the table was analyzed after its last
     /// modification and the resulting row estimate is zero.
     sampling_empty_proven: bool,
+    /// False for external tables and logical partition roots because sampling
+    /// either follows an external link or duplicates reads of child tables.
+    sampling_allowed: bool,
+    /// True when row-level security is active for the connected principal.
+    /// Sampling a policy-filtered subset would not represent the catalog row
+    /// population, so Tier 2 omits this table's row-derived measurements.
+    row_security_active: bool,
+    /// A partition is queried directly by the sampler. If an ancestor's RLS
+    /// policy is active, that direct query would bypass the parent policy, so
+    /// the table must not be sampled at all.
+    sampling_blocked_by_ancestor_row_security: bool,
+}
+
+impl TableRow {
+    fn object_kind(&self) -> &'static str {
+        match self.relkind.as_str() {
+            "m" => "materialized-view",
+            "f" => "external-table",
+            _ => "ordinary-table",
+        }
+    }
+
+    fn partitioning(&self) -> &'static str {
+        if self.relkind != "p" {
+            return "none";
+        }
+        match self.partition_strategy.as_str() {
+            "r" => "range",
+            "l" => "list",
+            "h" => "hash",
+            _ => "unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1008,35 +1427,70 @@ impl PgSizingAssessment {
         if capture
             .tables
             .iter()
-            .any(|table| table.stats_freshness != "fresh")
+            .any(|table| table.sampling_allowed && table.stats_freshness != "fresh")
         {
             self.dataset_scope
                 .limitations
                 .push("statistics-stale".to_string());
         }
-        if self.table_size_mode != PgTableSizeMode::CitusAggregate {
-            sort_dedup(&mut self.dataset_scope.limitations);
-            return;
+        if capture.tables.iter().any(|table| {
+            table.object_kind() == "ordinary-table" && table.stats_freshness == "never_analyzed"
+        }) {
+            self.dataset_scope.row_count_completeness = "incomplete".to_string();
+            self.dataset_scope
+                .limitations
+                .push("row-count-evidence-incomplete".to_string());
         }
-        if capture.distributed_size_complete {
-            self.topology
-                .catalogs_read
-                .push("citus-relation-size".to_string());
-            self.dataset_scope.size_completeness = "complete".to_string();
-            self.dataset_scope.size_method = "citus-distributed-relation-size".to_string();
-        } else {
-            self.topology
-                .catalogs_unreadable
-                .push("citus-relation-size".to_string());
+        if self.table_size_mode == PgTableSizeMode::CitusAggregate {
+            if capture.distributed_size_complete {
+                self.topology
+                    .catalogs_read
+                    .push("citus-relation-size".to_string());
+                self.dataset_scope.size_completeness = "complete".to_string();
+                self.dataset_scope.size_method = "citus-distributed-relation-size".to_string();
+            } else {
+                self.topology
+                    .catalogs_unreadable
+                    .push("citus-relation-size".to_string());
+                self.dataset_scope.size_completeness = "incomplete".to_string();
+                self.dataset_scope.size_method = "unknown".to_string();
+                self.dataset_scope
+                    .limitations
+                    .push("distributed-aggregate-unavailable".to_string());
+                self.dataset_scope
+                    .limitations
+                    .push("distributed-size-unavailable".to_string());
+                crate::topology::warn_distributed_size_unavailable(audit);
+            }
+        }
+        // A PostgreSQL partition root is a logical selected table whose rows
+        // and bytes live on its leaves. The engine reader marks the
+        // root's per-table evidence unavailable to avoid double counting. It
+        // remains in table_count, so reflect that evidence gap at dataset
+        // level instead of excluding the root or claiming complete coverage.
+        if capture.tables.iter().any(|table| table.relkind == "p") {
+            self.dataset_scope.row_count_completeness = "incomplete".to_string();
             self.dataset_scope.size_completeness = "incomplete".to_string();
-            self.dataset_scope.size_method = "unknown".to_string();
             self.dataset_scope
                 .limitations
-                .push("distributed-aggregate-unavailable".to_string());
+                .push("row-count-evidence-incomplete".to_string());
             self.dataset_scope
                 .limitations
-                .push("distributed-size-unavailable".to_string());
-            crate::topology::warn_distributed_size_unavailable(audit);
+                .push("logical-partition-root-unmeasured".to_string());
+            self.dataset_scope
+                .limitations
+                .push("size-evidence-incomplete".to_string());
+        }
+        if capture
+            .tables
+            .iter()
+            .any(|table| table.object_kind() == "external-table")
+        {
+            self.dataset_scope.row_count_completeness = "incomplete".to_string();
+            self.dataset_scope.size_completeness = "incomplete".to_string();
+            self.dataset_scope
+                .limitations
+                .push("external-data-unmeasured".to_string());
         }
         crate::topology::sort_dedup(&mut self.topology.catalogs_read);
         crate::topology::sort_dedup(&mut self.topology.catalogs_unreadable);
@@ -1085,7 +1539,7 @@ struct FkRow {
 
 /// Run 5× `SELECT 1` round trips and return the median latency in
 /// milliseconds. The 5 queries appear in the audit log as a single
-/// summary entry rather than 5 individual rows — keeps the audit
+/// summary entry rather than 5 individual rows: keeps the audit
 /// terse while still being truthful.
 async fn probe_rtt(client: &tokio_postgres::Client, audit: &mut AuditLog) -> Result<(u64, u64)> {
     let total_started = Instant::now();
@@ -1125,6 +1579,54 @@ async fn fetch_engine_version(
         1,
     );
     Ok(normalized_pg_version(&v))
+}
+
+async fn capture_pg_source_environment(
+    client: &tokio_postgres::Client,
+    audit: &mut AuditLog,
+) -> dbwarp_blueprint_core::SourceEnvironment {
+    let sql = "
+        SELECT (setting::int8 * current_setting('block_size')::int8)::int8 AS memory_bytes
+        FROM pg_settings
+        WHERE name = 'shared_buffers'
+    ";
+    let started = Instant::now();
+    match client.query_opt(sql, &[]).await {
+        Ok(row) => {
+            audit.record_query(
+                "SELECT shared_buffers capacity FROM pg_settings",
+                elapsed_ms(started),
+                u64::from(row.is_some()),
+            );
+            let memory_bytes = row
+                .and_then(|row| row.try_get::<_, i64>("memory_bytes").ok())
+                .map(|value| value.max(0) as u64);
+            crate::environment::database_source_environment(
+                None,
+                "unknown",
+                memory_bytes,
+                "database-buffer-cache",
+                "connected-instance",
+                vec!["pg-capacity-settings".to_string()],
+                Vec::new(),
+            )
+        }
+        Err(_) => {
+            audit.record_query_failure(
+                "SELECT shared_buffers capacity FROM pg_settings",
+                elapsed_ms(started),
+            );
+            crate::environment::database_source_environment(
+                None,
+                "unknown",
+                None,
+                "unknown",
+                "unknown",
+                Vec::new(),
+                vec!["pg-capacity-settings".to_string()],
+            )
+        }
+    }
 }
 
 async fn resolve_pg_schemas(
@@ -1320,6 +1822,7 @@ fn classify_pg_topology(evidence: &PgTopologyEvidence) -> PgSizingAssessment {
         local_role: if in_recovery { "secondary" } else { "primary" }.to_string(),
         visibility: "partial".to_string(),
         member_count: 1,
+        member_count_scope: "unknown".to_string(),
         identifiers_redacted: true,
         role_counts: BTreeMap::from([(
             if in_recovery { "secondary" } else { "primary" }.to_string(),
@@ -1328,6 +1831,7 @@ fn classify_pg_topology(evidence: &PgTopologyEvidence) -> PgSizingAssessment {
         features: Vec::new(),
         catalogs_read: vec!["pg-extension".to_string(), "pg-is-in-recovery".to_string()],
         catalogs_unreadable: Vec::new(),
+        catalogs_not_applicable: Vec::new(),
     };
 
     let replication_catalog = if in_recovery {
@@ -1498,41 +2002,145 @@ fn classify_pg_topology(evidence: &PgTopologyEvidence) -> PgSizingAssessment {
     }
 }
 
+/// Classify optimizer-statistics freshness against the run's reference
+/// instant, never the wall clock, so a pinned `--generated-at` capture is
+/// reproducible across the seven-day boundary.
+fn pg_stats_freshness(
+    reltuples: Option<f64>,
+    last_analyze: Option<chrono::DateTime<chrono::Utc>>,
+    reference: chrono::DateTime<chrono::Utc>,
+) -> String {
+    if reltuples.is_none() {
+        return "never_analyzed".to_string();
+    }
+    match last_analyze {
+        None => "never_analyzed".to_string(),
+        Some(analyzed_at) => {
+            let age = reference.signed_duration_since(analyzed_at);
+            if age.num_days() <= 7 {
+                "fresh".to_string()
+            } else {
+                "stale".to_string()
+            }
+        }
+    }
+}
+
 async fn list_tables(
     client: &tokio_postgres::Client,
     audit: &mut AuditLog,
     mode: PgTableSizeMode,
+    stats_reference: chrono::DateTime<chrono::Utc>,
+    schemas: &SchemaSelection,
 ) -> Result<PgTableCapture> {
-    let local_sql = "
+    let schema_predicate = schemas.and_sql("n.nspname");
+    let partition_leaf_schema_predicate = schemas.and_sql("leaf_ns.nspname");
+    let semantics_select = r#"
+               , c.relkind::text AS relkind
+               , c.relpersistence::text AS relpersistence
+               , c.relispopulated
+               , c.relhassubclass
+               , parent.parent_oid
+               , COALESCE(pt.partstrat::text, '') AS partition_strategy
+               , COALESCE(partition_leafs.leaf_count, 0)::int8 AS partition_count
+               , COALESCE(pt.partattrs::text, '') AS partition_key
+               , COALESCE(pt.partnatts, 0)::int4 AS partition_key_count
+               , (SELECT COUNT(*)::int8
+                    FROM pg_constraint checks
+                   WHERE checks.conrelid = c.oid
+                     AND checks.contype = 'c') AS check_count
+               , pg_catalog.row_security_active(c.oid) AS row_security_active
+               , COALESCE(ancestor_security.active, false)
+                   AS ancestor_row_security_active
+    "#;
+    let semantics_joins = format!(
+        r#"
+        LEFT JOIN pg_partitioned_table pt ON pt.partrelid = c.oid
+        LEFT JOIN LATERAL (
+            SELECT MIN(edge.inhparent)::int8 AS parent_oid
+            FROM pg_inherits edge
+            WHERE c.relispartition AND edge.inhrelid = c.oid
+        ) parent ON true
+        LEFT JOIN LATERAL (
+            WITH RECURSIVE descendants(oid, relkind, relnamespace) AS (
+                SELECT child.oid, child.relkind, child.relnamespace
+                FROM pg_inherits edge
+                JOIN pg_class child ON child.oid = edge.inhrelid
+                WHERE edge.inhparent = c.oid
+                UNION ALL
+                SELECT child.oid, child.relkind, child.relnamespace
+                FROM descendants ancestor
+                JOIN pg_inherits edge ON edge.inhparent = ancestor.oid
+                JOIN pg_class child ON child.oid = edge.inhrelid
+            )
+            SELECT COUNT(*)::int8 AS leaf_count
+            FROM descendants descendant
+            JOIN pg_namespace leaf_ns ON leaf_ns.oid = descendant.relnamespace
+            WHERE descendant.relkind <> 'p'
+              {partition_leaf_schema_predicate}
+        ) partition_leafs ON c.relkind = 'p'
+        LEFT JOIN LATERAL (
+            WITH RECURSIVE ancestors(oid) AS (
+                SELECT edge.inhparent
+                  FROM pg_inherits edge
+                 WHERE edge.inhrelid = c.oid
+                UNION
+                SELECT edge.inhparent
+                  FROM ancestors ancestor
+                  JOIN pg_inherits edge ON edge.inhrelid = ancestor.oid
+            )
+            SELECT COALESCE(
+                bool_or(pg_catalog.row_security_active(ancestor.oid)),
+                false
+            ) AS active
+              FROM ancestors ancestor
+        ) ancestor_security ON true
+    "#
+    );
+    let local_sql = format!(
+        r#"
         SELECT c.oid::int8 AS oid,
                n.nspname AS schema_name,
                c.relname AS table_name,
-               c.reltuples::float8 AS reltuples,
-               pg_table_size(c.oid)::int8 AS table_bytes,
-               pg_indexes_size(c.oid)::int8 AS index_bytes,
+               CASE WHEN c.relkind IN ('p','f') THEN 0::float8
+                    ELSE NULLIF(c.reltuples, -1)::float8 END AS reltuples,
+               CASE WHEN c.relkind IN ('p','f') THEN 0::int8
+                    ELSE pg_table_size(c.oid)::int8 END AS table_bytes,
+               CASE WHEN c.relkind IN ('p','f') THEN 0::int8
+                    ELSE pg_indexes_size(c.oid)::int8 END AS index_bytes,
                COALESCE(s.last_analyze, s.last_autoanalyze) AS last_analyze,
-               (COALESCE(s.last_analyze, s.last_autoanalyze) IS NOT NULL
+               (c.relkind NOT IN ('p','f')
+                AND COALESCE(s.last_analyze, s.last_autoanalyze) IS NOT NULL
                 AND COALESCE(s.n_mod_since_analyze, 0) = 0
                 AND c.reltuples = 0) AS sampling_empty_proven
+               {semantics_select}
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         LEFT JOIN pg_stat_all_tables s ON s.relid = c.oid
-        WHERE c.relkind = 'r'
+        {semantics_joins}
+        WHERE c.relkind IN ('r','p','m','f')
           AND n.nspname NOT IN ('pg_catalog','information_schema')
           AND n.nspname NOT LIKE 'pg_temp_%'
           AND n.nspname NOT LIKE 'pg_toast_temp_%'
+          {schema_predicate}
         ORDER BY 1
-    ";
-    let citus_sql = "
+    "#
+    );
+    let citus_sql = format!(
+        r#"
         SELECT c.oid::int8 AS oid,
                n.nspname AS schema_name,
                c.relname AS table_name,
-               CASE WHEN p.logicalrelid IS NULL THEN c.reltuples::float8 ELSE 0::float8 END AS reltuples,
-               CASE WHEN p.logicalrelid IS NULL
+               CASE WHEN c.relkind IN ('p','f') THEN 0::float8
+                    WHEN p.logicalrelid IS NULL THEN NULLIF(c.reltuples, -1)::float8
+                    ELSE NULL::float8 END AS reltuples,
+               CASE WHEN c.relkind IN ('p','f') THEN 0::int8
+                    WHEN p.logicalrelid IS NULL
                     THEN pg_table_size(c.oid)::int8
                     ELSE distributed_size.table_bytes
                END AS table_bytes,
-               CASE WHEN p.logicalrelid IS NULL
+               CASE WHEN c.relkind IN ('p','f') THEN 0::int8
+                    WHEN p.logicalrelid IS NULL
                     THEN pg_indexes_size(c.oid)::int8
                     ELSE GREATEST(
                         distributed_size.total_bytes - distributed_size.table_bytes,
@@ -1540,10 +2148,12 @@ async fn list_tables(
                     )
                END AS index_bytes,
                COALESCE(s.last_analyze, s.last_autoanalyze) AS last_analyze,
-               (p.logicalrelid IS NULL
+               (c.relkind NOT IN ('p','f')
+                AND p.logicalrelid IS NULL
                 AND COALESCE(s.last_analyze, s.last_autoanalyze) IS NOT NULL
                 AND COALESCE(s.n_mod_since_analyze, 0) = 0
                 AND c.reltuples = 0) AS sampling_empty_proven
+               {semantics_select}
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         LEFT JOIN pg_stat_all_tables s ON s.relid = c.oid
@@ -1553,77 +2163,118 @@ async fn list_tables(
                    citus_total_relation_size(p.logicalrelid)::int8 AS total_bytes
             WHERE p.logicalrelid IS NOT NULL
         ) distributed_size ON true
-        WHERE c.relkind = 'r'
+        {semantics_joins}
+        WHERE c.relkind IN ('r','p','m','f')
           AND n.nspname NOT IN ('pg_catalog','information_schema')
           AND n.nspname NOT LIKE 'pg_temp_%'
           AND n.nspname NOT LIKE 'pg_toast_temp_%'
+          {schema_predicate}
         ORDER BY 1
-    ";
-    let citus_safe_sql = "
+    "#
+    );
+    let citus_safe_sql = format!(
+        r#"
         SELECT c.oid::int8 AS oid,
                n.nspname AS schema_name,
                c.relname AS table_name,
-               CASE WHEN p.logicalrelid IS NULL THEN c.reltuples::float8 ELSE 0::float8 END AS reltuples,
-               CASE WHEN p.logicalrelid IS NULL THEN pg_table_size(c.oid)::int8 ELSE 0::int8 END AS table_bytes,
-               CASE WHEN p.logicalrelid IS NULL THEN pg_indexes_size(c.oid)::int8 ELSE 0::int8 END AS index_bytes,
+               CASE WHEN c.relkind IN ('p','f') THEN 0::float8
+                    WHEN p.logicalrelid IS NULL THEN NULLIF(c.reltuples, -1)::float8
+                    ELSE NULL::float8 END AS reltuples,
+               CASE WHEN c.relkind IN ('p','f') THEN 0::int8
+                    WHEN p.logicalrelid IS NULL THEN pg_table_size(c.oid)::int8 ELSE NULL::int8 END AS table_bytes,
+               CASE WHEN c.relkind IN ('p','f') THEN 0::int8
+                    WHEN p.logicalrelid IS NULL THEN pg_indexes_size(c.oid)::int8 ELSE NULL::int8 END AS index_bytes,
                COALESCE(s.last_analyze, s.last_autoanalyze) AS last_analyze,
-               (p.logicalrelid IS NULL
+               (c.relkind NOT IN ('p','f')
+                AND p.logicalrelid IS NULL
                 AND COALESCE(s.last_analyze, s.last_autoanalyze) IS NOT NULL
                 AND COALESCE(s.n_mod_since_analyze, 0) = 0
                 AND c.reltuples = 0) AS sampling_empty_proven
+               {semantics_select}
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         LEFT JOIN pg_stat_all_tables s ON s.relid = c.oid
         LEFT JOIN pg_dist_partition p ON p.logicalrelid = c.oid
-        WHERE c.relkind = 'r'
+        {semantics_joins}
+        WHERE c.relkind IN ('r','p','m','f')
           AND n.nspname NOT IN ('pg_catalog','information_schema')
           AND n.nspname NOT LIKE 'pg_temp_%'
           AND n.nspname NOT LIKE 'pg_toast_temp_%'
+          {schema_predicate}
         ORDER BY 1
-    ";
-    let suppressed_sql = "
+    "#
+    );
+    let suppressed_sql = format!(
+        r#"
         SELECT c.oid::int8 AS oid,
                n.nspname AS schema_name,
                c.relname AS table_name,
-               0::float8 AS reltuples,
-               0::int8 AS table_bytes,
-               0::int8 AS index_bytes,
+               NULL::float8 AS reltuples,
+               NULL::int8 AS table_bytes,
+               NULL::int8 AS index_bytes,
                COALESCE(s.last_analyze, s.last_autoanalyze) AS last_analyze,
                false AS sampling_empty_proven
+               {semantics_select}
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         LEFT JOIN pg_stat_all_tables s ON s.relid = c.oid
-        WHERE c.relkind = 'r'
+        {semantics_joins}
+        WHERE c.relkind IN ('r','p','m','f')
           AND n.nspname NOT IN ('pg_catalog','information_schema')
           AND n.nspname NOT LIKE 'pg_temp_%'
           AND n.nspname NOT LIKE 'pg_toast_temp_%'
+          {schema_predicate}
         ORDER BY 1
-    ";
+    "#
+    );
 
     let (rows, distributed_size_complete) = match mode {
         PgTableSizeMode::Local | PgTableSizeMode::CitusLocalMember => (
-            query_table_rows(client, audit, local_sql, "local").await?,
+            query_table_rows(client, audit, &local_sql, "local", stats_reference).await?,
             false,
         ),
         PgTableSizeMode::Suppress => (
-            query_table_rows(client, audit, suppressed_sql, "suppressed").await?,
+            query_table_rows(
+                client,
+                audit,
+                &suppressed_sql,
+                "suppressed",
+                stats_reference,
+            )
+            .await?,
             false,
         ),
         PgTableSizeMode::CitusAggregate => {
-            match query_table_rows(client, audit, citus_sql, "Citus aggregate").await {
+            match query_table_rows(
+                client,
+                audit,
+                &citus_sql,
+                "Citus aggregate",
+                stats_reference,
+            )
+            .await
+            {
                 Ok(rows) => (rows, true),
                 Err(_) => {
                     let rows = match query_table_rows(
                         client,
                         audit,
-                        citus_safe_sql,
+                        &citus_safe_sql,
                         "Citus aggregate suppressed",
+                        stats_reference,
                     )
                     .await
                     {
                         Ok(rows) => rows,
                         Err(_) => {
-                            query_table_rows(client, audit, suppressed_sql, "suppressed").await?
+                            query_table_rows(
+                                client,
+                                audit,
+                                &suppressed_sql,
+                                "suppressed",
+                                stats_reference,
+                            )
+                            .await?
                         }
                     };
                     (rows, false)
@@ -1642,6 +2293,7 @@ async fn query_table_rows(
     audit: &mut AuditLog,
     sql: &str,
     size_evidence: &str,
+    stats_reference: chrono::DateTime<chrono::Utc>,
 ) -> Result<Vec<TableRow>> {
     let started = Instant::now();
     let rows = client.query(sql, &[]).await.context("listing tables")?;
@@ -1653,18 +2305,64 @@ async fn query_table_rows(
         rows.len() as u64,
     );
     let mut out = Vec::with_capacity(rows.len());
-    let now = chrono::Utc::now();
     for r in rows {
         let oid: i64 = r.try_get("oid").context("decoding table oid")?;
         let schema_name: String = r.try_get("schema_name").context("decoding table schema")?;
         let table_name: String = r.try_get("table_name").context("decoding table name")?;
-        let reltuples: f64 = r
+        let relkind: String = r.try_get("relkind").context("decoding table object kind")?;
+        let relpersistence: String = r
+            .try_get("relpersistence")
+            .context("decoding table persistence")?;
+        let relispopulated: bool = r
+            .try_get("relispopulated")
+            .context("decoding materialized-view population state")?;
+        let has_subclasses: bool = r
+            .try_get("relhassubclass")
+            .context("decoding inheritance-child state")?;
+        let parent_oid: Option<i64> = r
+            .try_get("parent_oid")
+            .context("decoding partition parent")?;
+        let partition_strategy: String = r
+            .try_get("partition_strategy")
+            .context("decoding partition strategy")?;
+        let partition_count: i64 = r
+            .try_get("partition_count")
+            .context("decoding partition count")?;
+        let partition_key: String = r
+            .try_get("partition_key")
+            .context("decoding partition key ordinals")?;
+        let partition_key_count: i32 = r
+            .try_get("partition_key_count")
+            .context("decoding partition key component count")?;
+        let raw_partition_key = partition_key
+            .split_ascii_whitespace()
+            .map(str::parse::<i32>)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .context("decoding partition key component")?;
+        let partition_key_has_expression = raw_partition_key.len()
+            != usize::try_from(partition_key_count.max(0)).unwrap_or(usize::MAX)
+            || raw_partition_key.iter().any(|value| *value <= 0);
+        let partition_key_cols = if partition_key_has_expression {
+            Vec::new()
+        } else {
+            raw_partition_key
+                .into_iter()
+                .map(|value| value as u32)
+                .collect()
+        };
+        let check_count: i64 = r
+            .try_get("check_count")
+            .context("decoding CHECK constraint count")?;
+        let reltuples: Option<f64> = r
             .try_get("reltuples")
             .context("decoding table row estimate")?;
-        let table_bytes: i64 = r
+        if reltuples.is_some_and(|value| !value.is_finite() || value < 0.0) {
+            bail!("table row estimate was invalid instead of absent or nonnegative");
+        }
+        let table_bytes: Option<i64> = r
             .try_get("table_bytes")
             .context("decoding table byte estimate")?;
-        let index_bytes: i64 = r
+        let index_bytes: Option<i64> = r
             .try_get("index_bytes")
             .context("decoding index byte estimate")?;
         let last_analyze: Option<chrono::DateTime<chrono::Utc>> = r
@@ -1673,43 +2371,78 @@ async fn query_table_rows(
         let sampling_empty_proven: bool = r
             .try_get("sampling_empty_proven")
             .context("decoding proven-empty sampling flag")?;
-        let stats_freshness = if reltuples < 0.0 {
-            "never_analyzed".to_string()
-        } else {
-            match last_analyze {
-                None => "never_analyzed".to_string(),
-                Some(t) => {
-                    let age = now.signed_duration_since(t);
-                    if age.num_days() <= 7 {
-                        "fresh".to_string()
-                    } else {
-                        "stale".to_string()
-                    }
-                }
-            }
-        };
+        let row_security_active: bool = r
+            .try_get("row_security_active")
+            .context("decoding active row-security state")?;
+        let ancestor_row_security_active: bool = r
+            .try_get("ancestor_row_security_active")
+            .context("decoding ancestor row-security state")?;
+        let stats_freshness = pg_stats_freshness(reltuples, last_analyze, stats_reference);
         out.push(TableRow {
             oid: oid as u32,
             schema_name,
             table_name,
+            relkind: relkind.clone(),
+            relpersistence,
+            relispopulated,
+            has_subclasses,
+            parent_oid: parent_oid.map(|value| value as u32),
+            partition_strategy,
+            partition_count: decode_nonnegative(partition_count, "partition count")?,
+            partition_key_cols,
+            partition_key_has_expression,
+            check_count: decode_nonnegative(check_count, "CHECK constraint count")?,
             reltuples,
-            table_bytes: table_bytes.max(0) as u64,
-            index_bytes: index_bytes.max(0) as u64,
+            table_bytes: decode_optional_nonnegative(table_bytes, "table byte estimate")?,
+            index_bytes: decode_optional_nonnegative(index_bytes, "index byte estimate")?,
             stats_freshness,
             sampling_empty_proven,
+            sampling_allowed: pg_sampling_allowed(
+                &relkind,
+                relispopulated,
+                row_security_active || ancestor_row_security_active,
+            ),
+            row_security_active,
+            sampling_blocked_by_ancestor_row_security: ancestor_row_security_active,
         });
     }
     Ok(out)
 }
 
+fn decode_optional_nonnegative(value: Option<i64>, field: &str) -> Result<Option<u64>> {
+    value
+        .map(|value| {
+            u64::try_from(value)
+                .with_context(|| format!("{field} was negative instead of absent or zero"))
+        })
+        .transpose()
+}
+
+fn decode_nonnegative(value: i64, field: &str) -> Result<u64> {
+    u64::try_from(value).with_context(|| format!("{field} was negative"))
+}
+
+fn pg_sampling_allowed(
+    relkind: &str,
+    relispopulated: bool,
+    row_security_policy_active: bool,
+) -> bool {
+    !row_security_policy_active
+        && !matches!(relkind, "p" | "f")
+        && (relkind != "m" || relispopulated)
+}
+
 async fn list_columns(
     client: &tokio_postgres::Client,
     audit: &mut AuditLog,
+    schemas: &SchemaSelection,
 ) -> Result<Vec<ColumnRow>> {
     // Per-attribute info plus rough avg/p95 length for variable-length types.
     // Length stats come from pg_stats (samples-based, ANALYZE-driven). Stats
-    // may be missing — substitute 0 in that case.
-    let sql = "
+    // may be missing: substitute 0 in that case.
+    let schema_predicate = schemas.and_sql("n.nspname");
+    let sql = format!(
+        r#"
         SELECT a.attrelid::int8 AS relid,
                a.attnum::int2   AS attnum,
                a.attname        AS attname,
@@ -1725,12 +2458,14 @@ async fn list_columns(
               AND s.attname    = a.attname
         WHERE a.attnum > 0
           AND NOT a.attisdropped
-          AND c.relkind = 'r'
+          AND c.relkind IN ('r','p','m','f')
           AND n.nspname NOT IN ('pg_catalog','information_schema')
+          {schema_predicate}
         ORDER BY a.attrelid, a.attnum
-    ";
+    "#
+    );
     let started = Instant::now();
-    let rows = client.query(sql, &[]).await.context("listing columns")?;
+    let rows = client.query(&sql, &[]).await.context("listing columns")?;
     audit.record_query(
         "SELECT format_type(...), avg_width FROM pg_attribute JOIN pg_stats (column list)",
         elapsed_ms(started),
@@ -1764,8 +2499,11 @@ async fn list_columns(
 async fn list_indexes(
     client: &tokio_postgres::Client,
     audit: &mut AuditLog,
+    schemas: &SchemaSelection,
 ) -> Result<Vec<IndexRow>> {
-    let sql = "
+    let schema_predicate = schemas.and_sql("n.nspname");
+    let sql = format!(
+        r#"
         SELECT i.indrelid::int8 AS indrelid,
                c.relname        AS indexname,
                am.amname        AS method,
@@ -1781,12 +2519,27 @@ async fn list_indexes(
         JOIN pg_am  am   ON am.oid = c.relam
         JOIN pg_class tc ON tc.oid = i.indrelid
         JOIN pg_namespace n ON n.oid = tc.relnamespace
-        WHERE tc.relkind = 'r'
+        WHERE tc.relkind IN ('r','p','m')
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_inherits inherited_index
+              WHERE inherited_index.inhrelid = i.indexrelid
+          )
           AND n.nspname NOT IN ('pg_catalog','information_schema')
+          {schema_predicate}
         ORDER BY i.indrelid, c.relname
-    ";
+    "#
+    );
     let started = Instant::now();
-    let rows = client.query(sql, &[]).await.context("listing indexes")?;
+    let rows = match client.query(&sql, &[]).await {
+        Ok(rows) => rows,
+        Err(error) => {
+            audit.record_query_failure(
+                "SELECT FROM pg_index JOIN pg_class JOIN pg_am (index list)",
+                elapsed_ms(started),
+            );
+            return Err(error).context("listing indexes");
+        }
+    };
     audit.record_query(
         "SELECT amname, indisprimary, indisunique, indnkeyatts, indkey, indoption FROM pg_index JOIN pg_class JOIN pg_am ... (index list)",
         elapsed_ms(started),
@@ -1850,8 +2603,11 @@ async fn list_indexes(
 async fn list_foreign_keys(
     client: &tokio_postgres::Client,
     audit: &mut AuditLog,
+    schemas: &SchemaSelection,
 ) -> Result<Vec<FkRow>> {
-    let sql = "
+    let schema_predicate = schemas.and_sql("n.nspname");
+    let sql = format!(
+        r#"
         SELECT con.conrelid::int8   AS from_oid,
                con.confrelid::int8 AS to_oid,
                con.conkey::int2[]  AS cols,
@@ -1866,14 +2622,23 @@ async fn list_foreign_keys(
         JOIN pg_class c ON c.oid = con.conrelid
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE con.contype = 'f'
+          AND con.conparentid = 0
           AND n.nspname NOT IN ('pg_catalog','information_schema')
+          {schema_predicate}
         ORDER BY con.conrelid, con.confrelid
-    ";
+    "#
+    );
     let started = Instant::now();
-    let rows = client
-        .query(sql, &[])
-        .await
-        .context("listing foreign keys")?;
+    let rows = match client.query(&sql, &[]).await {
+        Ok(rows) => rows,
+        Err(error) => {
+            audit.record_query_failure(
+                "SELECT FROM pg_constraint (foreign-key list)",
+                elapsed_ms(started),
+            );
+            return Err(error).context("listing foreign keys");
+        }
+    };
     audit.record_query(
         "SELECT conrelid, confrelid, conkey, confkey FROM pg_constraint (FK list)",
         elapsed_ms(started),

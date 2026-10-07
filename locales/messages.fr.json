@@ -20,11 +20,11 @@
     "DBP1002E": {
       "summary": "Le schéma de base de données URI n'est pas pris en charge",
       "cause": "La valeur --connect n'utilisait pas un schéma d'URI PostgreSQL, MySQL ou SQL Server pris en charge.",
-      "action": "Utilisez postgresql://, postgres://, mysql://, sqlserver://, mssql:// ou tds://. mariadb:// n'est accepté que comme alias d'URI MySQL ; MariaDB n'est pas un moteur qualifié séparément."
+      "action": "Utilisez postgresql://, postgres://, mysql://, sqlserver://, mssql:// ou tds://. mariadb:// est accepté uniquement comme alias d’URI MySQL et n’ajoute pas la prise en charge de MariaDB."
     },
     "DBP1003E": {
       "summary": "Le remplacement du nom de serveur TLS n'est pas disponible",
-      "cause": "Cette version n'implémente pas --tls-server-name.",
+      "cause": "--tls-server-name n'est pas pris en charge.",
       "action": "Utilisez dans --connect un nom d'hôte correspondant au certificat. PostgreSQL et MySQL peuvent utiliser verify-ca lorsque la politique autorise la validation de la chaîne seule ; SQL Server valide le nom d'hôte dans les deux modes de vérification."
     },
     "DBP1004E": {
@@ -44,13 +44,13 @@
     },
     "DBP1007E": {
       "summary": "Le mode fidélité longueur n'est pas disponible pour ce moteur",
-      "cause": "Les contrôles explicites de fidélité de longueur s'appliquent actuellement aux captures PostgreSQL et MySQL actives, mais pas à SQL Server.",
-      "action": "Supprimez le mode explicite pour la capture SQL Server. Les alias d'URI de compatibilité n'étendent pas la matrice de moteurs qualifiée."
+      "cause": "Des contrôles explicites de fidélité de longueur s'appliquent à la capture en direct de PostgreSQL et de MySQL, mais pas à SQL Server.",
+      "action": "Supprimez le mode explicite pour la capture SQL Server. Les alias d'URI de compatibilité n'ajoutent pas de prise en charge pour un autre moteur."
     },
     "DBP1008E": {
       "summary": "Conflit d'options longueur-fidélité",
-      "cause": "L'ancien alias exact pour la longueur a été combiné avec le mode de fidélité strict.",
-      "action": "Supprimez l'ancien alias ou utilisez --length-fidelity exact --yes."
+      "cause": "--preserve-exact-lengths a été combiné avec la fidélité de longueur strict.",
+      "action": "Supprimez --preserve-exact-lengths ou utilisez --length-fidelity exact --yes."
     },
     "DBP1009E": {
       "summary": "La fidélité à la longueur exacte manque de consentement explicite",
@@ -60,11 +60,11 @@
     "DBP1010E": {
       "summary": "Le catalogue de localisation intégré est incomplet",
       "cause": "Une langue annoncée ne couvre pas exactement la surface active CLI, de diagnostic ou de présentation.",
-      "action": "Installez une version complète ou sélectionnez l'anglais ; les responsables doivent mettre à jour chaque paramètre régional avec chaque chaîne visible par le client."
+      "action": "Installez une version complète ou sélectionnez l'anglais."
     },
     "DBP1011E": {
       "summary": "Les arguments de ligne de commande ne sont pas valides",
-      "cause": "Clap a rejeté une option, une valeur, un conflit, une exigence ou un argument de position.",
+      "cause": "Une option, une valeur, un conflit, une exigence ou un argument positionnel est invalide.",
       "action": "Corrigez la commande en utilisant dbwarp-blueprint --help et réessayez."
     },
     "DBP1012E": {
@@ -299,7 +299,7 @@
     },
     "DBP1607E": {
       "summary": "L'initialisation de la clé d'anonymisation a échoué",
-      "cause": "Le fichier de clé conservé par le client était non sûr, illisible ou mal formé, ou la source aléatoire du système d'exploitation était indisponible.",
+      "cause": "Le fichier de clé d'anonymisation était non sûr, illisible ou mal formé, ou la source aléatoire du système d'exploitation était indisponible.",
       "action": "Utilisez un fichier à accès restreint contenant exactement 32 octets bruts ou 64 caractères hexadécimaux, ou omettez --anonymization-key-file pour obtenir une nouvelle clé locale au processus."
     },
     "DBP1701E": {
@@ -381,6 +381,56 @@
       "summary": "La preuve du principal de base de données était indisponible",
       "cause": "La session SQL Server connectée n'a pas pu signaler son principal authentifié, son principal serveur effectif ou son principal de base de données ; les champs d'identité de l'audit sont donc incomplets.",
       "action": "Vérifiez la connectivité et le comportement du serveur, puis réessayez avant d'utiliser l'audit comme preuve de l'identité de capture."
+    },
+    "DBP1422W": {
+      "summary": "L'évaluation de la complexité des artefacts a échoué",
+      "cause": "Le calcul local dérivé de la complexité n'a pas pu aboutir. L'inventaire des artefacts a été conservé, mais toutes les dimensions agrégées concernées sont inconnues.",
+      "action": "Examinez les détails de l'audit et relancez la capture ; ne vous fiez pas à l'évaluation de la complexité tant que l'avertissement persiste."
+    },
+    "DBP1423W": {
+      "summary": "Le catalogue des structures n'était pas disponible",
+      "cause": "Un catalogue d'index ou de relations n'a pas pu être lu après la réussite de l'inventaire principal des tables et des colonnes. Le Blueprint a donc été conservé avec une couverture structurelle explicitement incomplète.",
+      "action": "Vérifiez les privilèges de la source et l'état du catalogue, puis relancez la capture si des éléments complets sur les index et les relations sont nécessaires."
+    },
+    "DBP1424W": {
+      "summary": "La visibilité de la sécurité des lignes était indisponible",
+      "cause": "Blueprint n'a pas pu prouver si une table SQL Server concernée possède un filtre de sécurité des lignes actif. L'échantillonnage de niveau 2 a donc été ignoré pour cette table au lieu de traiter un sous-ensemble filtré comme la table complète.",
+      "action": "Accordez VIEW DEFINITION au niveau de la base de données ou ALTER ANY SECURITY POLICY, ou acceptez l'absence de statistiques de niveau 2 pour cette table."
+    },
+    "DBP1425W": {
+      "summary": "Un filtre de sécurité des lignes actif a supprimé l'échantillonnage",
+      "cause": "SQL Server a signalé un prédicat de filtre activé sur une table concernée. Blueprint a délibérément ignoré l'échantillonnage de niveau 2 au lieu de décrire le sous-ensemble filtré du principal connecté comme la table complète.",
+      "action": "Utilisez un principal de capture approuvé et non filtré si des statistiques complètes de niveau 2 sont requises, ou acceptez les statistiques explicitement absentes pour cette table."
+    },
+    "DBP1426E": {
+      "summary": "L'acquisition de base Oracle a échoué.",
+      "cause": "Configuration de base Oracle, démarrage de SQL*Plus, résolution du propriétaire, capture ou mappage : l'opération n'a pas pu être effectuée en toute sécurité.",
+      "action": "Examinez les détails techniques, la confirmation de l’aperçu, le chemin SQL*Plus, le répertoire réseau isolé, l’URI de service direct, les identifiants et les droits minimaux sur les catalogues, puis réessayez."
+    },
+    "DBP1427W": {
+      "summary": "La version du client Oracle n'a pas été vérifiée.",
+      "cause": "La capture du catalogue Oracle s'est terminée, mais la version du client SQL*Plus local n'a pas pu être entièrement vérifiée.",
+      "action": "Vérifiez les limitations de l'environnement source du Blueprint et assurez-vous que le client sélectionné est correct avant de vous fier à ses informations de version."
+    },
+    "DBP1428W": {
+      "summary": "La capture Oracle Basic s’est arrêtée prématurément",
+      "cause": "La session Oracle s'est arrêtée avant que toutes les requêtes de catalogue prévues ne soient terminées ; les tables, colonnes, lignes et tailles déjà lues ont été conservées, et le Blueprint a été marqué comme incomplet.",
+      "action": "Examinez l'ensemble de données et les limitations du catalogue, corrigez la source défectueuse et récapturez les données si le catalogue manquant est requis."
+    },
+    "DBP1429W": {
+      "summary": "Les preuves de catalogue supplémentaires de la capture Oracle Basic sont incomplètes",
+      "cause": "Les données de base concernant les tables, les colonnes, les lignes et la taille ont été conservées, tandis qu'une ou plusieurs requêtes de catalogue Oracle supplémentaires n'étaient pas disponibles.",
+      "action": "Examinez le catalogue Blueprint et les limitations par objet, corrigez les permissions optionnelles ou l'état du catalogue, et récapturez les données du catalogue manquantes si nécessaire."
+    },
+    "DBP1430W": {
+      "summary": "Le flux hors ligne Oracle Basic n’a pas été écrit",
+      "cause": "Le Blueprint a été créé, mais le fichier de flux hors ligne facultatif n'a pas pu être écrit en toute sécurité dans les limites configurées.",
+      "action": "Conservez Blueprint ; corrigez la destination du flux ou la limite configurée et relancez uniquement si le flux hors ligne est nécessaire."
+    },
+    "DBP1505E": {
+      "summary": "La capture hors ligne Oracle Basic a échoué",
+      "cause": "Le flux Oracle Basic local était illisible, doté de permissions non sûres, non borné, mal formé, incohérent ou ne correspondait pas à sa somme de contrôle et au contrat de requêtes compilé.",
+      "action": "Conservez le flux à l'intérieur de votre environnement et utilisez les permissions 0600 sur Unix ; utilisez un flux écrit par la version correspondante de DBWarp Blueprint et ne le modifiez pas avant la conversion."
     },
     "DBP1420E": {
       "summary": "Le schéma demandé n'est pas visible",

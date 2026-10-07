@@ -1,29 +1,24 @@
-//! Neutral columnar compression probe shared by Blueprint capture and replay.
+//! Neutral columnar compression probe used by Blueprint capture.
 //!
-//! The probe models the compression-relevant structure common to bulk
-//! transports: bounded row groups, one type descriptor per column, fixed-width
-//! value lengths, and column-contiguous payload bytes. It is deliberately not
-//! a database protocol or product wire format. Consumers must use the encoding
-//! tag to distinguish its table ratios from row-major per-column measurements.
+//! The probe frames rows column by column: bounded row groups, one type
+//! descriptor per column, value lengths, then payload bytes. Readers must use
+//! the encoding tag to distinguish its table ratios from row-major per-column
+//! measurements.
 
 use anyhow::{bail, Context, Result};
 
 #[cfg(feature = "sampling")]
 use zstd::stream::raw::{Encoder as ZstdRawEncoder, InBuffer, Operation, OutBuffer};
 
-/// Rows per neutral probe frame. This is a measurement policy, not a transport
-/// framing constant.
+/// Rows per probe frame.
 pub const TRANSFER_PROBE_FRAME_ROWS: usize = 1_000;
-/// V2 measurement policy: a smaller first frame exposes early flush overhead;
-/// larger continuation frames amortize descriptors and flushes over more data.
-/// These limits define the neutral probe, not a product transport contract.
+/// Probe frame byte ceilings: a smaller first frame and larger continuation
+/// frames.
 pub const TRANSFER_PROBE_STREAMING_FIRST_FRAME_BYTES: usize = 4 * 1024 * 1024;
 pub const TRANSFER_PROBE_STREAMING_FRAME_BYTES: usize = 16 * 1024 * 1024;
 pub const TRANSFER_PROBE_MAX_SAMPLE_BYTES: usize = 16 * 1024 * 1024;
 /// Maximum bytes used by the canonical sampling-cell envelope: one type/null
-/// tag plus the five-byte worst-case u32 payload-length varint. Budgeting the
-/// former arbitrary 32 bytes per cell prematurely narrowed wide schemas and
-/// left most of the documented table sample cap unused.
+/// tag plus the five-byte worst-case u32 payload-length varint.
 pub const TRANSFER_PROBE_CELL_OVERHEAD_BYTES: u64 = 6;
 
 const FRAME_MAGIC: [u8; 4] = *b"BTP1";
@@ -288,7 +283,7 @@ pub fn encode_columnar_transfer_probe_frames(
 
 /// Encode the current v2 measurement frames using the probe's first-frame and
 /// continuation-frame byte ceilings. This models generic batching effects;
-/// the bytes are not a product or database wire format.
+/// each frame remains independently bounded.
 pub fn encode_columnar_transfer_probe_streaming_frames(
     column_buffers: &[Vec<u8>],
     sample_rows: u64,
@@ -395,7 +390,7 @@ fn encode_columnar_transfer_probe_frame(
 /// Concatenate a frame sequence for one-shot zstd measurement. Keeping the
 /// frame boundaries in the uncompressed representation preserves repeated
 /// descriptors and length vectors while allowing zstd to learn across the
-/// bounded sample, like a long-lived bulk-compression context.
+/// bounded sample.
 pub fn concatenate_transfer_probe_frames(frames: &[Vec<u8>]) -> Result<Vec<u8>> {
     if frames.is_empty() {
         bail!("columnar transfer probe produced no frames");
@@ -503,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn splits_at_the_public_probe_row_limit() {
+    fn splits_at_the_probe_row_limit() {
         let mut column = Vec::new();
         for row in 0..1_001u32 {
             append_probe_cell(&mut column, 0x04, Some(row.to_string().as_bytes()));

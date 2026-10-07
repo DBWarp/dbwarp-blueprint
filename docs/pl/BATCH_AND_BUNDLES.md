@@ -7,10 +7,7 @@
 `dbwarp-blueprint` obsługuje zarówno pliki Blueprint z jednego źródła, jak i katalogi
 pakietów obejmujących wiele źródeł.
 
-Użyj pojedynczego pliku `blueprint.toml`, gdy klient udostępnia jedną bazę danych,
-jeden podzbiór tabel, jeden plik Parquet lub jeden plik Avro. Użyj pakietu, gdy
-klient ma wiele baz danych, wiele zestawów danych w plikach strukturalnych albo
-chce utworzyć jeden pakiet do przeglądu dla całego środowiska.
+Użyj pojedynczego `blueprint.toml`, gdy udostępniasz jedną bazę danych, jeden podzbiór tabel, jeden plik Parquet lub jeden plik Avro. Użyj pakietu, gdy masz wiele baz danych, wiele zestawów danych w formacie strukturalnym lub chcesz uzyskać jeden pakiet przeglądowy dla całego systemu.
 
 ## Układ pakietu
 
@@ -34,8 +31,7 @@ podrzędnych plików Blueprint. Jest to preferowana forma robocza, ponieważ ka�
 źródło pozostaje niezależnie możliwe do przeglądania, audytowania i ponownego
 uruchamiania.
 
-W celu osobnego, sprawdzonego przekazania spakuj katalog do jednego osadzonego
-pliku TOML:
+Aby udostępnić pakiet jako jeden plik, spakuj katalog do jednego, osadzonego pliku TOML:
 
 ```bash
 dbwarp-blueprint \
@@ -57,12 +53,7 @@ Bieżące pakiety używają `schema_version = 3` oraz
 Blueprint za pomocą `blueprint_path`, a pakiet spakowany osadza go w polu
 `blueprint`. Narzędzia zapisujące emitują wyłącznie te kanoniczne identyfikatory.
 
-Czytniki akceptują również schematy pakietu v1 i v2. Kontrakty te służą
-wyłącznie zgodności wejściowej: zaakceptowany starszy pakiet jest normalizowany
-do v3 i nigdy nie jest emitowany z dawnymi identyfikatorami. Ponieważ starsze
-pakiety nie określają, czy źródła są niezależne, replikami czy fragmentami, ich
-relacja staje się `unknown`, a sumy między źródłami są wyłączane. Ścieżki
-podrzędne muszą być względne i pozostać wewnątrz katalogu po kanonizacji.
+Paczka w wersji v1 lub v2 jest nadal odczytywana i jest normalizowana do wersji v3. Te wersje nie rejestrują, czy źródła są niezależne, replikami, czy fragmentami, więc ich relacja jest oznaczana jako `unknown`, a sumy zagregowane z różnych źródeł są pomijane. Ścieżki potomne muszą być względne i muszą pozostać wewnątrz katalogu paczki po kanonizacji.
 
 Pakiet v3 oddziela fizyczne źródła przechwytywania od logicznych zbiorów danych.
 Każde źródło ma `dataset_relationship`, `dataset_group` i
@@ -88,7 +79,7 @@ nie jest przedstawiana jako cały zbiór.
 
 ## Manifest wsadowy
 
-Utwórz manifest należący do klienta:
+Utwórz manifest:
 
 ```toml
 [defaults]
@@ -203,9 +194,7 @@ Dla źródeł Parquet i Avro:
   jednym podrzędnym pliku Blueprint.
 - `merge_same_schema` scala wiele plików w jedną tabelę logiczną, gdy liczby
   kolumn są zgodne.
-- `partitioned_dataset` obecnie używa tego samego zachowania scalania co
-  `merge_same_schema`; zachowuje rozróżnienie semantyczne dla wykrywania partycji
-  w stylu Hive.
+- `partitioned_dataset` zachowuje się jak `merge_same_schema`.
 
 Sprawdzanie scalania jest celowo konserwatywne. Wymaga zgodności zanonimizowanego
 układu kolumn, typów kanonicznych i natywnych, dopuszczalności wartości NULL,
@@ -267,9 +256,9 @@ Selektory można przekazać jako jeden ciąg rozdzielony przecinkami albo jako
 powtarzające się opcje `--select`. Sprzeczne wartości tego samego klucza są
 odrzucane.
 
-## Przekazanie do dalszego etapu
+## Złożoność artefaktów w pakietach.
 
-Pakiet jest przenośnym, możliwym do przeglądu wejściem Blueprint. Przed jego przyjęciem konsument dalszego etapu musi zweryfikować kontrakt pakietu i wersje schematu, zastosować zapisane selektory oraz zachować identyfikatory źródeł podczas łączenia wielu elementów podrzędnych, aby identyfikatory tabel nie mogły się zderzyć. Polecenia i reguły zgodności innych produktów DBWarp należą do ich osobno zweryfikowanej dokumentacji i celowo nie są tutaj powielane.
+Złożoność artefaktów pozostaje cechą każdego poszczególnego Blueprintu. Nigdy nie jest ona sumowana, uśredniana ani przypisywana do poziomu zestawu: źródła mogą korzystać z różnych silników, wersji analizatorów, dialektów, profili gramatycznych, zakresów i populacji podlegających ocenie, więc agregacja nie miałaby uzasadnionego znaczenia. Porównaj każde źródło niezależnie.
 
 ## Granica prywatności i przeglądu
 
@@ -281,9 +270,7 @@ Pakiet nie rozluźnia modelu prywatności:
   przechwytywanie Avro zawsze przechodzi przez rekordy kontenera, aby wyznaczyć
   liczniki, długości i udziały wartości null, nawet bez pomiaru kompresji;
 - zdekodowane próbki pozostają w pamięci;
-- metadane pakietu używają wybranych przez klienta identyfikatorów źródeł i
-  tagów;
+- Metadane pakietu wykorzystują identyfikatory i tagi źródła, które zostały przez Ciebie wybrane;
 - żadne polecenie pakietu nie wysyła telemetrii ani nie przesyła plików.
 
-Klient może usunąć dowolny podrzędny Blueprint lub wpis źródła przed
-udostępnieniem pakietu.
+Można usunąć dowolny podrzędny element Blueprint lub wpis źródłowy przed udostępnieniem pakietu.

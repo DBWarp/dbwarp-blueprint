@@ -20,11 +20,11 @@
     "DBP1002E": {
       "summary": "不支持数据库 URI 方案",
       "cause": "--connect 值未使用受支持的 PostgreSQL、MySQL 或 SQL Server URI 方案。",
-      "action": "使用 postgresql://、postgres://、mysql://、sqlserver://、mssql:// 或 tds://。mariadb:// 仅作为 MySQL URI 别名被接受；MariaDB 并非经过单独认证的引擎。"
+      "action": "请使用 postgresql://、postgres://、mysql://、sqlserver://、mssql:// 或 tds://。mariadb:// 仅作为 MySQL URI 别名接受，并不增加 MariaDB 支持。"
     },
     "DBP1003E": {
       "summary": "TLS 服务器名称覆盖不可用",
-      "cause": "此版本未实现 --tls-server-name。",
+      "cause": "--tls-server-name 不受支持。",
       "action": "使用与证书匹配的 --connect 主机名。如果策略允许仅验证证书链，PostgreSQL 和 MySQL 可以使用 verify-ca；SQL Server 在两种验证模式下都会验证主机名。"
     },
     "DBP1004E": {
@@ -44,13 +44,13 @@
     },
     "DBP1007E": {
       "summary": "该引擎无法使用长度保真模式",
-      "cause": "显式长度保真控制目前适用于实时 PostgreSQL 和 MySQL 采集，但不适用于 SQL Server。",
-      "action": "对 SQL Server 采集移除显式模式。兼容性 URI 别名不会扩展已验证的引擎矩阵。"
+      "cause": "明确的长度精确度控制适用于实时捕获的 PostgreSQL 和 MySQL 数据库，但不适用于 SQL Server。",
+      "action": "移除针对 SQL Server 捕获的显式模式。兼容性 URI 别名不会增加对其他数据库引擎的支持。"
     },
     "DBP1008E": {
       "summary": "长度保真度选项冲突",
-      "cause": "旧的长度别名 exact 与长度保真模式 strict 组合使用。",
-      "action": "删除旧别名或使用 --length-fidelity exact --yes。"
+      "cause": "--preserve-exact-lengths 与 strict 长度保真度同时使用。",
+      "action": "请移除 --preserve-exact-lengths，或使用 --length-fidelity exact --yes。"
     },
     "DBP1009E": {
       "summary": "精确长度保真度缺乏明确同意",
@@ -60,11 +60,11 @@
     "DBP1010E": {
       "summary": "嵌入式本地化目录不完整",
       "cause": "已提供的语言并未完整覆盖当前 CLI、诊断或演示界面。",
-      "action": "安装完整版本或选择英语；维护人员必须使用每个客户可见的字符串更新每个区域设置。"
+      "action": "安装完整版本，或选择英语。"
     },
     "DBP1011E": {
       "summary": "命令行参数无效",
-      "cause": "Clap 拒绝了选项、值、冲突、要求或位置参数。",
+      "cause": "一个选项、值、冲突、要求或位置参数无效。",
       "action": "使用 dbwarp-blueprint --help 更正命令并重试。"
     },
     "DBP1012E": {
@@ -299,7 +299,7 @@
     },
     "DBP1607E": {
       "summary": "匿名化密钥初始化失败",
-      "cause": "由客户保管的密钥文件不安全、无法读取或格式错误，或操作系统随机源不可用。",
+      "cause": "匿名化密钥文件不安全、无法读取或格式错误，或操作系统随机源不可用。",
       "action": "使用包含恰好 32 个原始字节或 64 个十六进制字符且权限受限的文件，或省略 --anonymization-key-file 以使用新的进程本地密钥。"
     },
     "DBP1701E": {
@@ -381,6 +381,56 @@
       "summary": "数据库主体证据不可用",
       "cause": "已连接的 SQL Server 会话无法报告其已认证主体、有效服务器主体或数据库主体，因此审计中的身份字段不完整。",
       "action": "检查连接和服务器行为；在将审计用作采集身份的证据之前重新运行。"
+    },
+    "DBP1422W": {
+      "summary": "对象复杂度评估失败",
+      "cause": "本地派生的复杂度计算无法完成。对象清单已保留，但所有受影响的汇总维度均为未知。",
+      "action": "检查审计详情并重新采集；在此警告不再出现之前，不要依赖复杂度评估。"
+    },
+    "DBP1423W": {
+      "summary": "结构目录不可用",
+      "cause": "核心表和列清单成功完成后，无法读取索引或关系目录，因此保留了 Blueprint，并明确标记结构覆盖范围不完整。",
+      "action": "检查源权限和目录状态；如果需要完整的索引和关系证据，请重新运行采集。"
+    },
+    "DBP1424W": {
+      "summary": "行级安全可见性不可用",
+      "cause": "Blueprint 无法证明受影响的 SQL Server 表是否具有活动的行级安全筛选器，因此跳过了该表的第 2 层采样，而没有把经过筛选的子集当作完整表。",
+      "action": "授予数据库范围的 VIEW DEFINITION 或 ALTER ANY SECURITY POLICY，或者接受该表缺少第 2 层统计信息。"
+    },
+    "DBP1425W": {
+      "summary": "活动的行级安全筛选器已抑制采样",
+      "cause": "SQL Server 报告受影响的表存在已启用的筛选谓词。Blueprint 有意跳过第 2 层采样，而没有把连接主体可见的筛选子集描述为完整表。",
+      "action": "如果需要完整的第 2 层统计信息，请使用经批准且不受筛选的采集主体；否则接受该表明确缺少这些统计信息。"
+    },
+    "DBP1426E": {
+      "summary": "Oracle 基础数据采集失败。",
+      "cause": "Oracle Basic 配置、SQL*Plus 启动、所有者解析、数据采集或映射未能安全完成。",
+      "action": "请检查技术详情、预览确认、SQL*Plus 路径、隔离的网络目录、直接服务 URI、凭据以及最低目录权限，然后重试。"
+    },
+    "DBP1427W": {
+      "summary": "Oracle客户端版本未经验证。",
+      "cause": "Oracle 数据库的目录采集已完成，但本地 SQL*Plus 客户端的版本未能完全验证。",
+      "action": "检查 Blueprint 的源环境限制，并在依赖其版本信息之前，验证所选客户端。"
+    },
+    "DBP1428W": {
+      "summary": "Oracle Basic 采集提前停止",
+      "cause": "Oracle会话在所有计划的目录查询完成之前停止；已读取的表、列、行以及大小信息会被保留，并且Blueprint会被标记为不完整。",
+      "action": "检查数据集和目录的限制，修复失败的源，如果需要缺失的目录数据，则重新采集。"
+    },
+    "DBP1429W": {
+      "summary": "Oracle Basic 采集的附加目录证据不完整",
+      "cause": "核心表、列、行和大小的数据被保留，但由于一个或多个额外的Oracle目录查询不可用。",
+      "action": "审查 Blueprint 目录以及每个对象的限制，修复可选的权限或目录的健康状况，并在需要时重新获取缺失的目录数据。"
+    },
+    "DBP1430W": {
+      "summary": "未写入 Oracle Basic 离线流",
+      "cause": "蓝图已生成，但由于配置的限制，无法安全地写入可选的离线流文件。",
+      "action": "请保留 Blueprint；如果需要离线传输，请更正传输目标或限制，然后重新运行。"
+    },
+    "DBP1505E": {
+      "summary": "Oracle Basic 离线采集失败",
+      "cause": "本地 Oracle Basic 流不可读、权限不安全、无边界、格式错误、不一致，或与其校验和及已编译查询契约不匹配。",
+      "action": "请将数据流保留在您的环境中，并在 Unix 系统上设置权限为 0600；使用由匹配的 DBWarp Blueprint 版本写出的数据流，并且在转换之前请勿对其进行编辑。"
     },
     "DBP1420E": {
       "summary": "请求的架构不可见",

@@ -1,4 +1,4 @@
--- blueprint.sqlserver.sql — pure-SQL alternative to the dbwarp-blueprint binary
+-- blueprint.sqlserver.sql: pure-SQL alternative to the dbwarp-blueprint binary
 -- for SQL Server.
 --
 -- Run as:
@@ -21,7 +21,7 @@
 --   - Output is one JSON document. Use sqlcmd -h -1 -W to remove headers
 --     and trim trailing whitespace.
 --   - The query covers every user table in <db>; it has no schema-subset
---     selector. Use the Rust collector when only selected schemas are approved.
+--     selector. Use the dbwarp-blueprint binary when only selected schemas are approved.
 
 SET NOCOUNT ON;
 
@@ -31,8 +31,13 @@ WITH tbl AS (
         t.name                   AS table_name,
         t.object_id              AS oid,
         t.is_ms_shipped
-    FROM sys.tables t
-    WHERE t.is_ms_shipped = 0
+FROM sys.tables t
+WHERE t.is_ms_shipped = 0
+  AND NOT EXISTS (
+      SELECT 1
+      FROM sys.external_tables external_table
+      WHERE external_table.object_id = t.object_id
+  )
 ),
 tbl_size AS (
     SELECT

@@ -10,7 +10,11 @@ Vorkompilierte Binärdateien von `dbwarp-blueprint` werden auf der GitHub-Releas
 
 Sie können eine Binärdatei herunterladen, ihre Prüfsumme verifizieren, sie lokal ausführen und die erzeugte Datei `blueprint.toml` prüfen, bevor Sie irgendetwas an DBWarp weitergeben.
 
-Wählen Sie einen exakten Release-Tag, zum Beispiel `https://github.com/DBWarp/dbwarp-blueprint/releases/tag/v1.5.0`, und laden Sie das Archiv sowie `SHA256SUMS.txt` von demselben Tag herunter. Verwenden Sie für einen reproduzierbaren oder auditierten Lauf keine veränderliche `releases/latest`-URL.
+Wählen Sie einen exakten Release-Tag, zum Beispiel
+`https://github.com/DBWarp/dbwarp-blueprint/releases/tag/<release-tag>`, und
+laden Sie das Archiv sowie `SHA256SUMS.txt` von demselben Tag herunter.
+Verwenden Sie für einen reproduzierbaren oder auditierten Lauf keine
+veränderliche `releases/latest`-URL.
 
 ## Dateien
 
@@ -22,8 +26,14 @@ Wählen Sie einen exakten Release-Tag, zum Beispiel `https://github.com/DBWarp/d
 | Windows x86_64 | `dbwarp-blueprint-windows-x86_64.zip` |
 | Offline-Quellcodeprüfpaket | `dbwarp-blueprint-source-vendored.tar.gz` |
 | Prüfsummen | `SHA256SUMS.txt` |
+| Prüfsumme der entpackten Programmdatei | `dbwarp-blueprint-<platform>.binary.sha256` |
 
 Jedes Release enthält außerdem `SHA256SUMS.txt`.
+
+Jedes Linux-Archiv unterstützt SQL Server Kerberos/GSSAPI, ohne beim Start von
+einer Kerberos-Bibliothek abhängig zu sein. Die Binärdatei lädt die
+Laufzeitumgebung der Plattform nur, wenn die integrierte Authentifizierung
+ausgewählt ist.
 
 Die Plattformarchive sind sofort ausführbare Betreiberpakete und keine
 Quellcodebäume. Sie enthalten Betriebs- und Auditreferenzen, können jedoch nicht
@@ -54,6 +64,19 @@ Get-FileHash .\dbwarp-blueprint-windows-x86_64.zip -Algorithm SHA256
 ```
 
 Vergleichen Sie den ausgegebenen Hash mit der entsprechenden Zeile in `SHA256SUMS.txt`.
+
+Prüfen Sie nach dem Entpacken des Archivs im selben Verzeichnis auch die
+Programmdatei mit der passenden Datei `*.binary.sha256` aus demselben
+Release-Tag. Jede Datei nennt die Programmdatei in ihrem entpackten Ordner, zum
+Beispiel `dbwarp-blueprint-linux-x86_64/dbwarp-blueprint`:
+
+```bash
+sha256sum -c dbwarp-blueprint-linux-x86_64.binary.sha256
+```
+
+Verwenden Sie unter macOS `shasum -a 256 -c`. Vergleichen Sie unter Windows
+`Get-FileHash .\dbwarp-blueprint-windows-x86_64\dbwarp-blueprint.exe` mit dem
+Wert in der Datei `.binary.sha256`.
 
 ## Heruntergeladene Binärdatei oder lokaler Build?
 

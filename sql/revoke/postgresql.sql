@@ -1,5 +1,5 @@
 -- =============================================================================
--- DBWarp Blueprint collector-role removal — PostgreSQL 13-18
+-- DBWarp Blueprint collector-role removal: PostgreSQL 13-18
 -- =============================================================================
 -- Run in the same target database used by the grant scripts. This revokes the
 -- grants those scripts can apply, then drops each dedicated login role.

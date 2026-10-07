@@ -20,7 +20,8 @@ exacte de la release, le système d’exploitation, les étapes de reproduction 
 
 | Mode | Utilisation du réseau à l'exécution |
 |---|---|
-| `--connect` actif | Une session du pilote de base de données vers le point de terminaison nommé. La résolution DNS peut contacter le résolveur configuré. L'authentification Kerberos/SSPI intégrée peut aussi contacter une infrastructure d'identité configurée, telle qu'un KDC ou un contrôleur de domaine. |
+| Connexion `--connect` en direct pour PostgreSQL, MySQL ou SQL Server | Une session du pilote de base de données vers le point de terminaison nommé. La résolution DNS peut contacter le résolveur configuré. L'authentification Kerberos/SSPI intégrée peut aussi contacter une infrastructure d'identité configurée, telle qu'un KDC ou un contrôleur de domaine. |
+| Aperçu Oracle nécessitant une confirmation explicite | Démarre uniquement l'exécutable `--oracle-sqlplus` choisi par l'opérateur en tant que processus enfant (y compris une sonde limitée `-V` si elle est disponible), puis l'utilise pour la session du catalogue. Les informations d'identification sont envoyées sur stdin, jamais dans les arguments du processus. Le processus enfant reçoit un répertoire privé vide comme `TNS_ADMIN` ; son environnement est effacé, puis seuls `PATH`, `SystemRoot`, `WINDIR`, `ORACLE_HOME`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `LIBPATH` et `SHLIB_PATH` sont transmis s'ils sont présents. La locale fixe, le fuseau horaire et les valeurs privées `TNS_ADMIN` sont définis séparément. |
 | `--batch-manifest` | Une session du pilote pour chaque source de base de données du manifeste, traitée séquentiellement. Les sources Parquet et Avro locales n'utilisent pas le réseau. Les qualifications DNS et d'authentification intégrée ci-dessus restent applicables. |
 | `--from-toml`, `--from-parquet`, `--from-avro`, `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Aucune connexion réseau initiée par l'application. Les entrées situées sur des systèmes de fichiers réseau restent du ressort du système d'exploitation et du stockage. |
 
@@ -44,7 +45,7 @@ serveur. Vérifiez que le travail du serveur est arrêté avant de réessayer.
 |---|---|
 | `--user-file` | source du nom d'utilisateur |
 | `--password-file` | source du mot de passe |
-| `--anonymization-key-file` | clé HMAC facultative conservée par le client et utilisée par le binaire ou le normaliseur de repli SQL afin de préserver les libellés d'objet anonymes entre les exécutions approuvées ; sous Unix, le mode ne doit pas autoriser la lecture par le groupe ou les autres utilisateurs |
+| `--anonymization-key-file` | Clé HMAC facultative que vous possédez, utilisée par le normaliseur binaire ou SQL de secours pour préserver les étiquettes d'objets anonymes lors des exécutions approuvées ; le mode doit empêcher group/other en lecture sur Unix. |
 | `--azure-token-file` | source du jeton SQL Server Entra ID |
 | `--tls-ca` | bundle d'autorités de certification approuvées |
 | `--tls-cert` | certificat TLS client |
@@ -141,15 +142,7 @@ sélectionnée à ces longueurs, pas seulement à celles des préfixes renvoyés
 La provenance de l’échantillonnage consigne les limites applicables ; une
 sortie bornée ne prouve pas que les valeurs complètes ont été mesurées.
 
-L’ordre des tables, schémas, index et objets hors tables utilise HMAC-SHA256
-avec séparation de domaines. Par défaut, l’outil obtient une nouvelle clé
-locale au processus auprès du système d’exploitation et ne l’émet jamais, ce
-qui empêche un lecteur hors ligne de tester des noms source candidats.
-N’utilisez `--anonymization-key-file` que si les mêmes libellés anonymes doivent
-être conservés entre des exécutions de comparaison approuvées. Le fichier doit
-contenir exactement 32 octets bruts ou 64 caractères hexadécimaux et être
-protégé comme une information d’identification. L’audit indique seulement si
-une clé éphémère ou conservée par le client a été utilisée, jamais sa valeur.
+Table, schéma, index et l'ordre des objets non tabulaires utilisent un HMAC-SHA256 séparé par des domaines. Par défaut, l'outil obtient une clé locale au processus à partir du système d'exploitation et ne l'émet jamais, empêchant ainsi un lecteur hors ligne de vérifier les noms de sources candidats. Utilisez `--anonymization-key-file` uniquement lorsque les mêmes étiquettes anonymes doivent persister entre les exécutions de comparaison approuvées. Le fichier doit contenir exactement 32 octets bruts ou 64 caractères hexadécimaux et doit être protégé comme un identifiant. L'audit enregistre si une clé éphémère ou une clé que vous avez fournie a été utilisée, mais jamais la valeur de la clé.
 
 Le normaliseur `blueprint_format.py` du chemin de repli SQL, qui utilise uniquement la bibliothèque standard, applique le même contrat d'ordre fondé sur une clé. Il obtient par défaut une nouvelle clé aléatoire du système d'exploitation, sauf si `--anonymization-key-file` est fourni, et ajoute après l'en-tête canonique un commentaire fixe indiquant le producteur et la source de la clé afin que sa sortie ne puisse pas être confondue avec celle du collecteur Rust.
 

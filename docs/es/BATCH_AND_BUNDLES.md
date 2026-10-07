@@ -7,11 +7,7 @@
 `dbwarp-blueprint` admite tanto archivos Blueprint de un solo origen como
 directorios de paquetes con varios orígenes.
 
-Utilice un solo `blueprint.toml` cuando el cliente comparta una base de datos, un
-subconjunto de tablas, un archivo Parquet o un archivo Avro. Utilice un paquete
-cuando el cliente tenga varias bases de datos, varios conjuntos de datos de
-archivos estructurados o desee un único paquete de revisión para todo su
-entorno.
+Utilice un `blueprint.toml` cuando esté compartiendo una sola base de datos, un subconjunto de una tabla, un archivo Parquet o un archivo Avro. Utilice un paquete cuando tenga múltiples bases de datos, múltiples conjuntos de datos de archivos estructurados, o desee un único paquete de revisión para toda una colección.
 
 ## Disposición del paquete
 
@@ -34,8 +30,7 @@ customer-blueprint-bundle/
 Blueprint secundarios. Esta es la forma de trabajo preferida porque cada origen
 se puede revisar, auditar y volver a ejecutar de manera independiente.
 
-Para una entrega revisada por separado, empaquete el directorio en un único
-TOML integrado:
+Para compartir un paquete como un solo archivo, comprima el directorio en un único archivo TOML incrustado:
 
 ```bash
 dbwarp-blueprint \
@@ -52,13 +47,7 @@ Los paquetes actuales usan `schema_version = 3` y
 Blueprint secundario mediante `blueprint_path`; un paquete integrado lo incluye
 en `blueprint`. Los escritores solo emiten estos identificadores canónicos.
 
-Los lectores también aceptan los esquemas de paquete v1 y v2. Esos contratos
-solo ofrecen compatibilidad de entrada: un paquete heredado aceptado se
-normaliza a v3 y nunca vuelve a emitirse con identificadores anteriores. Como
-los paquetes antiguos no indican si las fuentes son independientes, réplicas o
-fragmentos, su relación pasa a `unknown` y se suprimen los totales entre
-fuentes. Las rutas secundarias deben ser relativas y permanecer dentro del
-directorio tras la canonicalización.
+Un paquete de la versión v1 o v2 todavía se lee y se normaliza a la versión v3. Esas versiones no registran si las fuentes son independientes, réplicas o fragmentos, por lo que su relación se convierte en `unknown` y los totales agregados entre diferentes fuentes se suprimen. Las rutas secundarias deben ser relativas y deben permanecer dentro del directorio del paquete después de la normalización.
 
 El paquete v3 separa fuentes físicas de captura y conjuntos de datos lógicos.
 Cada fuente tiene `dataset_relationship`, `dataset_group` y
@@ -86,7 +75,7 @@ parcial de fragmentos como el conjunto completo.
 
 ## Manifiesto de lote
 
-Cree un manifiesto propiedad del cliente:
+Cree un manifiesto:
 
 ```toml
 [defaults]
@@ -203,9 +192,7 @@ Para orígenes Parquet y Avro:
   un archivo Blueprint secundario.
 - `merge_same_schema` combina muchos archivos en una tabla lógica cuando
   coincide el número de columnas.
-- `partitioned_dataset` utiliza actualmente el mismo comportamiento de
-  combinación que `merge_same_schema`; reserva la distinción semántica para el
-  descubrimiento de particiones al estilo Hive.
+- `partitioned_dataset` se comporta como `merge_same_schema`.
 
 La comprobación de combinación es deliberadamente conservadora. Requiere que
 coincidan la disposición anonimizada de columnas, los tipos canónicos y nativos,
@@ -267,9 +254,9 @@ Los selectores pueden pasarse como una cadena separada por comas o mediante
 varias opciones `--select`. Se rechazan los valores contradictorios para una
 misma clave.
 
-## Entrega posterior
+## Complejidad de los artefactos en los paquetes.
 
-Un paquete es una entrada Blueprint portátil y revisable. Antes de aceptarlo, un consumidor posterior debe validar el contrato del paquete y las versiones de esquema, aplicar los selectores registrados y conservar los identificadores de origen al combinar varios elementos secundarios para impedir colisiones entre identificadores de tabla. Los comandos y las reglas de compatibilidad de otros productos DBWarp pertenecen a su documentación, revisada por separado, y no se duplican aquí deliberadamente.
+La complejidad de los artefactos sigue siendo una propiedad de cada Blueprint hijo. Nunca se suman, se promedian ni se asigna una categoría a nivel de paquete: las fuentes pueden utilizar diferentes motores, versiones de analizadores, dialectos, perfiles de gramática, ámbitos y poblaciones de evaluación, por lo que un agregado no tendría un significado defendible. Compare cada fuente de forma independiente.
 
 ## Límite de privacidad y revisión
 
@@ -281,9 +268,7 @@ Un paquete no relaja el modelo de privacidad:
   la captura de Avro siempre recorre los registros del contenedor para obtener
   recuentos, longitudes y fracciones de nulos, incluso sin medir la compresión;
 - las muestras decodificadas permanecen en memoria;
-- los metadatos del paquete utilizan identificadores de origen y etiquetas
-  elegidos por el cliente;
+- los metadatos del paquete utilizan los identificadores y etiquetas que usted seleccionó;
 - ningún comando de paquetes envía telemetría ni carga archivos.
 
-El cliente puede eliminar cualquier Blueprint secundario o entrada de origen antes
-de compartir el paquete.
+Puede eliminar cualquier Blueprint hijo o entrada de origen antes de compartir el paquete.

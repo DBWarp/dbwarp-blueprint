@@ -1,5 +1,4 @@
 # Grok guidance
 
-Follow [AGENTS.md](AGENTS.md). This is the public DBWarp Blueprint source tree;
-keep all changes customer-facing, reproducible, and free of private operational
-context.
+Follow [AGENTS.md](AGENTS.md). It covers how to help someone run
+`dbwarp-blueprint` safely and how to change the code in this repository.

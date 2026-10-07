@@ -2,12 +2,15 @@
 //!
 //! This module never receives source values. It combines sanitized per-column
 //! aggregates with catalog relationships and marks every composite estimate as
-//! inferred so downstream generators and reports can distinguish it from a
+//! inferred so readers of the Blueprint can distinguish it from a
 //! direct tuple sample.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+use anyhow::{Context, Result};
 
 use crate::format::{BlueprintCardinality, BlueprintFile, BlueprintRelationship, BlueprintTable};
+use dbwarp_blueprint_core::{StatisticsEvidence, STATISTICS_EVIDENCE_CONTRACT};
 
 pub(crate) fn enrich_relational_statistics(blueprint: &mut BlueprintFile) {
     for table in blueprint.tables.values_mut() {
@@ -46,6 +49,65 @@ pub(crate) fn enrich_relational_statistics(blueprint: &mut BlueprintFile) {
             }
         }
     }
+}
+
+/// Rebuild the aggregate v7 statistics block from the table-level evidence.
+///
+/// Engine collectors call this after replacing the initial defaults with
+/// facts justified by their catalog queries. Keeping the count maps here
+/// prevents engine-specific summaries from drifting away from the
+/// table records the contract validator recomputes independently.
+pub(crate) fn rebuild_statistics_evidence(
+    blueprint: &mut BlueprintFile,
+    visibility: &str,
+    catalogs_read: &[&str],
+    catalogs_unreadable: &[&str],
+    catalogs_not_applicable: &[&str],
+    limitations: &[&str],
+) -> Result<()> {
+    let mut states = BTreeMap::new();
+    let mut row_qualities = BTreeMap::new();
+    let mut size_qualities = BTreeMap::new();
+    for (table_id, table) in &blueprint.tables {
+        let evidence = table.statistics.as_ref().with_context(|| {
+            format!("schema-v7 table '{table_id}' is missing statistics evidence")
+        })?;
+        increment_count(&mut states, &evidence.statistics_state)?;
+        increment_count(&mut row_qualities, &evidence.row_count_quality)?;
+        increment_count(&mut size_qualities, &evidence.size_quality)?;
+    }
+    blueprint.statistics_evidence = Some(StatisticsEvidence {
+        contract: STATISTICS_EVIDENCE_CONTRACT.to_string(),
+        visibility: visibility.to_string(),
+        table_count: u64::try_from(blueprint.tables.len())
+            .context("Blueprint table count exceeds statistics evidence u64 range")?,
+        counts_by_statistics_state: states,
+        counts_by_row_count_quality: row_qualities,
+        counts_by_size_quality: size_qualities,
+        catalogs_read: sorted_tokens(catalogs_read),
+        catalogs_unreadable: sorted_tokens(catalogs_unreadable),
+        catalogs_not_applicable: sorted_tokens(catalogs_not_applicable),
+        limitations: sorted_tokens(limitations),
+    });
+    Ok(())
+}
+
+fn increment_count(counts: &mut BTreeMap<String, u64>, token: &str) -> Result<()> {
+    let count = counts.entry(token.to_string()).or_default();
+    *count = count
+        .checked_add(1)
+        .context("statistics evidence count overflowed u64")?;
+    Ok(())
+}
+
+fn sorted_tokens(values: &[&str]) -> Vec<String> {
+    values
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 fn enrich_index_prefix_statistics(table: &mut BlueprintTable) {
@@ -311,8 +373,66 @@ fn quantize_fraction(value: f64) -> f64 {
 mod tests {
     use std::collections::BTreeMap;
 
+    use dbwarp_blueprint_core::TableStatisticsEvidence;
+
     use super::*;
     use crate::format::{BlueprintColumn, BlueprintIndex, BlueprintTable, FkEdge, Totals};
+
+    #[test]
+    fn aggregate_statistics_are_rebuilt_from_table_evidence() {
+        let evidence = |state: &str, row: &str, size: &str| TableStatisticsEvidence {
+            row_count_method: "postgres-planner-estimate".into(),
+            row_count_quality: row.into(),
+            statistics_state: state.into(),
+            refresh_age_band: "unknown".into(),
+            modification_ratio_band: "unknown".into(),
+            sample_fraction_band: "unknown".into(),
+            statistics_scope: "global".into(),
+            size_method: "postgres-local-relation-size".into(),
+            size_quality: size.into(),
+            size_scope: "table-and-lob".into(),
+            size_accounting: "allocated-segment".into(),
+            size_visibility: "full".into(),
+        };
+        let mut blueprint = BlueprintFile::default();
+        blueprint.tables = BTreeMap::from([
+            (
+                "table-001".into(),
+                BlueprintTable {
+                    statistics: Some(evidence("current", "engine-estimate", "engine-counter")),
+                    ..Default::default()
+                },
+            ),
+            (
+                "table-002".into(),
+                BlueprintTable {
+                    statistics: Some(evidence("known-stale", "engine-estimate", "engine-counter")),
+                    ..Default::default()
+                },
+            ),
+        ]);
+
+        rebuild_statistics_evidence(
+            &mut blueprint,
+            "partial",
+            &["pg-stat-all-tables"],
+            &[],
+            &[],
+            &["statistics-stale", "refresh-age-unavailable"],
+        )
+        .unwrap();
+
+        let aggregate = blueprint.statistics_evidence.unwrap();
+        assert_eq!(aggregate.table_count, 2);
+        assert_eq!(aggregate.counts_by_statistics_state["current"], 1);
+        assert_eq!(aggregate.counts_by_statistics_state["known-stale"], 1);
+        assert_eq!(aggregate.counts_by_row_count_quality["engine-estimate"], 2);
+        assert_eq!(aggregate.counts_by_size_quality["engine-counter"], 2);
+        assert_eq!(
+            aggregate.limitations,
+            vec!["refresh-age-unavailable", "statistics-stale"]
+        );
+    }
 
     #[test]
     fn enrichment_adds_prefix_and_fk_statistics_without_values() {
@@ -392,6 +512,10 @@ mod tests {
             network: None,
             database_topology: None,
             dataset_scope: None,
+            structure_scope: None,
+            source_environment: None,
+            statistics_evidence: None,
+            activity_snapshot: None,
             tables: BTreeMap::from([("child".into(), child), ("parent".into(), parent)]),
             fk_edges: BTreeMap::from([(
                 "child".into(),

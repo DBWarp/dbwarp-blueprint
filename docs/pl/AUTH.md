@@ -80,14 +80,19 @@ Linux Kerberos / GSSAPI:
 
 ```bash
 kinit user@EXAMPLE.COM
-DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh
-./target/release/dbwarp-blueprint \
+./dbwarp-blueprint \
   --connect sqlserver://db.internal,1433/payments \
   --auth-mode integrated \
   --expect-server-principal 'EXAMPLE\dbwarp-blueprint' \
   --tls-mode verify-full \
   --out blueprint.toml
 ```
+
+Archiwa wydania dla systemu Linux zawierają obsługę Kerberos/GSSAPI, ale nie
+wymagają jego bibliotek wykonawczych do uruchomienia. Program ładuje środowisko
+wykonawcze GSSAPI platformy po wybraniu `--auth-mode integrated` i zgłasza
+`DBP1604E`, jeśli go brakuje. Kompilacja ze źródeł musi włączyć tę funkcję za
+pomocą `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh`.
 
 Windows SSPI:
 
@@ -108,13 +113,7 @@ Powyższe przykłady zakładają, że podmiot zabezpieczeń Windows już istniej
 
 W tym trybie dwie kwestie operacyjne są ważniejsze niż przy `sql-auth`. Konto, na którym działa proces kolektora, jest tożsamością widzianą przez SQL Server. Jeżeli administrator uruchomi kolektor na hoście, na którym `BUILTIN\Administrators` należy do `sysadmin`, sesja działa jako `sysadmin` i omija każdą regułę `DENY` w skrypcie uprawnień, mimo że przechwytywanie kończy się powodzeniem. Opcja `--expect-server-principal` powoduje w takim przypadku błąd `DBP1606E` przed odczytem katalogu. Ponadto dedykowane konto usługi nie dziedziczy dostępu do plików po osobie, która je uruchomiła. Potrzebuje odczytu własnego pliku poświadczeń, jeżeli taki plik jest używany, oraz zapisu w ścieżkach `--out` i `--audit-log`.
 
-Każde połączenie z SQL Server zapisuje `ORIGINAL_LOGIN()`, `SUSER_SNAME()` i
-`USER_NAME()` w lokalnym audycie. Opcja `--expect-server-principal` jest
-opcjonalna i działa także z uwierzytelnianiem SQL. SQL Server porównuje wtedy
-`ORIGINAL_LOGIN()` z oczekiwanym podmiotem zabezpieczeń w ustanowionej sesji.
-Niezgodność lub niedostępna tożsamość powoduje `DBP1606E` przed odczytem
-katalogu. Dokładne tożsamości pozostają lokalnym dowodem audytowym i nie trafiają
-do Blueprint, prezentacji ani artefaktów publikacyjnych.
+Każde połączenie z SQL Server rejestruje `ORIGINAL_LOGIN()`, `SUSER_SNAME()` i `USER_NAME()` w lokalnym dzienniku audytu. `--expect-server-principal` jest opcjonalne i działa również z uwierzytelnianiem SQL. Polega ono na tym, że SQL Server porównuje `ORIGINAL_LOGIN()` z oczekiwaną tożsamością w sesji. Niezgodność lub niedostępna tożsamość powoduje błąd `DBP1606E` przed rozpoczęciem zbierania danych katalogu, dzięki czemu operator nie może przypadkowo pobierać danych przy użyciu innej lub zbyt uprawnionej sesji. Dokładne tożsamości pozostają dowodem w lokalnym dzienniku audytu i nie są uwzględniane w plikach Blueprint, deck ani bundle.
 
 ## Uwierzytelnianie baz danych zarządzanych w chmurze
 
@@ -163,4 +162,4 @@ Te uprawnienia autoryzują logowanie lub tunel połączenia; nigdy nie zastępuj
 | Logowanie Entra do Azure SQL Database lub Managed Instance | `entra-token` | Brak roli RBAC zasobu Azure dla dostępu do danych; użyj opisanych wyżej opcji tokenu SQL Server |
 | Każda obsługiwana zarządzana baza danych z natywnymi poświadczeniami | `sql-auth` | Brak |
 
-Przegląd uprawnień wdrożenia powinien rejestrować zależne od wersji uprawnienia bazy danych, dokładne polityki chmurowe, alternatywy wbudowanych ról i zastrzeżenia dotyczące zakresu. Konfiguracja dostawcy, tworzenie podmiotów, dostęp sieciowy, generowanie tokenów i opcjonalne pobieranie sekretów są obowiązkami procesu przygotowania lub wrappera; nie są to uprawnienia, które należy przypisywać kolektorowi tylko dlatego, że punkt końcowy jest zarządzany.
+Podczas przeglądania uprawnień, należy rejestrować wersjonowane uprawnienia bazy danych, dokładne zasady chmurowe, wbudowane alternatywy ról oraz ograniczenia zakresu. Konfiguracja usługi, tworzenie kont, dostęp sieciowy, generowanie tokenów oraz opcjonalne pobieranie sekretów to zadania związane z konfiguracją lub warstwą pomocniczą – a nie uprawnienia, które powinny być przypisywane do narzędzia zbierającego tylko dlatego, że punkt końcowy jest zarządzany.

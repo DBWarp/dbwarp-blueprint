@@ -1,5 +1,5 @@
 -- =============================================================================
--- dbwarp-blueprint least-privilege grants — MySQL 8.0.20+ / 8.4 / 9.7
+-- dbwarp-blueprint least-privilege grants: MySQL 8.0.20+ / 8.4 / 9.7
 -- Tier: ENHANCED  (STANDARD + non-table artifact inventory, --artifact-detail analyzed)
 -- =============================================================================
 -- Authorizes this command:
@@ -10,12 +10,13 @@
 --       --out blueprint.toml --audit-log blueprint.audit.txt
 --
 -- MySQL couples catalog VISIBILITY to object privileges, so each artifact
--- family needs its own privilege (all verified live, one privilege at a time):
+-- family needs its own privilege:
 --   information_schema.VIEWS / VIEW_TABLE_USAGE + view definitions  -> SHOW VIEW
 --   information_schema.ROUTINES rows + definitions                   -> SHOW_ROUTINE (global, 8.0.20+)
 --   information_schema.TRIGGERS                                      -> TRIGGER on the schema
 --   information_schema.EVENTS                                        -> EVENT on the schema
 --   performance_schema.user_defined_functions (loadable UDF census)  -> SELECT on that one table
+--   mysql.component (count only; UDF origin classification)          -> SELECT on that one table
 --   FEDERATED tables                                                 -> covered by SELECT (TABLES.ENGINE)
 -- EXECUTE is NOT needed (it only reveals routine rows without definitions).
 --
@@ -24,6 +25,8 @@
 --   to see triggers/events, so this account could also CREATE/DROP triggers in
 --   the granted schemas and CREATE/ALTER/DROP events there. SHOW_ROUTINE is
 --   global: it shows the definitions of ALL routines on the server.
+--   Schema SELECT also lets this principal follow FEDERATED tables in another
+--   client. Blueprint inventories them but deliberately never follows them.
 --   If that is unacceptable, use standard.sql and run --artifact-detail none,
 --   or accept a privilege_filtered inventory (the blueprint records what was
 --   unreadable; absence is never reported as proof).
@@ -39,8 +42,9 @@
 --
 -- PRE-CAPTURE REQUIREMENTS (full engine/tier matrix: ../README.md): complete
 -- STANDARD preparation and make --schema match each approved GRANT below.
--- Explicitly approve DDL-capable TRIGGER/EVENT, global SHOW_ROUTINE and the
--- global UDF census. Database-wide/global artifact evidence remains in scope.
+-- Explicitly approve DDL-capable TRIGGER/EVENT, global SHOW_ROUTINE, the
+-- global UDF census and the count-only component read. Database-wide/global
+-- artifact evidence remains in scope.
 -- Start with sample-rows 1000 / max-wall-secs 300 and raise both for higher
 -- requested detail; never add global ALL merely to change the visibility label.
 --
@@ -58,6 +62,11 @@ GRANT SELECT, SHOW VIEW, TRIGGER, EVENT ON `appdb`.* TO 'dbwarp_blueprint_enhanc
 
 GRANT SHOW_ROUTINE ON *.* TO 'dbwarp_blueprint_enhanced'@'collector-host';
 GRANT SELECT ON `performance_schema`.`user_defined_functions` TO 'dbwarp_blueprint_enhanced'@'collector-host';
+-- Blueprint issues COUNT(*) only. MySQL cannot restrict this grant to that
+-- aggregate, so another client using this credential could read component
+-- names/URNs. Remove this line if that is unacceptable; capture continues
+-- with a warning and conservatively unknown UDF origin.
+GRANT SELECT ON `mysql`.`component` TO 'dbwarp_blueprint_enhanced'@'collector-host';
 
 -- ---- verification (informational) ------------------------------------------
 SHOW GRANTS FOR 'dbwarp_blueprint_enhanced'@'collector-host';

@@ -80,14 +80,20 @@ Linux Kerberos/GSSAPI:
 
 ```bash
 kinit user@EXAMPLE.COM
-DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh
-./target/release/dbwarp-blueprint \
+./dbwarp-blueprint \
   --connect sqlserver://db.internal,1433/payments \
   --auth-mode integrated \
   --expect-server-principal 'EXAMPLE\dbwarp-blueprint' \
   --tls-mode verify-full \
   --out blueprint.toml
 ```
+
+Linux-Release-Archive unterstützen Kerberos/GSSAPI, benötigen dessen
+Laufzeitbibliotheken aber nicht zum Starten. Die Binärdatei lädt die
+GSSAPI-Laufzeitumgebung der Plattform, wenn `--auth-mode integrated` ausgewählt
+ist, und meldet `DBP1604E`, wenn sie fehlt. Ein Build aus dem Quellcode muss die
+Funktion mit `DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh`
+aktivieren.
 
 Windows SSPI:
 
@@ -108,14 +114,7 @@ Die obigen Beispiele setzen voraus, dass der Windows-Principal bereits als SQL-S
 
 Im Vergleich zu `sql-auth` sind zwei betriebliche Punkte in diesem Modus besonders wichtig. SQL Server sieht das Konto, unter dem der Collector-Prozess ausgeführt wird. Wird der Collector von einem Administrator auf einem Host gestartet, auf dem `BUILTIN\Administrators` zu `sysadmin` gehört, authentifiziert sich die Sitzung als `sysadmin` und umgeht sämtliche `DENY`-Regeln im Grant-Skript, obwohl die Erfassung erfolgreich ist. Mit `--expect-server-principal` wird dies vor jedem Katalogzugriff als `DBP1606E` abgebrochen. Ein dediziertes Dienstkonto erbt außerdem keine Dateizugriffe von dem Benutzer, der es gestartet hat. Es benötigt daher Leserechte auf seine eigene Anmeldedatendatei, sofern eine verwendet wird, sowie Schreibrechte auf die Pfade für `--out` und `--audit-log`.
 
-Bei jeder SQL-Server-Verbindung werden `ORIGINAL_LOGIN()`, `SUSER_SNAME()` und
-`USER_NAME()` im lokalen Audit aufgezeichnet. `--expect-server-principal` ist
-optional und funktioniert auch mit SQL-Authentifizierung. SQL Server vergleicht
-dabei `ORIGINAL_LOGIN()` auf der bestehenden Sitzung mit dem erwarteten
-Principal. Bei einer Abweichung oder nicht verfügbarer Identität schlägt der
-Lauf vor jeder Katalogerfassung mit `DBP1606E` fehl. Die exakten Identitäten
-bleiben lokale Auditnachweise und werden nicht in Blueprint, Präsentation oder
-Publikationsartefakte aufgenommen.
+Jede SQL Server-Verbindung protokolliert `ORIGINAL_LOGIN()`, `SUSER_SNAME()` und `USER_NAME()` im lokalen Audit-Protokoll. `--expect-server-principal` ist optional und funktioniert auch mit SQL-Authentifizierung. Es fordert SQL Server auf, `ORIGINAL_LOGIN()` mit dem erwarteten Benutzer für die etablierte Sitzung zu vergleichen. Ein Abweichung oder eine nicht verfügbare Identität führt zu einem Fehler mit `DBP1606E`, bevor eine Katalogerfassung stattfindet, sodass ein Operator versehentlich keine Daten unter einem anderen oder überprivilegierten Benutzer erfassen kann. Exakte Identitäten verbleiben als Beweismittel im lokalen Audit-Protokoll und sind nicht in den Blueprint-, Deck- oder Bundle-Dateien enthalten.
 
 ## Authentifizierung bei Cloud-verwalteten Datenbanken
 
@@ -164,4 +163,4 @@ Diese Berechtigungen autorisieren die Anmeldung oder einen Verbindungstunnel; si
 | Entra-Anmeldung bei Azure SQL Database oder Managed Instance | `entra-token` | Keine Azure-Ressourcen-RBAC-Rolle für Datenzugriff; verwenden Sie die oben dokumentierten SQL-Server-Tokenoptionen |
 | Jede unterstützte verwaltete Datenbank mit nativen Datenbankanmeldedaten | `sql-auth` | Keine |
 
-Die Berechtigungsprüfung der Bereitstellung sollte die versionsabhängigen Datenbankberechtigungen, exakten Cloud-Richtlinien, Alternativen mit integrierten Rollen und Einschränkungen des Geltungsbereichs festhalten. Providerkonfiguration, Prinzipalerstellung, Netzwerkzugriff, Tokenerzeugung und optionaler Geheimnisabruf sind Aufgaben der Bereitstellung oder des Wrappers – keine Berechtigungen, die allein wegen eines verwalteten Endpunkts an den Collector angehängt werden sollten.
+Wenn Sie Berechtigungen überprüfen, notieren Sie sich die versionsabhängigen Datenbankberechtigungen, die genauen Cloud-Richtlinien, die integrierten Rollenoptionen und die Einschränkungen des Geltungsbereichs. Die Dienstkonfiguration, die Erstellung von Prinzipien, der Netzwerkzugriff, die Token-Generierung und die optionale Abruf von Geheimnissen sind Aufgaben der Bereitstellung oder der Schnittstellenschicht – und keine Berechtigungen, die dem Collector allein aufgrund der Verwaltung des Endpunkts zugewiesen werden sollten.

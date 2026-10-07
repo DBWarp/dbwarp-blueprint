@@ -26,7 +26,7 @@ Propiedades recomendadas:
 - acceso de lectura limitado a la base de datos que se evalúa;
 - contraseña o token suministrado mediante archivo o solicitud interactiva, no incrustado en la URI.
 
-Los permisos exactos varían según el motor y la política del cliente. Si la cuenta no puede leer algunas vistas de catálogo o muestrear algunas tablas, la herramienta debería fallar de forma clara o emitir un Blueprint reducido; conserve el registro de auditoría.
+Los permisos exactos varían según el motor y su política. Si la cuenta no puede leer algunas vistas del catálogo ni muestrear algunas tablas, la herramienta falla claramente o genera un Blueprint reducido; mantenga el registro de auditoría.
 
 Utilice los scripts que tienen en cuenta la versión y las salvedades de
 [`../../sql/grants/README.md`](../../sql/grants/README.md). Después de la captura
@@ -47,20 +47,48 @@ Lee:
 - familias de tipos de columnas, posibilidad de valores nulos y estadísticas de longitud redondeadas cuando están disponibles;
 - tipo de índice, unicidad y ordinales de columnas anonimizados;
 - estructura del grafo de claves foráneas cuando está disponible;
+- bandas aproximadas de capacidad del origen que devuelve el punto de conexión de la base de datos cuando están disponibles;
 - recuentos acotados de objetos no tabulares y requisitos externos obtenidos
   de los catálogos de objetos con el valor predeterminado
   `--artifact-detail summary` (sin definiciones);
-- sonda opcional de RTT desde el entorno del cliente, salvo que se establezca `--no-rtt-probe`.
+- opcional, a menos que se configure `--no-rtt-probe`.
 
 No lee valores de filas.
 
+## Entorno de origen
+
+El bloque `[source_environment]` del esquema v7 se deriva exclusivamente de
+valores devueltos por la conexión de base de datos seleccionada. El recopilador
+nunca inspecciona su propio host ni presenta esa estación de trabajo como el
+servidor de base de datos.
+
+PostgreSQL y MySQL exponen una configuración de búfer de base de datos con los permisos mínimos normales, por lo que la memoria es evidencia parcial con base `database-buffer-cache` y la CPU sigue siendo desconocida.
+
+SQL Server solicita la capacidad del entorno de origen únicamente con `--artifact-detail graph` o `analyzed`, los modos de nivel avanzado. Los modos básico y estándar no realizan una consulta de capacidad del sistema operativo y registran las bandas de capacidad como `not-requested`.
+
+El script mejorado otorga los permisos `VIEW SERVER STATE` (2019) o `VIEW SERVER PERFORMANCE STATE` (2022/2025) requeridos a nivel de servidor en un lote separado que un administrador de bases de datos (DBA) puede eliminar. Si una captura mejorada no puede leer la DMV, la captura continúa y registra el catálogo como no legible en lugar de utilizar valores locales de la máquina o inventar capacidades.
+
+Esta ruta de captura no contacta ninguna API de nube, Kubernetes, hipervisor o
+sistema operativo.
+
 ## Inventario de artefactos no tabulares
 
-Desde el esquema v4, los Blueprints inventarían objetos no tabulares de forma independiente del muestreo de filas. De forma predeterminada, `--artifact-detail summary` lee catálogos de objetos, pero no definiciones, y solo emite recuentos acotados y clases de requisitos externos.
+Los planos (blueprints) inventarían los objetos que no son tablas de forma independiente del muestreo de filas. El `--artifact-detail summary` predeterminado lee los catálogos de objetos pero no las definiciones y emite solo recuentos limitados y clases de prerrequisitos externos.
 
 `--artifact-detail graph --yes` añade identificadores de objeto anónimos y aristas de dependencia. `--artifact-detail analyzed --yes` también lee temporalmente las definiciones disponibles y solo emite bandas léxicas acotadas de características y complejidad. Nunca se serializan texto de definiciones, nombres de objetos de origen, puntos de conexión, cadenas de proveedor, entidades de seguridad, secretos, claves, certificados, nombres de paquetes ni binarios.
 
-Los privilegios de catálogo afectan a las afirmaciones de ausencia. Revise `visibility`, `inventory_complete`, `dependencies_complete`, `catalogs_unreadable` y `families_not_inventoried`; no interprete un recuento cero como prueba cuando estos campos declaren una carencia. `DBP1410W` identifica un catálogo de artefactos opcional que no pudo leerse.
+Los privilegios de catálogo afectan a las afirmaciones de ausencia. Revise
+`visibility`, `inventory_complete`, `dependencies_complete`,
+`requirements_complete`, `catalogs_unreadable` y `families_not_inventoried`;
+no interprete un recuento cero ni una lista de requisitos vacía como prueba
+cuando estos campos declaren una carencia. Con el detalle graph/analyzed,
+revise también el `requirement_status` de cada objeto: solo `complete` hace que
+una lista vacía demuestre cero requisitos para ese objeto. `partial` conserva
+los hechos conocidos sin afirmar una cobertura exhaustiva; `unavailable`
+significa que no se estableció ninguna cobertura utilizable. En ambos casos,
+la evaluación de acoplamiento derivada de los requisitos de ese objeto sigue
+siendo desconocida. `DBP1410W` identifica un catálogo de artefactos opcional
+que no pudo leerse.
 
 La topología anónima de dependencias aún puede identificar una aplicación. Apruebe `graph` o `analyzed` solo si ese riesgo es aceptable. Consulte [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
 
@@ -72,11 +100,7 @@ El nivel 2 solo se habilita mediante el par explícito:
 --measure-compression --yes
 ```
 
-Además, el nivel 2 lee muestras acotadas de filas en la memoria del proceso.
-Los bytes muestreados se codifican en un búfer interno de tramas de filas y se
-usan para derivar mediciones agregadas de compresión, densidad de NULL,
-cardinalidad/frecuencia, longitud y estilo antes de descartar los valores y las
-huellas temporales.
+El nivel 2, además, lee muestras limitadas de filas en la memoria del proceso. Los bytes muestreados se codifican en un búfer en memoria y se utilizan para derivar mediciones de compresión agregada, densidad de nulos, cardinality/frequency, longitud y estilo, antes de que los valores y las huellas digitales temporales se descarten.
 
 Los bytes de las muestras:
 
@@ -86,7 +110,7 @@ Los bytes de las muestras:
 - no se envían por ninguna red aparte de la conexión de base de datos;
 - no se conservan después de resumir la muestra.
 
-El nivel 2 resulta valioso porque el rendimiento de DBWarp y el coste del tráfico saliente dependen de los bytes comprimidos, no de los bytes sin procesar de la tabla.
+El nivel 2 es valioso porque el tiempo de transferencia y el costo de salida dependen de los bytes comprimidos, no de los bytes de la tabla sin comprimir.
 
 ## Sonda de RTT
 
@@ -138,7 +162,7 @@ junto a `--out-dir`; un fallo gestionado lo elimina o restaura el paquete anteri
 
 Antes de compartir `blueprint.toml`, verifique que:
 
-- la cabecera sea la cabecera fija `dbwarp-blueprint v6`;
+- la cabecera sea la cabecera fija `dbwarp-blueprint v7`;
 - los identificadores de tabla tengan el aspecto `table-001`;
 - los identificadores de columna tengan el aspecto `col-1`;
 - los identificadores de esquema tengan el aspecto `schema-A`;
@@ -153,18 +177,9 @@ Antes de compartir `blueprint.toml`, verifique que:
   procedencia de muestra, nunca valores muestreados.
 - los campos de integridad de artefactos declaren la visibilidad filtrada, los catálogos ilegibles y las familias conocidas sin modelar.
 
-La salida MySQL balanced predeterminada contiene capacidades declaradas y
-longitudes de prefijos de índice exactas, además de muestras media/p95 con
-redondeo relativo. Revise expresamente los tres marcadores de fidelidad. Si se
-utilizó `--length-fidelity exact --yes`, apruebe también las estadísticas exactas
-muestreadas. Los valores de filas y los nombres reales de objetos deben seguir
-ausentes. Los marcadores de fidelidad que falten son heredados o desconocidos y
-no deben tratarse como metadatos aptos para pruebas de rendimiento.
+La salida equilibrada predeterminada MySQL contiene las capacidades declaradas exactas y las longitudes de prefijo de índice, además de muestras promedio/p95 relativamente redondeadas. Revise los tres marcadores de fidelidad explícitamente. Si se utilizó `--length-fidelity exact --yes`, apruebe también las estadísticas muestreadas exactas. Los valores de las filas y los nombres reales de los objetos deben seguir estando ausentes. Un Blueprint sin marcadores de fidelidad fue generado por una versión anterior; recupérelo.
 
-El marcador no afirma que el muestreo haya abarcado todas las tablas. Una
-entrega para pruebas de rendimiento también debe mostrar en el manifiesto del
-estimador cero columnas indexadas de anchura variable, no vacías y sin muestrear; aumente
-`--max-wall-secs` y vuelva a capturar si no se supera este control.
+El indicador no afirma que el muestreo haya cubierto todas las tablas. Si se informa `DBP1406W`, aumente `--max-wall-secs` y vuelva a capturar.
 
 ## Seguridad operativa
 

@@ -23,7 +23,7 @@ canónicos los comandos, valores, identificadores y esquemas de salida:
 
 Para ejecuciones desatendidas, establezca `DBWARP_BLUEPRINT_LANG=fr` o una
 configuración regional estándar del proceso. Un `--lang` explícito siempre
-tiene prioridad. Los códigos DBP y los detalles de bajo nivel del proveedor
+tiene prioridad. Los códigos DBP y los detalles de bajo nivel del controlador
 permanecen canónicos para que un error localizado se pueda buscar y compartir
 con el servicio de soporte.
 
@@ -60,34 +60,11 @@ Resulta útil cuando el nombre de usuario contiene caracteres difíciles de codi
   --audit-log mysql-appdb.audit.txt
 ```
 
-Para una reconstrucción sintética representativa del rendimiento, utilice la
-política balanced predeterminada: metadatos exactos de declaraciones e índices
-de MySQL y anchuras muestreadas con redondeo ajustado:
+La receta anterior ya utiliza la política equilibrada predeterminada: metadatos exactos de MySQL declaration/index y anchos muestreados ajustados.
 
-```bash
-./dbwarp-blueprint \
-  --connect mysql://mysql-primary.internal:3306/appdb \
-  --user-file /etc/dbwarp/mysql-blueprint.user \
-  --password-file /etc/dbwarp/mysql-blueprint.pass \
-  --tls-mode verify-full \
-  --tls-ca /etc/pki/mysql-ca.pem \
-  --measure-compression --yes \
-  --out mysql-appdb.blueprint.toml \
-  --audit-log mysql-appdb.audit.txt
-```
+Confirme `declared_length_fidelity = "exact"`, `index_length_fidelity = "exact"` y `observed_length_fidelity = "relative-rounded-v2"`. Utilice `--length-fidelity exact --yes` solo después de que su organización apruebe el intercambio de estadísticas de longitud muestreadas exactas. Los nombres y los valores permanecen excluidos.
 
-Confirme `declared_length_fidelity = "exact"`,
-`index_length_fidelity = "exact"` y
-`observed_length_fidelity = "relative-rounded-v2"`. Utilice
-`--length-fidelity exact --yes` únicamente después de que el cliente apruebe
-compartir estadísticas exactas de las longitudes muestreadas. Los nombres y
-valores permanecen excluidos.
-
-En entornos con miles de tablas, aumente `--max-wall-secs` por encima de su valor
-predeterminado de 300 segundos cuando sea necesario. Los marcadores de fidelidad
-certifican la política, mientras que el estimador posterior exige por separado
-longitudes media y p95 observadas para cada columna indexada, de anchura variable
-y no vacía antes de marcar un conjunto de datos como apto para pruebas de rendimiento.
+En bases de datos con miles de tablas, aumente `--max-wall-secs` por encima de su valor predeterminado de 300 segundos si es necesario. Los marcadores de fidelidad describen la política; no indican que el muestreo haya alcanzado todas las tablas.
 
 ## Procedimiento: autenticación SQL de SQL Server
 
@@ -116,10 +93,10 @@ Genere el token fuera de la herramienta y, a continuación, entréguelo mediante
 ```bash
 install -d -m 700 "$HOME/.cache/dbwarp-blueprint"
 TOKEN_FILE="$HOME/.cache/dbwarp-blueprint/sql-token"
+install -m 600 /dev/null "$TOKEN_FILE"
 az account get-access-token \
   --resource https://database.windows.net/ \
   --query accessToken -o tsv > "$TOKEN_FILE"
-chmod 600 "$TOKEN_FILE"
 
 ./dbwarp-blueprint \
   --connect sqlserver://sql-primary.database.windows.net,1433/appdb \
@@ -127,11 +104,15 @@ chmod 600 "$TOKEN_FILE"
   --auth-mode entra-token \
   --azure-token-file "$TOKEN_FILE" \
   --tls-mode verify-full \
-  --tls-ca /etc/pki/sqlserver-ca.pem \
   --measure-compression --yes \
   --out mssql-entra.blueprint.toml \
   --audit-log mssql-entra.audit.txt
 ```
+
+Azure SQL presenta un certificado de una CA pública, por lo que este
+procedimiento deja `--tls-ca` sin establecer y utiliza el almacén de confianza
+del sistema operativo. Un archivo `--tls-ca` proporcionado sustituye ese almacén
+por un certificado; consulte [TLS](TLS.md).
 
 ## Procedimiento: revisión de seguridad de solo catálogo
 
@@ -147,7 +128,7 @@ chmod 600 "$TOKEN_FILE"
   --yes
 ```
 
-Este es el modo de revisión con menos fricción. Evita el muestreo de filas, pero produce estimaciones posteriores de compresión y tráfico saliente menos precisas.
+Este es el modo de revisión con la menor cantidad de fricción. Evita el muestreo de filas, pero produce estimaciones de compresión y salida menos precisas.
 
 ## Evaluar la complejidad de migración no tabular
 
@@ -177,7 +158,7 @@ Tras la aprobación de seguridad, recopile dependencias anónimas y evidencia ac
 ```
 
 
-Revise `visibility`, los tres indicadores de integridad, `catalogs_unreadable`, `families_not_inventoried` y `counts_by_external_class`. Trate cada clase externa como una tarea de migración explícita. Un objeto inventariado no demuestra que DBWarp pueda recrearlo o traducirlo; compárelo con la matriz de capacidad de migración. Consulte [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
+Revise `visibility`, todas las tres opciones de integridad, `catalogs_unreadable`, `families_not_inventoried` y `counts_by_external_class`. Trate cada clase externa como una tarea de migración explícita. No considere que un objeto inventariado sea una prueba de que DBWarp puede recrearlo o traducirlo; pregunte a DBWarp qué tipos de objetos son compatibles con su migración. Consulte [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
 
 ## Procedimiento: deshabilitar la sonda de RTT
 
@@ -212,9 +193,9 @@ En sistemas de producción grandes, mantenga conservadora la primera ejecución:
 
 Si la salida marca muchas muestras como sesgadas o ausentes, repita la ejecución desde una réplica de lectura con un presupuesto de tiempo mayor.
 
-## Procedimiento: un cliente, varias bases de datos
+## Receta: Varias bases de datos en un solo paquete.
 
-Utilice un manifiesto por lotes cuando un cliente desee un único paquete revisado para varias bases de datos.
+Utilice un manifiesto por lotes cuando desee un paquete revisado para varias bases de datos.
 
 `customer.batch.toml`:
 
@@ -270,9 +251,9 @@ Ejecución:
 Esto escribe `bundle.toml`, un Blueprint secundario por origen y una auditoría por origen.
 Las Blueprints secundarios se pueden seguir revisando de manera independiente.
 
-## Procedimiento: un cliente, bases de datos y archivos de lago de datos combinados
+## Receta: Bases de datos mixtas y archivos de data lake.
 
-Utilice orígenes de archivos estructurados en el mismo lote cuando el cliente tenga extractos Parquet o Avro junto a bases de datos en vivo.
+Utilice fuentes de archivos estructurados en el mismo lote cuando tenga extracciones de Parquet o Avro junto a bases de datos en vivo.
 
 ```toml
 [defaults]
@@ -291,7 +272,7 @@ tags = ["database"]
 [[source]]
 id = "orders_parquet"
 kind = "parquet"
-paths = ["/mnt/customer/orders/year=*/month=*/*.parquet"]
+paths = ["/data/orders/year=*/month=*/*.parquet"]
 dataset_mode = "partitioned_dataset"
 logical_table = "orders"
 tags = ["lake", "orders"]
@@ -299,12 +280,12 @@ tags = ["lake", "orders"]
 [[source]]
 id = "events_avro"
 kind = "avro"
-paths = ["/mnt/customer/events/*.avro"]
+paths = ["/data/events/*.avro"]
 dataset_mode = "one_table_per_file"
 tags = ["lake", "events"]
 ```
 
-Actualmente, `partitioned_dataset` combina archivos como `merge_same_schema`, pero mantiene visible la intención del cliente en el paquete. Conserve los esquemas no relacionados en orígenes separados.
+`partitioned_dataset` fusiona archivos como `merge_same_schema` y registra el modo declarado en el paquete. Mantenga los esquemas no relacionados en fuentes separadas.
 
 ## Procedimiento: extraer un único origen o una tabla de un paquete
 
@@ -332,14 +313,11 @@ Extraiga una tabla de un origen:
   --out erp_pg_table_042.blueprint.toml
 ```
 
-Utilice este procedimiento cuando el cliente apruebe solo una parte de un entorno para una prueba de rendimiento o cuando quiera generar un conjunto de datos pequeño y específico a partir de un paquete grande.
+Utilice esto cuando solo una parte de un paquete está aprobada para ser compartida.
 
-## Procedimiento: empaquetar para entrega un paquete revisado por separado
+## Receta: Empaquetar un conjunto revisado para compartir.
 
-El directorio de paquete de trabajo contiene las Blueprints secundarias y las
-auditorías con acceso controlado. No lo transfiera en su totalidad. Después de
-revisar los valores del manifiesto y las Blueprints secundarias, cree una
-entrega en un solo archivo:
+El directorio del paquete de trabajo contiene Blueprints secundarios y auditorías con control de acceso. No lo transfiera por completo. Después de revisar los valores del manifiesto y los Blueprints secundarios, cree un único archivo para compartir:
 
 ```bash
 ./dbwarp-blueprint \
@@ -352,12 +330,12 @@ los identificadores de grupo de conjuntos de datos y los metadatos de rutas de
 auditoría proporcionados por el operador. Utilice valores anónimos, inspeccione
 el TOML empaquetado y transfiéralo únicamente por el canal aprobado.
 
-## Procedimiento: paquete de entrega por lotes
+## Receta: Paquete por lotes para compartir.
 
-Siga la [política de entrega](QUICKSTART.md#review-and-share). Conserve localmente el manifiesto de trabajo, las auditorías, los registros de comandos y las notas de revisión. Cree este directorio independiente solo con el Blueprint empaquetado y revisado.
+Siga las [directrices de revisión y compartición](QUICKSTART.md#review-and-share). Mantenga el manifiesto de trabajo, las auditorías y los registros de comandos localmente; cree este directorio separado solo a partir del Blueprint empaquetado revisado.
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   customer-blueprint-bundle.packed.toml
 ```
 
@@ -374,7 +352,7 @@ Este modo solo lee el archivo TOML y escribe la presentación. Rechaza las opcio
 ## Procedimiento: reproducibilidad idéntica byte a byte
 
 Fije la marca de tiempo y reutilice la misma clave de anonimización protegida
-y custodiada por el cliente:
+que usted custodia:
 
 ```bash
 ./dbwarp-blueprint \
@@ -387,26 +365,15 @@ y custodiada por el cliente:
   --yes
 ```
 
-El archivo de clave debe contener exactamente 32 bytes sin procesar o 64
-caracteres hexadecimales, no debe permitir la lectura al grupo ni a otros
-usuarios en Unix y nunca debe incluirse en la entrega. Sin esta opción, una
-clave aleatoria nueva del sistema operativo cambia deliberadamente el orden de
-las etiquetas anónimas en cada ejecución. Fijar solo `--generated-at` no es
-suficiente. Use el procedimiento completo para instantáneas forenses aprobadas;
-una presentación generada dos veces a partir del mismo Blueprint revisado sigue
-siendo idéntica byte a byte si no cambian la marca de tiempo ni el idioma.
+El archivo de clave debe contener exactamente 32 bytes sin procesar o 64 caracteres hexadecimales, no debe ser group/world-readable en Unix, y nunca debe compartirse. Sin esta opción, una clave generada aleatoriamente por el sistema operativo cambia intencionalmente el orden de la etiqueta anónima en cada ejecución. Fijar solo `--generated-at` es insuficiente. Utilice la receta completa para obtener instantáneas forenses aprobadas; una presentación generada dos veces a partir del mismo Blueprint revisado permanecerá idéntica en bytes cuando su marca de tiempo y lenguaje no se modifiquen.
 
-## Procedimiento: paquete de entrega para DBWarp
+## Receta: Paquete para compartir con DBWarp.
 
-Siga la [política de entrega](QUICKSTART.md#review-and-share).
+Siga las [directrices de revisión y compartición](QUICKSTART.md#review-and-share). El paquete predeterminado contiene solo el Blueprint aprobado:
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   blueprint.toml
 ```
 
-Comparta por defecto solo el `blueprint.toml` revisado o el paquete empaquetado. La presentación `blueprint.pptx` solo puede acompañarlo tras revisar su contenido y nivel de confidencialidad y aprobarla por separado conforme a la política de su organización.
-
-Conserve las auditorías, registros de comandos, notas de revisión y presentaciones no aprobadas como evidencia local con acceso controlado. Pueden contener puntos de conexión, identidades autenticadas, rutas locales, tiempos e identificadores del manifiesto. Envíe evidencia operativa solo para una necesidad concreta de soporte mediante un canal seguro aprobado.
-
-La herramienta no crea `command-used.redacted.txt`; es un registro opcional del operador, no un elemento estándar de entrega. Nunca incluya archivos de contraseñas o tokens, claves de anonimización, claves privadas de CA, volcados del cliente ni registros de bases de datos.
+Agregue `blueprint.pptx` únicamente después de una revisión y aprobación separadas. Mantenga los registros de auditoría, los registros de comandos y el material credential/key fuera del directorio compartido; envíe los registros de auditoría solo para una necesidad de soporte específica a través de un canal seguro aprobado.

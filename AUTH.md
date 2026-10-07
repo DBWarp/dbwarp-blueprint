@@ -76,14 +76,19 @@ Linux Kerberos / GSSAPI:
 
 ```bash
 kinit user@EXAMPLE.COM
-DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh
-./target/release/dbwarp-blueprint \
+./dbwarp-blueprint \
   --connect sqlserver://db.internal,1433/payments \
   --auth-mode integrated \
   --expect-server-principal 'EXAMPLE\dbwarp-blueprint' \
   --tls-mode verify-full \
   --out blueprint.toml
 ```
+
+Linux release archives include Kerberos/GSSAPI support but do not require its
+runtime libraries to start. The binary loads the platform GSSAPI runtime when
+`--auth-mode integrated` is selected and reports `DBP1604E` if it is missing.
+A source build must enable the feature with
+`DBWARP_BLUEPRINT_FEATURES=integrated-auth-gssapi ./build.sh`.
 
 Windows SSPI:
 
@@ -111,7 +116,7 @@ works with SQL authentication too. It asks SQL Server to compare
 mismatch or unavailable identity fails with `DBP1606E` before any catalog
 capture, so an operator cannot accidentally collect under a different or
 over-privileged login. Exact identities remain local audit evidence and are
-not included in the Blueprint, deck, or publication artifacts.
+not included in the Blueprint, deck or bundle files.
 
 ## Cloud-managed database authentication
 
@@ -160,4 +165,9 @@ These permissions authorize login or a connection tunnel; they never replace the
 | Azure SQL Database or Managed Instance Entra login | `entra-token` | No Azure resource RBAC role for database data access; use the SQL Server token flags documented above |
 | Any supported managed database using a native database credential | `sql-auth` | None |
 
-The deployment permission review should record the version-aware database grants, exact cloud policies, built-in role alternatives, and scope caveats. Provider configuration, principal creation, network access, token generation, and optional secret retrieval are provisioning or wrapper responsibilities—not permissions that should be attached to the collector merely because the endpoint is managed.
+When you review permissions, record the version-aware database grants, exact
+cloud policies, built-in role alternatives, and scope caveats. Service
+configuration, principal creation, network access, token generation, and
+optional secret retrieval are provisioning or wrapper responsibilities, not
+permissions that should be attached to the collector merely because the
+endpoint is managed.

@@ -10,13 +10,23 @@ application audit's exhaustive visibility.
 
 ## Network egress
 
-Live `--connect` mode opens one database-driver session to the named endpoint.
-Batch mode processes its sources sequentially and opens one session for each
-database source. DNS resolution may use the configured resolver, and integrated
-Kerberos/SSPI authentication may contact a KDC or domain controller. Offline
-TOML, Parquet, Avro, and bundle operations open no application-initiated
-network connection, although a path on a network filesystem remains subject to
-the host's storage stack.
+Live `--connect` mode for PostgreSQL, MySQL, and SQL Server opens one
+database-driver session to the named endpoint. Batch mode processes its sources
+sequentially and opens one session for each database source. DNS resolution may
+use the configured resolver, and integrated Kerberos/SSPI authentication may
+contact a KDC or domain controller. Offline TOML, Parquet, Avro, and bundle
+operations open no application-initiated network connection, although a path on
+a network filesystem remains subject to the host's storage stack.
+
+The acknowledgement-gated Oracle preview instead starts only the SQL*Plus
+executable explicitly named by `--oracle-sqlplus` (including a bounded `-V`
+probe when available) and uses it for the catalogue session. The child receives
+an empty private directory as `TNS_ADMIN`; its credential is written to stdin
+and never placed in process arguments. The environment is cleared before launch.
+Only `PATH`, `SystemRoot`, `WINDIR`, `ORACLE_HOME`, `LD_LIBRARY_PATH`,
+`DYLD_LIBRARY_PATH`, `LIBPATH`, and `SHLIB_PATH` are forwarded when present;
+the collector separately sets its fixed locale, time-zone, and private
+`TNS_ADMIN` values.
 
 There is no telemetry, license check, version update, cloud API call, or upload
 path in the binary.
@@ -32,7 +42,7 @@ The tool reads the inputs selected by the active mode:
 |---|---|---|
 | `--user-file PATH` | If supplied | Username only. Trailing whitespace stripped; empty file is an error. |
 | `--password-file PATH` | If supplied | Reads once. The DBWarp-owned `Secret` buffer zeroizes on drop; database drivers may retain their own copies as documented in SECURITY.md. Refuses group/other-readable mode on Unix. |
-| `--anonymization-key-file PATH` | If supplied | Customer-held 32-byte or 64-hex-character HMAC key. Refuses if mode is world/group readable on Unix. The key is never emitted. |
+| `--anonymization-key-file PATH` | If supplied | A 32-byte or 64-hex-character HMAC key you hold. Refuses if mode is world/group readable on Unix. The key is never emitted. |
 | `--azure-token-file PATH` | If supplied | SQL Server Entra ID token. Reads once; the DBWarp-owned `Secret` buffer zeroizes on drop. Refuses group/other-readable mode on Unix. |
 | `--tls-ca PATH` | If supplied | Trusted CA PEM read at connect time. PostgreSQL/MySQL accept a bundle; SQL Server accepts exactly one certificate. The supplied file replaces the engine's default roots. |
 | `--tls-cert PATH` | If supplied | PostgreSQL/MySQL client TLS cert (PEM), read at connect time. Rejected for SQL Server with `DBP1015E`. |
@@ -43,7 +53,7 @@ The tool reads the inputs selected by the active mode:
 | `--batch-manifest PATH` | If supplied | Manifest and every local input, credential, token, and TLS path it references. |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | If supplied | Bundle TOML plus relative Blueprint files needed for listing, extraction, or packing. |
 | controlling terminal/console (`/dev/tty` on Unix-like systems) | If no password source supplied | Echo-disabled prompt. |
-| (build-time only) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` in vendored releases, `vendor/mysql_async`, `vendor-crates/*` in offline bundles | Only when `./build.sh` runs | Toolchain, source provenance, and standard Cargo build inputs |
+| (build-time only) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` in vendored releases, `vendor/*`, `vendor-crates/*` in offline bundles | Only when `./build.sh` runs | Toolchain, source provenance, and standard Cargo build inputs |
 
 The application has no explicit path to read:
 - `~/.pgpass`, `~/.my.cnf`, `~/.aws/credentials`, `~/.azure/credentials`
@@ -63,7 +73,7 @@ The tool writes only outputs selected by the active mode:
 | File | When | Content |
 |---|---|---|
 | `--out PATH` (default `./blueprint.toml`) | Live database, Parquet, Avro, bundle-extract, and bundle-pack runs | Blueprint or packed-bundle TOML. Not written by deck-only, bundle-list, dry-run, or help/version modes. |
-| `--deck PATH` | Only if specified | A PowerPoint (.pptx) deck summarising the anonymized Blueprint. Built locally from the same in-memory Blueprint, or from `--from-toml` input — no extra database read, no network, no third-party library. |
+| `--deck PATH` | Only if specified | A PowerPoint (.pptx) deck summarising the anonymized Blueprint. Built locally from the same in-memory Blueprint, or from `--from-toml` input: no extra database read, no network, no third-party library. |
 | `--audit-log PATH` | Only if specified | An atomic replacement copy of the audit log emitted to stderr. Existing content is not appended. |
 | `--out-dir DIR` | Non-dry-run batch mode | `bundle.toml`, per-source `blueprints/` and `audits/`, an ownership marker, and `errors.txt` after partial failure. Publication uses a sibling staging directory and recovery marker. |
 | (build-time only) `./target/`, `./build/` | Only when `./build.sh` runs | Standard Cargo build outputs |
@@ -84,7 +94,7 @@ when `--lang` does not already select a supported locale. Terminal rendering may
 When `--password-env VAR_NAME` or `--user-env VAR_NAME` is specified,
 the tool reads exactly that named variable. There is no fallback to
 common defaults like `PGPASSWORD`, `MYSQL_PWD`, `MSSQL_PASSWORD`,
-`USER`, or `LOGNAME` — those fallbacks are deliberately not
+`USER`, or `LOGNAME`: those fallbacks are deliberately not
 implemented.
 
 Platform database, TLS, DNS, and integrated-auth libraries can consult their
@@ -172,6 +182,7 @@ artifact_inventory:
   external_prerequisites: 3
   inventory_complete: false
   dependencies_complete: false
+  requirements_complete: false
   analysis_complete: false
 
 database_operations_observed:
@@ -239,7 +250,7 @@ The audit log:
   changes were present. The final binary SHA-256 remains an external
   release/registry checksum because a binary cannot embed its own final hash.
 - Records the **source** of the credential (file path, env var name,
-  TTY) — never the value.
+  TTY): never the value.
 - On SQL Server, records the exact session identities reported by
   `ORIGINAL_LOGIN()`, `SUSER_SNAME()`, and `USER_NAME()`. When
   `--expect-server-principal` is supplied, it also records the expected value
@@ -283,7 +294,7 @@ The audit log:
 runs where a credential was actually read. Failure paths that abort
 before credential acquisition (URI parse errors, refusal of
 URI-embedded passwords, dry-run, etc.) intentionally do *not* emit
-this line — there's nothing to assert about a credential that was
+this line: there's nothing to assert about a credential that was
 never obtained. Use the presence/absence of the line plus
 `auth.password_source` to tell whether credential handling was
 exercised on a given run.
@@ -293,8 +304,8 @@ command-line parse failures after startup. Help/version exits and failures that
 occur before the embedded localization contract can be loaded do not emit a
 full audit. If the tool fails partway through (auth refused, network error),
 the audit log still prints to stderr (and to `--audit-log PATH` if
-specified) with `outcome: error: <stage>` so the customer always has a
-forensic record of what was attempted before the failure.
+specified) with `outcome: error: <stage>` so you always have a record of what
+was attempted before the failure.
 Example failure outcome line:
 
 ```
@@ -317,7 +328,8 @@ the audit bounded and machine-scannable.
 
 Artifact capture is independent from Tier 2 row sampling:
 
-- `--artifact-detail none` skips artifact catalogs and definitions.
+- `--artifact-detail none` skips artifact inventory catalogs and definitions;
+  the count-only topology probe still runs.
 - `summary` reads modeled object catalogs but not definition text.
 - `graph` additionally reads dependency catalogs but not definition text.
 - `analyzed` additionally reads available SQL/procedural definitions into
@@ -334,7 +346,7 @@ object names, external endpoints, artifact principals, credentials,
 key/certificate material, package/library names, and binaries are never written
 to the Blueprint or audit log. The only exact principal names retained are the
 three SQL Server session identities in the explicit `auth` audit block above;
-they are never written to the Blueprint, deck, or publication artifacts. Graph
+they are never written to the Blueprint, deck or bundle files. Graph
 and analyzed modes require `--yes` because anonymous topology can still
 fingerprint an application.
 
@@ -426,10 +438,8 @@ If you want to *prove* the tool is doing only what's documented:
    Tier 1 and Tier 2 reuse the same MySQL connection. See **Driver-owned
    credential copies** in SECURITY.md for the full discussion.
 3. **Build from source**: `./build.sh`. When using the vendored source archive,
-   run `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`. Release CI performs an independent
-   same-runner rebuild, clearing and reusing the same Cargo target directory
-   between builds while retaining the first executable separately, and rejects
-   a byte mismatch. A local comparison is meaningful only with the same source
+   run `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`. Each release is built twice and
+   a byte mismatch fails the release. A local comparison is meaningful only with the same source
    revision, target, features, pinned Rust toolchain, linker, and build flags.
 4. **Compare to release**: from the matching source checkout or vendored
    source tree, run
@@ -448,5 +458,5 @@ If you want to *prove* the tool is doing only what's documented:
 
 If any of these do not match what is documented here, report the discrepancy
 through the channel in SECURITY.md and include the smallest safe trace needed
-to reproduce it. Do not put credentials, customer identifiers, or sensitive
+to reproduce it. Do not put credentials, identifying names, or sensitive
 driver output in a public issue.

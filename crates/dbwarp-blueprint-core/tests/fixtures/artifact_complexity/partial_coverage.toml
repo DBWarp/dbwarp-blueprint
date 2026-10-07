@@ -1,0 +1,123 @@
+# Hand-authored semantic oracle. Do not generate this file from the assessor.
+# One complete and one partial census make only control-flow coverage partial;
+# known evidence in every other dimension remains usable.
+
+[inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "analyzed"
+scope = "selected-schemas"
+visibility = "full"
+inventory_complete = true
+dependencies_complete = true
+requirements_complete = true
+analysis_complete = false
+object_count = 2
+
+[inventory.counts_by_kind]
+function = 2
+
+[inventory.artifacts.artifact-001]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-001.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+[inventory.artifacts.artifact-001.analysis.features]
+"control.if" = "1"
+
+[inventory.artifacts.artifact-002]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-002.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "partial"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "256-1k"
+statement_count_band = "2-4"
+token_count_band = "9-16"
+maximum_nesting_band = "1"
+opaque_region_count_band = "0"
+[inventory.artifacts.artifact-002.analysis.features]
+"control.if" = "1"
+"data.select" = "1"
+
+[expected]
+contract = "dbwarp-blueprint-artifact-complexity/v1"
+assessor_version = 1
+scope = "selected-schemas"
+population_policy = "exclude-known-engine-generated-and-secondary"
+assessment_population_complete = true
+eligible_object_count = 2
+fully_assessed_object_count = 1
+partially_assessed_object_count = 1
+unassessed_object_count = 0
+excluded_object_count = 0
+analyzer_version = "lexical-v2"
+analysis_spans = ["executable-body"]
+dialects = ["sql"]
+grammar_profiles = ["postgresql-18"]
+overall_band = "unknown"
+
+[expected.dimensions.volume]
+band = "low"
+coverage = "complete"
+[expected.dimensions.volume.histogram]
+"1-255" = 1
+"256-1k" = 1
+
+[expected.dimensions.control_flow]
+band = "unknown"
+coverage = "partial"
+[expected.dimensions.control_flow.histogram]
+"1" = 1
+unknown = 1
+
+[expected.dimensions.feature_breadth]
+band = "low"
+coverage = "complete"
+[expected.dimensions.feature_breadth.histogram]
+"1" = 1
+"2-4" = 1
+
+[expected.dimensions.entanglement]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.entanglement.histogram]
+"0" = 2
+
+[expected.dimensions.environment_coupling]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.environment_coupling.histogram]
+"0" = 2
+
+[expected.dimensions.opacity]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.opacity.histogram]
+"0" = 2
+
+[expected.dimensions.dialect_coupling]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.dialect_coupling.histogram]
+"0" = 2

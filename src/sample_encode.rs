@@ -21,17 +21,17 @@
 //!
 //! Minimal bookkeeping keeps the measurement close to the sampled value
 //! distribution. It is deliberately a public measurement representation, not
-//! a database-protocol capture, a DBWarp frame, or a reusable data stream.
+//! a database-protocol capture or a reusable data stream.
 //!
 //! ```text
-//! Buffer = (Column)*       — flat stream; rows are not delimited
+//! Buffer = (Column)*      : flat stream; rows are not delimited
 //!
 //! Column:
-//!   u8 type_tag                                  — see TypeTag below
+//!   u8 type_tag                                 : see TypeTag below
 //!   if type_tag != 0x00:
-//!     varint length        (LEB128, 1-5 bytes)   — payload byte count
+//!     varint length        (LEB128, 1-5 bytes)  : payload byte count
 //!     length bytes payload
-//!   else:                                         — NULL
+//!   else:                                        : NULL
 //!     (just the tag byte; no length, no payload)
 //! ```
 //!
@@ -40,10 +40,9 @@
 //! Per-column overhead for medium text bodies (up to ~16 KB): 3 bytes
 //! (1 tag + 2-byte varint).
 //!
-//! No row marker, no column-count byte, no row terminator: the buffer
-//! is opaque to the dbwarp estimator (which only consumes the ratio
-//! number, not the bytes), so additional framing
-//! adds noise without improving the measurement.
+//! No row marker, no column-count byte, no row terminator: only the resulting
+//! ratio is emitted, never the bytes, so additional framing adds noise without
+//! improving the measurement.
 //!
 //! ### Type tags
 //!
@@ -52,26 +51,25 @@
 //! | 0x00 | Null            | SQL NULL (no payload follows) |
 //! | 0x01 | TextUtf8        | UTF-8 text (PG text/varchar, MySQL utf8mb*, MSSQL varchar where collation maps to UTF-8) |
 //! | 0x02 | TextUtf16Le     | UTF-16LE bytes (MSSQL nvarchar/nchar/ntext, preserving their byte width) |
-//! | 0x03 | TextOther       | Bytes in some other charset (MySQL latin1, MSSQL non-Unicode collations) — opaque to the encoder |
+//! | 0x03 | TextOther       | Bytes in some other charset (MySQL latin1, MSSQL non-Unicode collations): opaque to the encoder |
 //! | 0x04 | NumberText      | Decimal-textual representation (int, bigint, numeric, real, double) |
 //! | 0x05 | BoolText        | Boolean as text ("t" / "f" / "true" / "false") |
 //! | 0x06 | TimestampText   | ISO-8601 timestamp text |
 //! | 0x07 | DateText        | ISO-8601 date text |
 //! | 0x08 | TimeText        | HH:MM:SS[.fff] text |
 //! | 0x09 | UuidText        | Canonical 36-char UUID text |
-//! | 0x0F | JsonText        | JSON UTF-8 text (separate from TextUtf8 so estimator can analyze JSON columns differently — they tend to compress better than free-form text) |
-//! | 0x10 | BinaryRaw       | bytea / varbinary / image / blob — raw bytes |
+//! | 0x0F | JsonText        | JSON UTF-8 text (separate from TextUtf8 because JSON tends to compress differently from free-form text) |
+//! | 0x10 | BinaryRaw       | bytea / varbinary / image / blob: raw bytes |
 //! | 0x11 | VectorBinary    | Dense float32 vector in PostgreSQL pgvector send layout |
 //! | 0xFE | UnknownText     | Fallback: DB-provided textual representation; used for any type the engine module didn't classify |
 //!
-//! 0x0A (the row terminator) is intentionally NOT used as a type tag so
-//! a hex dump of the buffer is easy to read.
+//! 0x0A is not used as a type tag so a hex dump of the buffer is easy to read.
 //!
-//! ## Consumer contract
+//! ## Encoding tag
 //!
 //! Blueprint per-column `[compression]` blocks carry
 //! `sample_encoding = "blueprint-compression-probe-v2"`. Live-database table
-//! blocks use the separate neutral columnar transfer-probe contract. Consumers
+//! blocks use the separate neutral columnar transfer-probe contract. Readers
 //! must validate each string before using its ratio; measurements from unlike
 //! representations are not interchangeable.
 
@@ -158,6 +156,30 @@ impl CardinalityAccumulator {
         ))
     }
 
+    /// Return the null fraction in the same public population domain as the
+    /// emitted cardinality counts.
+    ///
+    /// When a cardinality block exists, independently rounding the fraction
+    /// and the non-NULL count can make the two fields contradict each other.
+    /// Deriving the fraction from the already-emitted counts discloses no new
+    /// fact and preserves sparse presence. Samples without cardinality retain
+    /// the existing privacy-rounded fraction.
+    pub fn emitted_null_fraction(
+        &self,
+        cardinality: Option<&crate::format::BlueprintCardinality>,
+    ) -> Option<f64> {
+        if let Some(cardinality) = cardinality.filter(|value| value.sample_rows > 0) {
+            return Some(
+                cardinality
+                    .sample_rows
+                    .saturating_sub(cardinality.non_null_rows) as f64
+                    / cardinality.sample_rows as f64,
+            );
+        }
+        self.null_fraction()
+    }
+
+    #[cfg(test)]
     pub fn finish(
         &self,
         source_rows: u64,
@@ -165,7 +187,47 @@ impl CardinalityAccumulator {
         sampled_with_bias: bool,
         bias_reason: &str,
     ) -> Option<crate::format::BlueprintCardinality> {
-        if self.rows == 0 || self.fingerprints.is_empty() {
+        self.finish_with_source_rows(
+            Some(source_rows),
+            false,
+            false,
+            sample_method,
+            sampled_with_bias,
+            bias_reason,
+        )
+    }
+
+    /// Finalize cardinality only when the source population is known.
+    ///
+    /// Observed frequencies from a bounded sample remain useful for null and
+    /// compression evidence, but they cannot define a source cardinality
+    /// domain without a table-row population. Omitting the cardinality block
+    /// is safer than serializing the observed sample domain as though it were
+    /// the complete table, which would understate the column's real cardinality.
+    pub fn finish_with_source_rows(
+        &self,
+        source_rows: Option<u64>,
+        complete_row_read: bool,
+        complete_value_read: bool,
+        sample_method: &str,
+        sampled_with_bias: bool,
+        bias_reason: &str,
+    ) -> Option<crate::format::BlueprintCardinality> {
+        // A bounded query returning fewer rows than its LIMIT has enumerated
+        // the table as it existed for that statement. That observation is
+        // stronger than a cached catalogue estimate: use the rows actually
+        // retained instead of dropping exact evidence when the estimate is
+        // absent or slightly stale.
+        let source_rows = if complete_row_read {
+            self.rows
+        } else {
+            source_rows?
+        };
+        // A stale estimate can be present but still impossible: a sampler
+        // cannot observe more rows than the table contains. Treat that as
+        // unknown population evidence rather than capping the synthetic
+        // domain at the sample size (including the common stale-zero case).
+        if self.rows == 0 || source_rows < self.rows || self.fingerprints.is_empty() {
             return None;
         }
         let mut values = self.fingerprints.clone();
@@ -195,7 +257,7 @@ impl CardinalityAccumulator {
             .min(u64::MAX as u128) as u64;
         // Extrapolating every singleton across the complete table makes a
         // tiny sample of a repeating domain look unique. In particular, 32
-        // distinct dates from a 365-day cycle previously became roughly the
+        // distinct dates from a 365-day cycle would extrapolate to roughly the
         // complete table row count. Biased first-N samples do not support a
         // population estimate at all, and very small random samples do not
         // contain enough collision evidence. Preserve their observed count as
@@ -212,7 +274,7 @@ impl CardinalityAccumulator {
                 collision_pairs,
                 source_non_null,
             );
-        let (estimated, estimate_method) = if source_rows > 0 && source_rows <= self.rows {
+        let (estimated, estimate_method) = if complete_row_read && complete_value_read {
             (observed, "complete bounded sample")
         } else if sampled_with_bias && biased_near_unique_estimate.is_some() {
             (
@@ -239,25 +301,63 @@ impl CardinalityAccumulator {
             )
         };
         let top = frequencies.last().copied().unwrap_or(0);
-        let sample_rows = quantize_count(self.rows);
-        let non_null_rows = quantize_count(self.non_null_rows).min(sample_rows);
-        let observed_distinct_count = quantize_count(observed).min(non_null_rows);
-        let emitted_source_domain =
-            crate::format::round_rows(source_rows).max(observed_distinct_count);
-        let estimated_distinct_count = quantize_count(estimated)
-            .max(observed_distinct_count)
-            .min(emitted_source_domain);
+        // A complete row read already makes the exact table population the
+        // emitted `rows` value. Keep the cardinality population in that same
+        // domain: quantizing 49 sampled rows up to 50 would otherwise let the
+        // sample and estimated distinct counts exceed the table itself.
+        let complete_source_read = complete_row_read && complete_value_read;
+        // Row completeness and value completeness are separate facts.  A
+        // server-side cell cap can truncate a value without hiding whether a
+        // row was returned.  Once the bounded statement proved it read the
+        // whole table, keep the sample population in the table's exact domain
+        // even when the value census must remain a lower bound.
+        // The exact retained population is already serialized on the table's
+        // compression block. Reuse it unless a rounded-down catalogue estimate
+        // would make cardinality coverage exceed 100%; in that case the public
+        // table domain is the safe upper bound.
+        let emitted_source_population = if complete_row_read {
+            source_rows
+        } else {
+            crate::format::round_estimated_rows(source_rows)
+        };
+        let sample_rows = self.rows.min(emitted_source_population);
+        // Round the retained numerator directly. Deriving it from the rounded
+        // null fraction would erase sparse presence (for example 2 non-NULL
+        // values in 1,000 rows would become zero) and could turn a nullable column into an
+        // apparent NOT NULL column. Preserve the exact zero and all-non-NULL
+        // endpoints; privacy-quantize every mixed population without allowing
+        // an upward bucket to escape through an exact public bound.
+        let non_null_rows = quantize_non_null_rows(self.rows, sample_rows, self.non_null_rows);
+        let observed_distinct_count = quantize_count_at_most(observed, non_null_rows);
+        let estimated_distinct_count = if non_null_rows == 0 {
+            0
+        } else if estimated == observed {
+            // The lower-bound branches carry no population estimate: their
+            // public estimate is the observed census itself.  Quantizing the
+            // two fields against different bounds can otherwise turn the
+            // same retained count into different values when a rounded-down
+            // catalogue population is below the returned row set.
+            observed_distinct_count
+        } else {
+            quantize_count_at_most(estimated, emitted_source_population)
+                .max(observed_distinct_count)
+        };
+        let frequency_p50 = quantize_count_at_most(quantile(&frequencies, 0.50), non_null_rows);
+        let frequency_p95 = quantize_count_at_most(quantile(&frequencies, 0.95), non_null_rows);
+        let frequency_p99 = quantize_count_at_most(quantile(&frequencies, 0.99), non_null_rows);
+        let frequency_max = quantize_count_at_most(top, non_null_rows);
         Some(crate::format::BlueprintCardinality {
             measured: true,
+            complete_source_read,
             sample_rows,
             non_null_rows,
             observed_distinct_count,
             estimated_distinct_count,
             top_value_fraction: quantize_fraction(top as f64 / retained_non_null.max(1) as f64),
-            frequency_p50: quantile(&frequencies, 0.50),
-            frequency_p95: quantile(&frequencies, 0.95),
-            frequency_p99: quantile(&frequencies, 0.99),
-            frequency_max: quantize_count(top),
+            frequency_p50,
+            frequency_p95,
+            frequency_p99,
+            frequency_max,
             sample_method: format!("{sample_method}; {estimate_method}"),
             sample_layout: Default::default(),
             sampled_with_bias,
@@ -285,7 +385,7 @@ impl<'a> Cell<'a> {
     }
 }
 
-/// Append one row's columns to `out`. v1 has no per-row delimiter —
+/// Append one row's columns to `out`. v1 has no per-row delimiter;
 /// rows are simply concatenated in the column stream. The caller is
 /// expected to call this once per row in iteration order; the resulting
 /// buffer is opaque to anyone but zstd.
@@ -351,8 +451,45 @@ fn quantize_count(value: u64) -> u64 {
     dbwarp_blueprint_core::round_to_bucket(value, bucket)
 }
 
+fn quantize_count_at_most(value: u64, upper_bound: u64) -> u64 {
+    let bounded = value.min(upper_bound);
+    let rounded = quantize_count(bounded);
+    if rounded <= upper_bound {
+        return rounded;
+    }
+    // Rounding to nearest can cross an already-public upper bound. Use the
+    // lower edge of the same privacy bucket rather than exposing the exact
+    // bound as an off-grid count.
+    let magnitude = 1_u64 << (63 - bounded.leading_zeros());
+    let bucket = (magnitude / 16).max(1);
+    (bounded / bucket) * bucket
+}
+
 fn quantize_fraction(value: f64) -> f64 {
     (value.clamp(0.0, 1.0) * 200.0).round() / 200.0
+}
+
+fn quantize_non_null_rows(
+    retained_sample_rows: u64,
+    emitted_sample_rows: u64,
+    retained_non_null_rows: u64,
+) -> u64 {
+    if retained_sample_rows == 0 || emitted_sample_rows == 0 || retained_non_null_rows == 0 {
+        return 0;
+    }
+    if retained_non_null_rows >= retained_sample_rows {
+        return emitted_sample_rows;
+    }
+    let scaled = ((retained_non_null_rows as u128)
+        .saturating_mul(emitted_sample_rows as u128)
+        .saturating_add((retained_sample_rows / 2) as u128)
+        / retained_sample_rows as u128)
+        .min(u64::MAX as u128) as u64;
+    let mixed_upper_bound = emitted_sample_rows.saturating_sub(1);
+    if mixed_upper_bound == 0 {
+        return 1;
+    }
+    quantize_count_at_most(scaled.clamp(1, mixed_upper_bound), mixed_upper_bound)
 }
 
 fn quantile(sorted: &[u64], percentile: f64) -> u64 {
@@ -362,7 +499,7 @@ fn quantile(sorted: &[u64], percentile: f64) -> u64 {
     let rank = ((sorted.len() as f64 * percentile).ceil() as usize)
         .saturating_sub(1)
         .min(sorted.len() - 1);
-    quantize_count(sorted[rank])
+    sorted[rank]
 }
 
 #[cfg(test)]
@@ -454,7 +591,7 @@ mod tests {
 
     #[test]
     fn long_payload_uses_2byte_varint() {
-        // 200 bytes — varint should emit (200 & 0x7F) | 0x80, then (200 >> 7).
+        // 200 bytes: varint should emit (200 & 0x7F) | 0x80, then (200 >> 7).
         // 200 = 0xC8 = 0b11001000. low 7 bits = 0b1001000 = 0x48; with MSB
         // set, first byte = 0xC8. Second byte = 200 >> 7 = 1.
         let payload: Vec<u8> = (0..200u32).map(|i| i as u8).collect();
@@ -524,13 +661,54 @@ mod tests {
         assert_eq!(cardinality.estimated_distinct_count, 32);
         assert!(cardinality.sample_method.contains("small sample"));
 
-        let stale_catalog = small
-            .finish(0, "random", false, "")
-            .expect("sample with an unknown catalog row count");
-        assert!(!stale_catalog
+        assert!(small.finish(0, "random", false, "").is_none());
+
+        assert!(small
+            .finish_with_source_rows(None, false, false, "random", false, "")
+            .is_none());
+        assert!(small
+            .finish_with_source_rows(Some(31), false, false, "random", false, "")
+            .is_none());
+
+        let complete = small
+            .finish_with_source_rows(Some(31), true, true, "complete LIMIT", false, "")
+            .expect("complete read overrides a stale lower catalogue estimate");
+        assert_eq!(complete.sample_rows, 32);
+        assert_eq!(complete.observed_distinct_count, 32);
+        assert_eq!(complete.estimated_distinct_count, 32);
+        assert!(complete.sample_method.contains("complete bounded sample"));
+
+        let complete_without_catalog = small
+            .finish_with_source_rows(None, true, true, "complete LIMIT", false, "")
+            .expect("complete read does not require a catalogue row estimate");
+        assert_eq!(complete_without_catalog.estimated_distinct_count, 32);
+
+        let prefix_capped_complete_rows = small
+            .finish_with_source_rows(
+                None,
+                true,
+                false,
+                "complete LIMIT with capped values",
+                true,
+                "server-side cell cap",
+            )
+            .expect("complete rows still establish the source population");
+        assert!(!prefix_capped_complete_rows
             .sample_method
             .contains("complete bounded sample"));
-        assert_eq!(stale_catalog.estimated_distinct_count, 32);
+        assert!(prefix_capped_complete_rows
+            .sample_method
+            .contains("biased sample"));
+
+        let estimate_equal_to_sample = small
+            .finish_with_source_rows(Some(32), false, false, "LIMIT", true, "natural order")
+            .expect("equal cached estimate remains a bounded lower bound");
+        assert!(!estimate_equal_to_sample
+            .sample_method
+            .contains("complete bounded sample"));
+        assert!(estimate_equal_to_sample
+            .sample_method
+            .contains("biased sample"));
 
         let mut biased = CardinalityAccumulator::default();
         for value in 0..1_000_u64 {
@@ -557,6 +735,39 @@ mod tests {
         );
         assert!(cardinality.observed_distinct_count >= 700);
         assert!(cardinality.sample_method.contains("biased sample"));
+    }
+
+    #[test]
+    fn biased_nullable_lower_bound_cannot_become_an_extrapolated_estimate() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for value in 0..128_u64 {
+            if value < 25 {
+                accumulator.push(&Cell::null());
+            } else {
+                let bytes = value.to_string();
+                accumulator.push(&Cell::new(TypeTag::NumberText, bytes.as_bytes()));
+            }
+        }
+
+        let cardinality = accumulator
+            .finish_with_source_rows(
+                Some(128),
+                false,
+                false,
+                "biased bounded sample",
+                true,
+                "server-side cell cap",
+            )
+            .expect("biased nullable cardinality");
+
+        assert!(cardinality.sample_method.contains("observed lower bound"));
+        assert_eq!(cardinality.sample_rows, 100);
+        assert_eq!(cardinality.non_null_rows, 80);
+        assert_eq!(cardinality.observed_distinct_count, 80);
+        assert_eq!(
+            cardinality.estimated_distinct_count,
+            cardinality.observed_distinct_count
+        );
     }
 
     #[test]
@@ -593,7 +804,7 @@ mod tests {
             accumulator.push(&Cell::new(TypeTag::NumberText, bytes.as_bytes()));
         }
         let cardinality = accumulator
-            .finish(149, "random", false, "")
+            .finish_with_source_rows(Some(149), true, true, "random", false, "")
             .expect("collision sample cardinality");
         assert_eq!(cardinality.estimated_distinct_count, 100);
         assert!(cardinality
@@ -606,9 +817,224 @@ mod tests {
             sparse_collisions.push(&Cell::new(TypeTag::NumberText, bytes.as_bytes()));
         }
         let cardinality = sparse_collisions
-            .finish(151, "random", false, "")
+            .finish_with_source_rows(Some(151), true, true, "random", false, "")
             .expect("bounded cardinality");
-        assert!(cardinality.estimated_distinct_count <= crate::format::round_rows(151));
+        assert!(cardinality.estimated_distinct_count <= crate::format::round_rows(200));
+
+        let chao1 = sparse_collisions
+            .finish_with_source_rows(Some(500), false, false, "random", false, "")
+            .expect("partial sample cardinality");
+        assert!(chao1.sample_method.contains("Chao1"));
+        assert!(chao1.estimated_distinct_count <= crate::format::round_rows(500));
+    }
+
+    #[test]
+    fn complete_small_table_cardinality_never_exceeds_exact_table_rows() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for value in 0..49_u64 {
+            let bytes = value.to_string();
+            accumulator.push(&Cell::new(TypeTag::NumberText, bytes.as_bytes()));
+        }
+
+        let cardinality = accumulator
+            .finish_with_source_rows(None, true, true, "complete LIMIT", false, "")
+            .expect("complete small-table cardinality");
+
+        assert_eq!(cardinality.sample_rows, 49);
+        assert_eq!(cardinality.non_null_rows, 49);
+        assert_eq!(cardinality.observed_distinct_count, 48);
+        assert_eq!(cardinality.estimated_distinct_count, 48);
+        assert!(cardinality.complete_source_read);
+    }
+
+    #[test]
+    fn complete_small_skewed_table_cannot_round_frequency_above_non_null_rows() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for _ in 0..49_u64 {
+            accumulator.push(&Cell::new(TypeTag::TextUtf8, b"active"));
+        }
+
+        let cardinality = accumulator
+            .finish_with_source_rows(None, true, true, "complete LIMIT", false, "")
+            .expect("complete skewed-table cardinality");
+
+        assert_eq!(cardinality.sample_rows, 49);
+        assert_eq!(cardinality.non_null_rows, 49);
+        assert_eq!(cardinality.frequency_max, 48);
+        assert!(cardinality.frequency_p99 <= cardinality.frequency_max);
+    }
+
+    #[test]
+    fn complete_read_mixed_non_null_count_stays_on_the_privacy_grid() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for _ in 0..47_u64 {
+            accumulator.push(&Cell::new(TypeTag::TextUtf8, b"active"));
+        }
+        accumulator.push(&Cell::null());
+        accumulator.push(&Cell::null());
+
+        let cardinality = accumulator
+            .finish_with_source_rows(None, true, true, "complete LIMIT", false, "")
+            .expect("complete nullable cardinality");
+
+        assert_eq!(cardinality.sample_rows, 49);
+        // Forty-seven is not on the count grid at this magnitude; 48 is the
+        // independently specified nearest bucket and remains below the
+        // 49-row mixed-population bound.
+        assert_eq!(cardinality.non_null_rows, 48);
+        assert!(cardinality.frequency_max <= cardinality.non_null_rows);
+    }
+
+    #[test]
+    fn sparse_presence_never_quantizes_to_absence() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for row in 0..1_000_u64 {
+            if row < 2 {
+                let value = row.to_string();
+                accumulator.push(&Cell::new(TypeTag::NumberText, value.as_bytes()));
+            } else {
+                accumulator.push(&Cell::null());
+            }
+        }
+
+        let cardinality = accumulator
+            .finish_with_source_rows(None, true, true, "complete LIMIT", false, "")
+            .expect("sparse cardinality");
+        assert_eq!(cardinality.sample_rows, 1_000);
+        assert_eq!(cardinality.non_null_rows, 2);
+        assert_eq!(cardinality.observed_distinct_count, 2);
+        assert_eq!(cardinality.estimated_distinct_count, 2);
+        assert_eq!(cardinality.frequency_max, 1);
+        assert_eq!(cardinality.top_value_fraction, 0.5);
+        assert_eq!(
+            accumulator.emitted_null_fraction(Some(&cardinality)),
+            Some(0.998)
+        );
+    }
+
+    #[test]
+    fn emitted_null_fraction_tracks_rounded_non_null_population() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for row in 0..100_u64 {
+            if row == 0 {
+                accumulator.push(&Cell::null());
+            } else {
+                let value = row.to_string();
+                accumulator.push(&Cell::new(TypeTag::NumberText, value.as_bytes()));
+            }
+        }
+
+        let cardinality = accumulator
+            .finish_with_source_rows(None, true, true, "complete LIMIT", false, "")
+            .expect("dense cardinality");
+        assert_eq!(cardinality.non_null_rows, 96);
+        assert_eq!(
+            accumulator.emitted_null_fraction(Some(&cardinality)),
+            Some(0.04)
+        );
+    }
+
+    #[test]
+    fn mixed_non_null_counts_keep_presence_and_nullable_endpoints() {
+        assert_eq!(quantize_non_null_rows(2_000, 2_000, 5), 5);
+        assert_eq!(quantize_non_null_rows(10_000, 10_000, 26), 26);
+        assert_eq!(quantize_non_null_rows(1_000, 1_000, 999), 992);
+        assert_eq!(quantize_non_null_rows(1_000, 1_000, 1_000), 1_000);
+        assert_eq!(quantize_non_null_rows(1_000, 1_000, 0), 0);
+    }
+
+    #[test]
+    fn complete_rows_with_truncated_values_do_not_emit_exact_cardinality_provenance() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for row in 0..49_u64 {
+            let value = row.to_string();
+            accumulator.push(&Cell::new(TypeTag::NumberText, value.as_bytes()));
+        }
+
+        let cardinality = accumulator
+            .finish_with_source_rows(None, true, false, "complete LIMIT", false, "")
+            .expect("bounded cardinality");
+
+        assert!(!cardinality.complete_source_read);
+        assert_eq!(cardinality.sample_rows, 49);
+        assert_eq!(cardinality.non_null_rows, 49);
+        assert!(cardinality.observed_distinct_count <= 49);
+        assert!(cardinality.estimated_distinct_count <= 49);
+        assert!(cardinality.sample_method.contains("lower bound"));
+    }
+
+    #[test]
+    fn incomplete_read_reuses_the_exact_already_disclosed_retained_population() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for row in 0..1_000_u64 {
+            let value = row.to_string();
+            accumulator.push(&Cell::new(TypeTag::NumberText, value.as_bytes()));
+        }
+
+        let cardinality = accumulator
+            .finish_with_source_rows(
+                Some(20_000),
+                false,
+                true,
+                "bounded partial sample",
+                false,
+                "",
+            )
+            .expect("partial cardinality");
+
+        assert!(!cardinality.complete_source_read);
+        assert_eq!(cardinality.sample_rows, 1_000);
+        assert_eq!(cardinality.sample_rows, accumulator.rows);
+    }
+
+    #[test]
+    fn incomplete_not_null_sample_keeps_its_exact_retained_numerator() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for row in 0..1_000_u64 {
+            let value = row.to_string();
+            accumulator.push(&Cell::new(TypeTag::NumberText, value.as_bytes()));
+        }
+
+        let cardinality = accumulator
+            .finish_with_source_rows(
+                Some(20_000),
+                false,
+                true,
+                "bounded partial sample",
+                false,
+                "",
+            )
+            .expect("partial cardinality");
+
+        assert_eq!(cardinality.sample_rows, 1_000);
+        assert_eq!(cardinality.non_null_rows, 1_000);
+    }
+
+    #[test]
+    fn stale_low_population_scales_the_public_non_null_numerator() {
+        let mut accumulator = CardinalityAccumulator::default();
+        for row in 0..1_010_u64 {
+            if row % 2 == 0 {
+                accumulator.push(&Cell::new(TypeTag::NumberText, row.to_string().as_bytes()));
+            } else {
+                accumulator.push(&Cell::null());
+            }
+        }
+
+        let cardinality = accumulator
+            .finish_with_source_rows(
+                Some(1_030),
+                false,
+                true,
+                "bounded partial sample",
+                false,
+                "",
+            )
+            .expect("clamped partial cardinality");
+
+        assert_eq!(cardinality.sample_rows, 1_000);
+        // The scaled retained numerator is 500; its privacy-grid value is 496.
+        assert_eq!(cardinality.non_null_rows, 496);
     }
 
     /// Diagnostic: compare the probe with a delimiter-separated control.
@@ -617,7 +1043,7 @@ mod tests {
     /// "lorem ipsum dolor sit amet " prefix + repeating "blah ").
     /// COPY-style tab format compresses dramatically because long
     /// text bodies share content across rows; the probe should also
-    /// compress well — the framing overhead is minor and zstd should
+    /// compress well: the framing overhead is minor and zstd should
     /// see through it.
     #[test]
     fn probe_vs_delimited_text_on_repetitive_text() {
@@ -682,24 +1108,23 @@ mod tests {
         );
     }
 
-    /// Headline regression test for the row-encoder campaign: prove
-    /// the NEW encoding produces a MEANINGFULLY LOWER ratio than the
-    /// OLD tab-separated encoding on the same logical row data, where
-    /// non-text columns were rendered as empty fields.
+    /// Rendering non-text columns as empty fields inflates the compression
+    /// ratio. Check that the probe, which carries every value, measures at
+    /// least 2x lower than that control encoding.
     ///
     /// Concretely: 1000 rows of `(short_text, 9 numeric columns)`.
-    ///   - OLD: emits text + 9 empty fields per row → row buffer is
+    ///   - Control: emits text + 9 empty fields per row → row buffer is
     ///     dominated by `\t\t\t\t\t\t\t\t\t\n` blocks → zstd ratio
     ///     dramatically inflated.
-    ///   - NEW: each numeric column carries its actual textual decimal
+    ///   - Probe: each numeric column carries its actual textual decimal
     ///     value → buffer has no separator-only sequences → ratio
     ///     reflects realistic compression of the actual data.
     ///
-    /// Old must beat new by at least 2× — a softer bound than "absolute
+    /// The control must exceed the probe by at least 2×: a softer bound than "absolute
     /// ratio < N" because the synthetic data's compressibility depends
     /// on prefix sharing between the integer values.
     #[test]
-    fn new_encoder_beats_old_tab_separated_encoding() {
+    fn probe_measures_lower_than_empty_field_control() {
         // Shared row data: same integers, same text, regardless of
         // encoding. Use Box::leak for static lifetimes within the test.
         let texts: Vec<&'static [u8]> = (0..1000)
@@ -719,14 +1144,13 @@ mod tests {
             })
             .collect();
 
-        // OLD encoding: text + 9 empty fields per row, tab-separated, LF-terminated.
+        // Control encoding: text + 9 empty fields per row, tab-separated, LF-terminated.
         let mut old_buf: Vec<u8> = Vec::with_capacity(64 * 1024);
         for i in 0..1000 {
             old_buf.extend_from_slice(texts[i]);
             for _ in 0..9 {
                 old_buf.push(b'\t');
-                // Old encoder: non-text columns rendered as empty. This
-                // is the bug — we deliberately reproduce it here.
+                // Non-text columns are deliberately empty in the control.
             }
             old_buf.push(b'\n');
         }
@@ -762,14 +1186,10 @@ mod tests {
             new_ratio
         );
 
-        // Old ratio should be much higher than new — that's the bug.
-        // Require at least 2× separation; in practice it's typically
-        // 3–4× on this synthetic.
+        // Require at least 2× separation.
         assert!(
             old_ratio > new_ratio * 2.0,
-            "old ratio ({old_ratio:.2}) should be >2× new ratio ({new_ratio:.2}); \
-             if this fails, either the encoder regressed or the synthetic \
-             data has lost the property that exposed the original bug"
+            "control ratio ({old_ratio:.2}) should be >2× probe ratio ({new_ratio:.2})"
         );
     }
 }

@@ -10,7 +10,10 @@
 
 您可以下载二进制文件、验证其校验和、在本地运行它，并在与 DBWarp 分享任何内容之前检查生成的 `blueprint.toml`。
 
-请选择确切的发布标签，例如 `https://github.com/DBWarp/dbwarp-blueprint/releases/tag/v1.5.0`，然后从同一标签下载归档文件和 `SHA256SUMS.txt`。对于可重现或受审计的运行，请勿使用可变的 `releases/latest` URL。
+请选择确切的发布标签，例如
+`https://github.com/DBWarp/dbwarp-blueprint/releases/tag/<release-tag>`，
+然后从同一标签下载归档文件和 `SHA256SUMS.txt`。对于可重现或受审计的运行，
+请勿使用可变的 `releases/latest` URL。
 
 ## 文件
 
@@ -22,8 +25,12 @@
 | Windows x86_64 | `dbwarp-blueprint-windows-x86_64.zip` |
 | 离线源代码审计包 | `dbwarp-blueprint-source-vendored.tar.gz` |
 | 校验和 | `SHA256SUMS.txt` |
+| 已解压可执行文件的校验和 | `dbwarp-blueprint-<platform>.binary.sha256` |
 
 每个发布版本还包括 `SHA256SUMS.txt`。
+
+每个 Linux 归档都包含 SQL Server Kerberos/GSSAPI 支持，并且启动时不依赖
+Kerberos 库。二进制文件只在选择集成身份验证时才加载平台运行时。
 
 平台归档是可直接运行的操作人员包，而不是源代码树。其中包含操作和审计参考资料，
 但无法在归档中直接重新构建。进行源代码审计或对比构建时，请使用确切的发布标签，
@@ -52,6 +59,18 @@ Get-FileHash .\dbwarp-blueprint-windows-x86_64.zip -Algorithm SHA256
 ```
 
 将打印的哈希值与 `SHA256SUMS.txt` 中对应的行进行比较。
+
+将归档解压到同一目录后，还应使用同一发布标签中匹配的 `*.binary.sha256`
+文件验证可执行文件本身。每个文件都会命名其解压文件夹中的可执行文件，例如
+`dbwarp-blueprint-linux-x86_64/dbwarp-blueprint`：
+
+```bash
+sha256sum -c dbwarp-blueprint-linux-x86_64.binary.sha256
+```
+
+在 macOS 上使用 `shasum -a 256 -c`；在 Windows 上，将
+`Get-FileHash .\dbwarp-blueprint-windows-x86_64\dbwarp-blueprint.exe` 与
+`.binary.sha256` 文件中的值进行比较。
 
 ## 下载二进制文件还是本地构建？
 

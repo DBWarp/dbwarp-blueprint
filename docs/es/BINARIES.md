@@ -13,7 +13,10 @@ Puede descargar un binario, verificar su suma de comprobación, ejecutarlo
 localmente e inspeccionar el archivo `blueprint.toml` generado antes de compartir
 nada con DBWarp.
 
-Elija una etiqueta de versión exacta, por ejemplo `https://github.com/DBWarp/dbwarp-blueprint/releases/tag/v1.5.0`, y descargue el archivo y `SHA256SUMS.txt` desde esa misma etiqueta. No utilice una URL mutable `releases/latest` para una ejecución reproducible o auditada.
+Elija una etiqueta de versión exacta, por ejemplo
+`https://github.com/DBWarp/dbwarp-blueprint/releases/tag/<release-tag>`, y
+descargue el archivo y `SHA256SUMS.txt` desde esa misma etiqueta. No utilice una
+URL mutable `releases/latest` para una ejecución reproducible o auditada.
 
 ## Archivos
 
@@ -25,8 +28,14 @@ Elija una etiqueta de versión exacta, por ejemplo `https://github.com/DBWarp/db
 | Windows x86_64 | `dbwarp-blueprint-windows-x86_64.zip` |
 | Paquete de código fuente para auditoría sin conexión | `dbwarp-blueprint-source-vendored.tar.gz` |
 | Sumas de comprobación | `SHA256SUMS.txt` |
+| Suma de comprobación del ejecutable extraído | `dbwarp-blueprint-<platform>.binary.sha256` |
 
 Cada versión también incluye `SHA256SUMS.txt`.
+
+Cada archivo de Linux incluye compatibilidad con SQL Server Kerberos/GSSAPI sin
+depender de una biblioteca Kerberos al iniciarse. El binario carga el entorno
+de ejecución de la plataforma solo cuando se selecciona la autenticación
+integrada.
 
 Los archivos de plataforma son paquetes listos para el operador, no árboles de
 código fuente. Incluyen referencias operativas y de auditoría, pero no se
@@ -57,6 +66,19 @@ Get-FileHash .\dbwarp-blueprint-windows-x86_64.zip -Algorithm SHA256
 ```
 
 Compare el hash mostrado con la línea correspondiente de `SHA256SUMS.txt`.
+
+Después de extraer el archivo en el mismo directorio, verifique el propio
+ejecutable con el archivo `*.binary.sha256` correspondiente de la misma
+etiqueta. Cada archivo nombra el ejecutable dentro de su carpeta extraída, por
+ejemplo `dbwarp-blueprint-linux-x86_64/dbwarp-blueprint`:
+
+```bash
+sha256sum -c dbwarp-blueprint-linux-x86_64.binary.sha256
+```
+
+En macOS use `shasum -a 256 -c`. En Windows compare
+`Get-FileHash .\dbwarp-blueprint-windows-x86_64\dbwarp-blueprint.exe` con el
+valor del archivo `.binary.sha256`.
 
 ## ¿Binario descargado o compilación local?
 

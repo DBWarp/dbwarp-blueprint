@@ -1,0 +1,278 @@
+# Hand-authored semantic oracle. Do not generate this file from the assessor.
+# One very complex routine among nine trivial routines must keep the estate at
+# very-high; averaging the difficult object away is forbidden.
+
+[inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "analyzed"
+scope = "selected-schemas"
+visibility = "full"
+inventory_complete = true
+dependencies_complete = true
+requirements_complete = true
+analysis_complete = true
+object_count = 10
+
+[inventory.counts_by_kind]
+function = 10
+
+[inventory.artifacts.artifact-001]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-001.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "64k+"
+statement_count_band = "33+"
+token_count_band = "33+"
+maximum_nesting_band = "33+"
+cyclomatic_complexity_band = "33+"
+opaque_region_count_band = "0"
+
+[inventory.artifacts.artifact-002]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-002.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[inventory.artifacts.artifact-003]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-003.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[inventory.artifacts.artifact-004]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-004.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[inventory.artifacts.artifact-005]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-005.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[inventory.artifacts.artifact-006]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-006.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[inventory.artifacts.artifact-007]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-007.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[inventory.artifacts.artifact-008]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-008.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[inventory.artifacts.artifact-009]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-009.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[inventory.artifacts.artifact-010]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.artifact-010.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[expected]
+contract = "dbwarp-blueprint-artifact-complexity/v1"
+assessor_version = 1
+scope = "selected-schemas"
+population_policy = "exclude-known-engine-generated-and-secondary"
+assessment_population_complete = true
+eligible_object_count = 10
+fully_assessed_object_count = 10
+partially_assessed_object_count = 0
+unassessed_object_count = 0
+excluded_object_count = 0
+analyzer_version = "lexical-v2"
+analysis_spans = ["executable-body"]
+dialects = ["sql"]
+grammar_profiles = ["postgresql-18"]
+overall_band = "very-high"
+
+[expected.dimensions.volume]
+band = "very-high"
+coverage = "complete"
+[expected.dimensions.volume.histogram]
+"1-255" = 9
+"64k+" = 1
+
+[expected.dimensions.control_flow]
+band = "very-high"
+coverage = "complete"
+[expected.dimensions.control_flow.histogram]
+"1" = 9
+"33+" = 1
+
+[expected.dimensions.feature_breadth]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.feature_breadth.histogram]
+"0" = 10
+
+[expected.dimensions.entanglement]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.entanglement.histogram]
+"0" = 10
+
+[expected.dimensions.environment_coupling]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.environment_coupling.histogram]
+"0" = 10
+
+[expected.dimensions.opacity]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.opacity.histogram]
+"0" = 10
+
+[expected.dimensions.dialect_coupling]
+band = "trivial"
+coverage = "complete"
+[expected.dimensions.dialect_coupling.histogram]
+"0" = 10

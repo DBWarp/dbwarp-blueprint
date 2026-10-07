@@ -1,0 +1,2 @@
+SQL*Plus: Release 12.1.0.2.0 Production
+_SQLPLUS_RELEASE=1201000200

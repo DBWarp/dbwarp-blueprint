@@ -1,5 +1,5 @@
-# DBWarp Blueprint schema-v6 illustrative catalog-only example.
-# Hand-authored synthetic metadata, not a customer capture or benchmark result.
+# DBWarp Blueprint schema-v6 illustrative unsampled summary example.
+# Hand-authored synthetic metadata, not a capture of a real database or a performance result.
 # No row samples, source object names, SQL definitions, endpoints or credentials.
 
 schema_version = 6
@@ -9,8 +9,8 @@ engine_version = "18.0"
 source_kind = "synthetic"
 length_metadata = "hybrid-v2"
 declared_length_fidelity = "exact"
-index_length_fidelity = "exact"
-observed_length_fidelity = "relative-rounded-v2"
+index_length_fidelity = "not-captured"
+observed_length_fidelity = "not-sampled"
 
 [totals]
 table_count = 1
@@ -48,8 +48,6 @@ stats_freshness = "stale"
 ordinal = 1
 type = "integer"
 nullable = false
-native_type = "int8"
-declared_max_bytes = 8
 len_avg = 8
 len_p95 = 8
 
@@ -57,9 +55,7 @@ len_p95 = 8
 ordinal = 2
 type = "text"
 nullable = true
-native_type = "varchar"
 declared_max_chars = 64
-declared_max_bytes = 256
 len_avg = 32
 len_p95 = 0
 
@@ -69,7 +65,7 @@ primary = true
 unique = true
 cols = [1]
 
-# Catalog-only does not imply artifact-detail none: summary is the default.
+# An unsampled capture can still use the default summary artifact detail.
 [artifact_inventory]
 contract = "dbwarp-blueprint-artifacts/v1"
 detail = "summary"

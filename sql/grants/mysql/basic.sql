@@ -1,6 +1,6 @@
 -- =============================================================================
--- dbwarp-blueprint least-privilege grants — MySQL 8.0 / 8.4 / 9.7
--- Tier: BASIC  (catalog walk only; no customer rows are read)
+-- dbwarp-blueprint least-privilege grants: MySQL 8.0 / 8.4 / 9.7
+-- Tier: BASIC  (catalog walk only; this script grants no table-row access)
 -- =============================================================================
 -- Authorizes this command:
 --
@@ -8,12 +8,17 @@
 --       --password-file /etc/dbwarp/db.pass --artifact-detail none \
 --       --out blueprint.toml --audit-log blueprint.audit.txt
 --
--- Reads only VERSION() and INFORMATION_SCHEMA rows (TABLES, COLUMNS,
--- STATISTICS, KEY_COLUMN_USAGE, REFERENTIAL_CONSTRAINTS, COLLATIONS).
+-- Reads VERSION(), @@innodb_buffer_pool_size, and INFORMATION_SCHEMA rows
+-- (TABLES, PARTITIONS, TABLE_CONSTRAINTS, COLUMNS, STATISTICS,
+-- KEY_COLUMN_USAGE, REFERENTIAL_CONSTRAINTS, COLLATIONS). Every capture also
+-- runs a count-only topology probe: Group Replication member and role counts
+-- (compared with @@server_uuid on the server) and a replica channel count from
+-- performance_schema where the account can read them, and
+-- SHOW GLOBAL VARIABLES LIKE 'wsrep_on'.
 -- INFORMATION_SCHEMA shows a table only to accounts holding SOME privilege on
 -- it; REFERENCES is the one that exposes the full table metadata without
--- allowing any row read (verified: all five catalogs populated, SELECT on a
--- table denied with error 1142). SHOW VIEW alone is NOT enough (COLUMNS and
+-- allowing any row read (all listed catalogues are populated; SELECT on a
+-- table is denied with error 1142). SHOW VIEW alone is NOT enough (COLUMNS and
 -- KEY_COLUMN_USAGE stay empty).
 --
 -- NOT granted: SELECT, PROCESS, FILE, SHOW DATABASES, SUPER, any DDL/DML,

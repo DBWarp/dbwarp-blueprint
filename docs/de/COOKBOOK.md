@@ -20,7 +20,7 @@ Wählen Sie einen der vollständigen eingebetteten Sprachkataloge aus, während 
   --out pg-appdb.blueprint.toml --yes
 ```
 
-Setzen Sie für unbeaufsichtigte Läufe `DBWARP_BLUEPRINT_LANG=fr` oder ein übliches Prozessgebietsschema. Ein explizites `--lang` hat immer Vorrang. DBP-Codes und technische Providerdetails bleiben kanonisch, damit ein lokalisierter Fehler gesucht und an den Support weitergegeben werden kann.
+Setzen Sie für unbeaufsichtigte Läufe `DBWARP_BLUEPRINT_LANG=fr` oder ein übliches Prozessgebietsschema. Ein explizites `--lang` hat immer Vorrang. DBP-Codes und technische Treiberdetails bleiben kanonisch, damit ein lokalisierter Fehler gesucht und an den Support weitergegeben werden kann.
 
 ## Rezept: PostgreSQL mit interner CA
 
@@ -55,23 +55,11 @@ Nützlich, wenn der Benutzername Zeichen enthält, die sich nur umständlich URI
   --audit-log mysql-appdb.audit.txt
 ```
 
-Verwenden Sie für eine leistungsrepräsentative synthetische Rekonstruktion die standardmäßige ausgewogene Richtlinie: exakte MySQL-Deklarations-/Indexmetadaten und eng gerundete Stichprobenbreiten:
+Die oben genannte Vorgehensweise verwendet bereits die Standard-Ausgewogenheitsrichtlinie: exakte MySQL-declaration/index-Metadaten und eng gerundete Stichprobenwerte.
 
-```bash
-./dbwarp-blueprint \
-  --connect mysql://mysql-primary.internal:3306/appdb \
-  --user-file /etc/dbwarp/mysql-blueprint.user \
-  --password-file /etc/dbwarp/mysql-blueprint.pass \
-  --tls-mode verify-full \
-  --tls-ca /etc/pki/mysql-ca.pem \
-  --measure-compression --yes \
-  --out mysql-appdb.blueprint.toml \
-  --audit-log mysql-appdb.audit.txt
-```
+Bestätigen Sie `declared_length_fidelity = "exact"`, `index_length_fidelity = "exact"` und `observed_length_fidelity = "relative-rounded-v2"`. Verwenden Sie `--length-fidelity exact --yes` nur, nachdem Ihr Unternehmen die Weitergabe genauer, stichprobenbasierter Längenangaben genehmigt hat. Namen und Werte bleiben ausgeschlossen.
 
-Bestätigen Sie `declared_length_fidelity = "exact"`, `index_length_fidelity = "exact"` und `observed_length_fidelity = "relative-rounded-v2"`. Verwenden Sie `--length-fidelity exact --yes` erst, nachdem der Kunde die Weitergabe exakter Stichprobenstatistiken zu Längen genehmigt hat. Namen und Werte bleiben ausgeschlossen.
-
-Erhöhen Sie in Landschaften mit Tausenden Tabellen bei Bedarf `--max-wall-secs` über den Standardwert von 300 Sekunden. Treuemarkierungen bestätigen die Richtlinie; der nachgelagerte Estimator verlangt zusätzlich beobachtete Durchschnitts-/p95-Längen für jede nichtleere, variabel breite indizierte Spalte, bevor er Testdaten als benchmarkfähig markiert.
+Bei Datenbanken mit Tausenden von Tabellen sollte `--max-wall-secs` bei Bedarf über den Standardwert von 300 Sekunden erhöht werden. Fidelity-Marker beschreiben die Richtlinie; sie zeigen nicht, dass die Stichproben alle Tabellen erreicht haben.
 
 ## Rezept: SQL Server mit SQL-Authentifizierung
 
@@ -100,10 +88,10 @@ Erzeugen Sie das Token außerhalb des Werkzeugs und übergeben Sie es anschließ
 ```bash
 install -d -m 700 "$HOME/.cache/dbwarp-blueprint"
 TOKEN_FILE="$HOME/.cache/dbwarp-blueprint/sql-token"
+install -m 600 /dev/null "$TOKEN_FILE"
 az account get-access-token \
   --resource https://database.windows.net/ \
   --query accessToken -o tsv > "$TOKEN_FILE"
-chmod 600 "$TOKEN_FILE"
 
 ./dbwarp-blueprint \
   --connect sqlserver://sql-primary.database.windows.net,1433/appdb \
@@ -111,11 +99,15 @@ chmod 600 "$TOKEN_FILE"
   --auth-mode entra-token \
   --azure-token-file "$TOKEN_FILE" \
   --tls-mode verify-full \
-  --tls-ca /etc/pki/sqlserver-ca.pem \
   --measure-compression --yes \
   --out mssql-entra.blueprint.toml \
   --audit-log mssql-entra.audit.txt
 ```
+
+Azure SQL stellt ein Zertifikat einer öffentlichen CA bereit. Deshalb bleibt
+`--tls-ca` in diesem Rezept ungesetzt und der Trust Store des Betriebssystems
+wird verwendet. Eine angegebene Datei `--tls-ca` ersetzt diesen Trust Store
+durch ein Zertifikat; siehe [TLS](TLS.md).
 
 ## Rezept: Sicherheitsprüfung nur anhand des Katalogs
 
@@ -131,7 +123,7 @@ chmod 600 "$TOKEN_FILE"
   --yes
 ```
 
-Dies ist der Prüfmodus mit den geringsten Hürden. Er vermeidet Zeilenstichproben, liefert nachgelagert jedoch weniger genaue Schätzungen für Komprimierung und Egress.
+Dies ist der Modus mit dem geringsten Aufwand für die Überprüfung. Er vermeidet die Stichprobenentnahme von Zeilen, erzeugt aber weniger genaue Kompressions- und Datenübertragungs-Schätzungen.
 
 ## Nicht-Tabellen-Migrationskomplexität bewerten
 
@@ -161,7 +153,7 @@ Erfassen Sie nach der Sicherheitsfreigabe anonyme Abhängigkeiten und begrenzte 
 ```
 
 
-Prüfen Sie `visibility`, alle drei Vollständigkeitsflags, `catalogs_unreadable`, `families_not_inventoried` und `counts_by_external_class`. Behandeln Sie jede externe Klasse als eigene Migrationsaufgabe. Ein inventarisiertes Objekt beweist nicht, dass DBWarp es neu erstellen oder übersetzen kann; vergleichen Sie es mit der Migrationsfähigkeitsmatrix. Siehe [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
+Überprüfen Sie `visibility` sowie alle drei Vollständigkeitsflags `catalogs_unreadable`, `families_not_inventoried` und `counts_by_external_class`. Behandeln Sie jede externe Klasse als eine explizite Migrationaufgabe. Betrachten Sie ein inventarisertes Objekt nicht als Beweis dafür, dass DBWarp es neu erstellen oder übersetzen kann; fragen Sie DBWarp, welche Objekttypen für Ihre Migration unterstützt werden. Siehe [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
 
 ## Rezept: RTT-Prüfung deaktivieren
 
@@ -196,9 +188,9 @@ Halten Sie den ersten Lauf bei großen Produktionssystemen konservativ:
 
 Wenn die Ausgabe viele Stichproben als verzerrt oder fehlend kennzeichnet, führen Sie den Lauf auf einer Lesereplik mit einem größeren Zeitbudget erneut aus.
 
-## Rezept: Ein Kunde, mehrere Datenbanken
+## Rezept: Mehrere Datenbanken in einem Paket.
 
-Verwenden Sie ein Batch-Manifest, wenn ein Kunde ein einziges geprüftes Paket für mehrere Datenbanken wünscht.
+Verwenden Sie ein Batch-Manifest, wenn Sie ein einzelnes Paket für mehrere Datenbanken bereitstellen möchten, das überprüft werden soll.
 
 `customer.batch.toml`:
 
@@ -253,9 +245,9 @@ Ausführung:
 
 Dadurch werden `bundle.toml`, eine untergeordnete Blueprint-Datei pro Quelle und ein Audit pro Quelle geschrieben. Die untergeordneten Blueprint-Dateien können unabhängig voneinander geprüft werden.
 
-## Rezept: Ein Kunde, gemischte Datenbanken und Data-Lake-Dateien
+## Rezept: Mischung aus Datenbanken und Data-Lake-Dateien.
 
-Verwenden Sie Quellen für strukturierte Dateien im selben Batch, wenn der Kunde neben Live-Datenbanken auch Parquet- oder Avro-Extrakte besitzt.
+Verwenden Sie strukturierte Dateiquellen im selben Batch, wenn Sie Parquet- oder Avro-Extrakte zusammen mit aktiven Datenbanken haben.
 
 ```toml
 [defaults]
@@ -274,7 +266,7 @@ tags = ["database"]
 [[source]]
 id = "orders_parquet"
 kind = "parquet"
-paths = ["/mnt/customer/orders/year=*/month=*/*.parquet"]
+paths = ["/data/orders/year=*/month=*/*.parquet"]
 dataset_mode = "partitioned_dataset"
 logical_table = "orders"
 tags = ["lake", "orders"]
@@ -282,12 +274,12 @@ tags = ["lake", "orders"]
 [[source]]
 id = "events_avro"
 kind = "avro"
-paths = ["/mnt/customer/events/*.avro"]
+paths = ["/data/events/*.avro"]
 dataset_mode = "one_table_per_file"
 tags = ["lake", "events"]
 ```
 
-`partitioned_dataset` führt Dateien derzeit wie `merge_same_schema` zusammen, macht aber die Absicht des Kunden im Bundle sichtbar. Halten Sie nicht zusammengehörige Schemata in getrennten Quellen.
+`partitioned_dataset` führt Dateien wie `merge_same_schema` zusammen und speichert den angegebenen Modus im Bundle. Halten Sie nicht zusammengehörige Schemata in separaten Quellen.
 
 ## Rezept: Nur eine Quelle oder Tabelle aus einem Bundle extrahieren
 
@@ -315,14 +307,11 @@ Eine Tabelle aus einer Quelle extrahieren:
   --out erp_pg_table_042.blueprint.toml
 ```
 
-Verwenden Sie dies, wenn der Kunde nur einen Teil einer Datenlandschaft für einen Benchmark freigibt oder wenn Sie aus einem großen Bundle einen kleinen, fokussierten Testdatensatz erzeugen möchten.
+Verwenden Sie dies, wenn nur ein Teil eines Pakets zur Weitergabe freigegeben ist.
 
-## Rezept: Separat geprüftes Bundle für die Übergabe packen
+## Anleitung: Ein geprüftes Bundle zum Teilen zusammenstellen.
 
-Das Arbeits-Bundle-Verzeichnis enthält untergeordnete Blueprints und
-zugriffsgeschützte Audits. Übertragen Sie es nicht als Ganzes. Erstellen Sie
-nach der Prüfung der Manifestwerte und der untergeordneten Blueprints eine
-Übergabe in einer einzelnen Datei:
+Das Arbeitsverzeichnis des Bundles enthält untergeordnete Blueprints und audits mit Zugriffskontrolle. Übertragen Sie es nicht vollständig. Nachdem Sie die Werte des Manifests und die untergeordneten Blueprints überprüft haben, erstellen Sie eine einzelne Datei zum Weitergeben:
 
 ```bash
 ./dbwarp-blueprint \
@@ -335,12 +324,12 @@ Datensatzgruppen-IDs und Auditpfad-Metadaten bei. Verwenden Sie anonyme Werte,
 prüfen Sie das gepackte TOML und übertragen Sie es ausschließlich über den
 freigegebenen Kanal.
 
-## Rezept: Batch-Übergabepaket
+## Rezept: Batch-Paket zum Teilen.
 
-Befolgen Sie die [Übergaberichtlinie](QUICKSTART.md#review-and-share). Bewahren Sie Arbeitsmanifest, Audits, Befehlsaufzeichnungen und Prüfnotizen lokal auf. Erstellen Sie dieses separate Verzeichnis nur aus dem geprüften gepackten Blueprint.
+Befolgen Sie die [Anleitung zur Überprüfung und Freigabe](QUICKSTART.md#review-and-share). Behalten Sie das Arbeits-Manifest, die Protokolle und die Befehlseinträge lokal; erstellen Sie dieses separate Verzeichnis nur aus dem überprüften, komprimierten Blueprint.
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   customer-blueprint-bundle.packed.toml
 ```
 
@@ -356,8 +345,8 @@ Dieser Modus liest nur die TOML-Datei und schreibt die Präsentation. Er lehnt O
 
 ## Rezept: Byte-identische Reproduzierbarkeit
 
-Schreiben Sie den Zeitstempel fest und verwenden Sie denselben geschützten,
-kundenseitig verwahrten Anonymisierungsschlüssel erneut:
+Schreiben Sie den Zeitstempel fest und verwenden Sie denselben geschützten
+Anonymisierungsschlüssel, den Sie verwahren, erneut:
 
 ```bash
 ./dbwarp-blueprint \
@@ -370,26 +359,15 @@ kundenseitig verwahrten Anonymisierungsschlüssel erneut:
   --yes
 ```
 
-Die Schlüsseldatei muss genau 32 Rohbytes oder 64 Hexadezimalzeichen enthalten,
-darf unter Unix nicht für Gruppe/Andere lesbar sein und darf niemals in die
-Übergabe aufgenommen werden. Ohne diese Option ändert ein neuer zufälliger
-Betriebssystemschlüssel bei jedem Lauf absichtlich die anonyme Reihenfolge.
-Nur `--generated-at` festzuschreiben reicht nicht. Verwenden Sie das vollständige
-Rezept für genehmigte forensische Snapshots; eine aus exakt demselben geprüften
-Blueprint erzeugte Präsentation bleibt bei unverändertem Zeitstempel und
-unveränderter Sprache byteidentisch.
+Die Schlüsseldatei muss genau 32 rohe Bytes oder 64 hexadezimale Zeichen enthalten, darf unter Unix nicht "group/world-readable" sein und darf niemals weitergegeben werden. Ohne diese Option ändert ein frisch generierter, betriebssystem-zufälliger Schlüssel absichtlich die Reihenfolge der anonymen Kennzeichnungen bei jedem Ausführungsvorgang. Das Festlegen von nur "`--generated-at`" ist nicht ausreichend. Verwenden Sie das vollständige Verfahren für zugelassene forensische Snapshots; ein Deck, das zweimal aus genau demselben, überprüften Blueprint generiert wurde, bleibt byte-identisch, wenn sein Zeitstempel und seine Sprache unverändert sind.
 
-## Rezept: Übergabepaket für DBWarp
+## Rezept: Paket zum Teilen mit DBWarp.
 
-Befolgen Sie die [Übergaberichtlinie](QUICKSTART.md#review-and-share).
+Befolgen Sie die [Anleitung zur Überprüfung und Freigabe](QUICKSTART.md#review-and-share). Das Standardpaket enthält nur das genehmigte Blueprint:
 
 ```text
-customer-blueprint-handoff/
+blueprint-share/
   blueprint.toml
 ```
 
-Teilen Sie standardmäßig nur die geprüfte `blueprint.toml` oder das gepackte Bundle. Die Präsentation `blueprint.pptx` darf nur nach gesonderter Prüfung ihres Inhalts und ihrer Vertraulichkeitskennzeichnung sowie ausdrücklicher Freigabe gemäß Ihrer Organisationsrichtlinie beigefügt werden.
-
-Bewahren Sie Audits, Befehlsaufzeichnungen, Prüfnotizen und nicht freigegebene Präsentationen lokal mit Zugriffsschutz auf. Diese können Endpunkte, authentifizierte Identitäten, lokale Pfade, Zeitangaben und Manifest-IDs enthalten. Senden Sie Betriebsnachweise nur für einen konkreten Supportbedarf über einen genehmigten sicheren Kanal.
-
-Das Werkzeug erstellt `command-used.redacted.txt` nicht; dies ist eine optionale Aufzeichnung des Operators, kein regulärer Bestandteil der Übergabe. Legen Sie niemals Passwort- oder Tokendateien, Anonymisierungsschlüssel, private CA-Schlüssel, Kundendumps oder Datenbankprotokolle bei.
+Fügen Sie `blueprint.pptx` nur nach separater Prüfung und Genehmigung hinzu. Bewahren Sie Protokolle, Befehlsprotokolle und credential/key-Materialien nicht im freigegebenen Verzeichnis auf; senden Sie Protokolle nur für einen bestimmten Support-Zweck über einen genehmigten, sicheren Kanal.

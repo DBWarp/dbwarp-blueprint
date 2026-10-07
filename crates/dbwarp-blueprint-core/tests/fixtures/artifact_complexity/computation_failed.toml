@@ -1,0 +1,97 @@
+# Hand-authored semantic oracle. Do not generate this file from the assessor.
+# A checked assessor failure retains the complete eligible population and
+# fails every complexity dimension closed instead of publishing partial math.
+
+[inventory]
+contract = "dbwarp-blueprint-artifacts/v2"
+detail = "analyzed"
+scope = "selected-schemas"
+visibility = "full"
+inventory_complete = true
+dependencies_complete = true
+requirements_complete = true
+analysis_complete = true
+object_count = 1
+
+[inventory.counts_by_kind]
+function = 1
+
+[inventory.artifacts.function-001]
+kind = "function"
+subkind = "stored_function"
+tier = "programmatic"
+definition_visibility = "available"
+requirement_status = "complete"
+[inventory.artifacts.function-001.analysis]
+contract = "dbwarp-language-feature-census/v1"
+status = "complete"
+dialect = "sql"
+grammar_profile = "postgresql-18"
+analyzer_version = "lexical-v2"
+analysis_span = "executable-body"
+definition_size_band = "1-255"
+statement_count_band = "1"
+token_count_band = "2-4"
+maximum_nesting_band = "0"
+cyclomatic_complexity_band = "1"
+opaque_region_count_band = "0"
+
+[expected]
+contract = "dbwarp-blueprint-artifact-complexity/v1"
+assessor_version = 1
+scope = "selected-schemas"
+population_policy = "exclude-known-engine-generated-and-secondary"
+assessment_population_complete = true
+eligible_object_count = 1
+fully_assessed_object_count = 0
+partially_assessed_object_count = 0
+unassessed_object_count = 1
+excluded_object_count = 0
+analyzer_version = "lexical-v2"
+analysis_spans = ["executable-body"]
+dialects = ["sql"]
+grammar_profiles = ["postgresql-18"]
+overall_band = "unknown"
+limitations = ["computation-failed"]
+
+[expected.dimensions.volume]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.volume.histogram]
+unknown = 1
+
+[expected.dimensions.control_flow]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.control_flow.histogram]
+unknown = 1
+
+[expected.dimensions.feature_breadth]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.feature_breadth.histogram]
+unknown = 1
+
+[expected.dimensions.entanglement]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.entanglement.histogram]
+unknown = 1
+
+[expected.dimensions.environment_coupling]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.environment_coupling.histogram]
+unknown = 1
+
+[expected.dimensions.opacity]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.opacity.histogram]
+unknown = 1
+
+[expected.dimensions.dialect_coupling]
+band = "unknown"
+coverage = "unknown"
+[expected.dimensions.dialect_coupling.histogram]
+unknown = 1

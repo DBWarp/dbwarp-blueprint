@@ -6,16 +6,11 @@
 
 Errores habituales de `dbwarp-blueprint` y pasos que debe seguir.
 
-Los errores que puede resolver el operador comienzan ahora con un código de mensaje estable `DBPnnnnS`, por ejemplo `DBP1001E`.
-Utilice el código para buscar en la documentación o abrir un ticket de soporte. Consulte [Códigos de mensajes para operadores](MESSAGES.md).
+Los errores comienzan con un código de mensaje estable `DBPnnnnS`, por ejemplo, `DBP1001E`. Utilice el código al buscar en la documentación o al informar de un problema. Consulte los [Códigos de mensaje para operadores](MESSAGES.md).
 
 ## La compilación desde el código fuente termina con estado 2 o 3
 
-`build.sh` termina con estado 2 cuando el `rustc` instalado no coincide con la
-versión fijada en `rust-toolchain.toml` y no se ha aprobado explícitamente el
-acceso a la red. Instale esa versión exacta de Rust o, tras revisar el límite
-de descarga, permita que el script obtenga su programa de arranque fijado y
-verificado mediante suma de comprobación:
+`build.sh` se cierra con el código de estado 2 cuando la versión de `rustc` instalada no coincide con la versión especificada en `rust-toolchain.toml` y el acceso a la red no ha sido aprobado explícitamente. Instale exactamente esa versión de Rust, o, después de revisar el límite de descarga, permita que el script obtenga su versión inicial, verificada mediante checksum:
 
 ```bash
 ALLOW_NETWORK=1 ./build.sh
@@ -102,15 +97,24 @@ confianza del sistema operativo cuando se omite `--tls-ca`. Un archivo `.pem` o
 esas raíces. El controlador comprueba el nombre de host de la conexión tanto con
 `verify-ca` como con `verify-full`.
 
-## El nivel 2 requiere consentimiento
+## Consentimiento obligatorio
 
-Síntoma:
+Síntoma en una ejecución contra una base de datos activa, cuando no se responde
+`y` o `yes` a la confirmación:
 
 ```text
---measure-compression requires --yes
+DBP1701E aborted (no consent)
 ```
 
-Solución:
+Síntoma cuando se solicita el muestreo de compresión de un archivo estructurado
+sin `--yes`:
+
+```text
+DBP1006E ... --measure-compression requires --yes (consent flag)
+```
+
+Solución: revise el resumen previo, responda `yes` a la confirmación o vuelva a
+ejecutar con `--yes` para una ejecución no interactiva:
 
 ```bash
 --measure-compression --yes
@@ -147,11 +151,11 @@ Las secciones de compresión solo aparecen cuando están presentes ambas opcione
 --measure-compression --yes
 ```
 
-Los Blueprints de solo catálogo son válidos, pero las estimaciones posteriores de compresión serán inferidas.
+Los "Blueprints" que solo incluyen el catálogo son válidos, pero las estimaciones de compresión se inferirán a partir de los tipos de columna.
 
 ## Algunas muestras de compresión aparecen marcadas como sesgadas
 
-Algunos motores no ofrecen un muestreo uniforme de tablas en todos los casos, y las tablas pequeñas pueden requerir una alternativa con `LIMIT`. El archivo Blueprint registra `sampled_with_bias` y `bias_reason` para que el estimador y la persona responsable de la revisión puedan tenerlo en cuenta.
+Algunos motores no proporcionan muestreo uniforme de tablas en todos los casos, y las tablas pequeñas pueden requerir un mecanismo de respaldo `LIMIT`. El archivo Blueprint registra `sampled_with_bias` y `bias_reason` para que un revisor pueda tenerlo en cuenta.
 
 Las muestras sesgadas siguen siendo útiles; simplemente no ofrecen garantías tan sólidas como las muestras uniformes.
 
@@ -169,7 +173,6 @@ No incluya opciones de base de datos en vivo con `--from-toml`. La herramienta r
 
 Un archivo Blueprint normal es compacto. Contiene metadatos estructurales, recuentos redondeados, índices, la estructura del grafo de claves foráneas y resúmenes opcionales de compresión. No debe contener valores de filas ni identificadores.
 
-Si necesita una base de datos representativa para pruebas de rendimiento, entregue el archivo `blueprint.toml` aprobado a las herramientas posteriores, revisadas por separado y autorizadas para ese trabajo.
 
 ## Necesidad de demostrar que no se realizó ninguna carga
 

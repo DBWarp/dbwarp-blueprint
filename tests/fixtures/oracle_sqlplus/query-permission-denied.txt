@@ -1,0 +1,8 @@
+ERROR:
+ORA-28002: the password will expire within 7 days
+
+
+SELECT COUNT(*) FROM SYS.DBA_TABLES
+                         *
+ERROR at line 1:
+ORA-00942: table or view does not exist

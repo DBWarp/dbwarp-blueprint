@@ -4,16 +4,7 @@
 
 **Langues :** [English](../MESSAGES.md) | [Deutsch](../de/MESSAGES.md) | **Français** | [Español](../es/MESSAGES.md) | [Polski](../pl/MESSAGES.md) | [日本語](../ja/MESSAGES.md) | [简体中文](../zh/MESSAGES.md)
 
-`dbwarp-blueprint` utilise des identifiants de message opérateur stables pour les échecs de validation et de flux de travail propres à DBWarp.
-Le format s'inspire des messages opérateur de style IBM : un préfixe de sous-système, un identifiant numérique et un suffixe de gravité.
-La documentation IBM CICS décrit un identifiant de programme suivi d'un numéro de message à quatre chiffres et d'une lettre de gravité ; IBM MQ utilise de même des champs de composant/préfixe, un identifiant numérique et un code final de type de message. Les recommandations de Microsoft relatives aux messages d'erreur renforcent la règle pratique selon laquelle une erreur doit décrire le problème et fournir une action que l'utilisateur peut entreprendre.
-
-Références :
-
-- Format des messages IBM CICS : https://www.ibm.com/docs/en/cics-pa/5.3.0?topic=messages-message-format
-- Présentation des informations de message IBM CICS : https://www.ibm.com/docs/en/cics-ts/6.x?topic=messages-format-cics-message-information
-- Format des messages IBM MQ for z/OS : https://www.ibm.com/docs/SSFKSJ_9.2.0/com.ibm.mq.ref.doc/q050270_.htm
-- Recommandations de Microsoft relatives aux messages d'erreur : https://learn.microsoft.com/en-us/windows/win32/uxguide/mess-error
+`dbwarp-blueprint` utilise des identifiants de messages stables pour les erreurs de validation et de flux de travail propres à DBWarp. Chaque message comporte un préfixe de sous-système, un identifiant numérique et un suffixe de gravité, et indique le problème ainsi qu'une action corrective.
 
 ## Format
 
@@ -27,13 +18,7 @@ Champs :
 - `nnnn` est un numéro de message stable à quatre chiffres.
 - `S` indique la gravité : `E` erreur, `W` avertissement, `I` information.
 
-Le code est stable et indépendant de la langue. Son résumé, sa cause et son
-action corrective sont localisés lorsque `--lang` ou les paramètres régionaux
-du processus sélectionnent une langue prise en charge. Les détails dynamiques
-du système d'exploitation, du pilote de base de données, des chemins et de la
-chaîne causale restent inchangés afin que les ingénieurs du support puissent
-rechercher l'échec d'origine. Le texte du message ne doit contenir ni secrets
-ni URI de connexion non expurgées.
+Le code est stable et indépendant de la langue. Son résumé, sa cause et l'action corrective sont localisés lorsque `--lang` ou la locale du processus sélectionne une langue prise en charge. Les détails dynamiques du système d'exploitation, du pilote de base de données, du chemin d'accès et de la chaîne de causes restent inchangés afin que l'erreur d'origine puisse être recherchée. Le texte du message ne doit pas contenir de secrets ni d'URI de connexion non masqués.
 
 ## Plages
 
@@ -62,8 +47,8 @@ ni URI de connexion non expurgées.
 | `DBP1004E` | Une option de jeton Azure est utilisée avec un moteur autre que SQL Server. |
 | `DBP1005E` | Le mode d’authentification n’est pas disponible pour le moteur sélectionné. |
 | `DBP1006E` | L'échantillonnage de fichiers structurés est demandé sans `--yes` explicite. |
-| `DBP1007E` | Un mode explicite de fidélité des longueurs est demandé pour un moteur qui n'expose pas encore ce contrat. |
-| `DBP1008E` | L'alias historique de longueurs exactes entre en conflit avec la fidélité stricte des longueurs. |
+| `DBP1007E` | Mode de fidélité de longueur explicite demandé pour un moteur qui ne le prend pas en charge. |
+| `DBP1008E` | `--preserve-exact-lengths` est en conflit avec le respect strict de la longueur. |
 | `DBP1009E` | La fidélité exacte des longueurs échantillonnées est demandée sans `--yes` explicite. |
 | `DBP1010E` | Le catalogue de localisation intégré est incomplet ou incohérent. |
 | `DBP1011E` | Les arguments de la ligne de commande ne sont pas valides. |
@@ -117,10 +102,20 @@ ni URI de connexion non expurgées.
 | `DBP1419E` | La capture active a dépassé `--max-wall-secs` ; le client a fermé la connexion et indique la limite propre au moteur côté serveur. |
 | `DBP1420E` | Au moins un `--schema` demandé n'était pas visible ; aucun Blueprint de portée ambiguë n'a donc été écrit. |
 | `DBP1421W` | Les identités de session SQL Server étaient indisponibles ; la capture a continué sans affirmation d'identité. |
+| `DBP1422W` | L’évaluation de la complexité des artefacts a échoué ; l’inventaire a été conservé et les dimensions agrégées concernées sont inconnues. |
+| `DBP1423W` | Un catalogue de structure d’index ou de relations était indisponible ; les tables et colonnes principales ont été conservées avec une couverture explicitement incomplète. |
+| `DBP1424W` | La visibilité complète du catalogue des politiques de sécurité SQL Server n’a pas pu être prouvée ; l’échantillonnage de niveau 2 a été ignoré pour chaque table concernée. |
+| `DBP1425W` | SQL Server a signalé un filtre de sécurité des lignes actif ; l’échantillonnage de niveau 2 a été délibérément ignoré au lieu de mesurer un sous-ensemble filtré. |
+| `DBP1426E` | La capture de base Oracle a échoué pendant la configuration, le démarrage de SQL*Plus, la résolution du propriétaire, la capture ou le mappage. |
+| `DBP1427W` | La provenance de la version du client Oracle SQL*Plus n’a pas pu être entièrement attestée ; la capture s’est poursuivie avec une limitation explicite. |
+| `DBP1428W` | Oracle Basic s'est arrêté avant que toutes les requêtes de catalogue prévues ne soient terminées ; les tables, colonnes, lignes et tailles déjà lues ont été conservées, et le Blueprint est marqué comme incomplet. |
+| `DBP1429W` | Oracle Basic a conservé ses données de base concernant les tables, les colonnes, les lignes et la taille, tandis qu'une ou plusieurs requêtes supplémentaires du catalogue n'étaient pas disponibles. |
+| `DBP1430W` | Oracle Basic a publié son Blueprint, mais n'a pas pu écrire le fichier de flux hors ligne optionnel. |
 | `DBP1501E` | La limite de capture du fichier structuré a échoué. |
 | `DBP1502E` | La sortie du Blueprint ou du bundle a échoué. |
 | `DBP1503E` | La génération de la présentation PowerPoint a échoué. |
 | `DBP1504W` | Le journal d'audit n'a pas pu être écrit. |
+| `DBP1505E` | Le flux hors ligne de base Oracle a échoué lors de la validation de ses permissions de fichier, de sa limite de taille, de sa somme de contrôle, de son ensemble de requêtes ou de sa structure de catalogue. |
 | `DBP1601E` | L'acquisition des informations d'identification a échoué. |
 | `DBP1602E` | La configuration TLS a échoué. |
 | `DBP1603E` | L'acquisition du nom d'utilisateur de la base de données a échoué. |
@@ -132,15 +127,7 @@ ni URI de connexion non expurgées.
 | `DBP1702E` | La réponse de consentement n'a pas pu être lue depuis l'entrée standard. |
 | `DBP1801E` | L'environnement d'exécution asynchrone n'a pas pu être initialisé. |
 
-Chaque langue annoncée doit contenir le résumé, la cause et l'action de chaque
-code DBP actuel. Le binaire le vérifie au démarrage et échoue avec `DBP1010E`
-plutôt que de se rabattre silencieusement sur l'anglais.
-
-Les échecs prévisibles aux limites de décision sont exercés par une matrice CLI
-adversariale. Une condition connue doit émettre son code spécifique comme
-premier code opérateur et ne doit pas se rabattre sur `DBP0001E`. Le moteur de
-rendu analyse aussi toute la chaîne d'erreurs afin qu'un contexte
-d'implémentation non codé ne puisse pas masquer une cause interne codée.
+Chaque langage pris en charge contient tous les résumés, causes et actions de DBP. Le programme vérifie cela au démarrage et échoue avec `DBP1010E` plutôt que de revenir silencieusement à l'anglais.
 
 Les avertissements non fatals d'échantillonnage de base de données sont affichés
 avec leur code d'avertissement stable et consignés dans l'audit de l'exécution.
@@ -150,7 +137,7 @@ en échec total de la collecte.
 
 ## Liste de contrôle du support
 
-Lorsqu'un client signale un échec, demandez :
+Lorsque vous demandez de l'aide pour un échec, fournissez :
 
 - la sortie complète du terminal, y compris le code `DBP` ;
 - le journal d'audit si `--audit-log` a été utilisé ;

@@ -1,6 +1,6 @@
 -- =============================================================================
--- dbwarp-blueprint least-privilege grants — PostgreSQL 13-18
--- Tier: BASIC  (catalog walk only; no customer rows are read)
+-- dbwarp-blueprint least-privilege grants: PostgreSQL 13-18
+-- Tier: BASIC  (catalog walk only; this script grants no table-row access)
 -- =============================================================================
 -- Authorizes this command:
 --
@@ -11,9 +11,15 @@
 -- What the account gets: LOGIN, CONNECT to this one database, and the
 -- PUBLIC-readable catalogs the collector walks (pg_class, pg_namespace,
 -- pg_attribute, pg_index, pg_am, pg_constraint, pg_stat_all_tables,
--- pg_table_size(oid), pg_indexes_size(oid), current_setting('server_version')).
--- It cannot read any user table, view, or sequence. pg_stats is empty for it,
--- so observed column widths are reported as 0 at this tier.
+-- pg_partitioned_table, pg_inherits, pg_table_size(oid),
+-- pg_indexes_size(oid), and the server_version/shared_buffers settings).
+-- Every capture also runs a count-only topology probe: pg_is_in_recovery(),
+-- Citus presence in pg_extension, a row count from pg_stat_wal_receiver or
+-- pg_stat_replication, and pg_dist_* counts only when Citus is installed.
+-- This script grants no access to any user table, view, or sequence, but
+-- pre-existing role memberships or PUBLIC grants can still give the account
+-- more; audit them separately. pg_stats is empty for it, so observed column
+-- widths are reported as 0 at this tier.
 --
 -- PRE-CAPTURE REQUIREMENTS (full engine/tier matrix: ../README.md): keep DDL
 -- stable; record the selected schema and expected table/index/FK counts; have

@@ -7,17 +7,9 @@
 [Polski](../pl/ARTIFACT_INVENTORY.md) | [日本語](../ja/ARTIFACT_INVENTORY.md) |
 [简体中文](../zh/ARTIFACT_INVENTORY.md)
 
-Seit Schema v4 können Blueprints Datenbankobjekte außerhalb von Tabellen und
-Voraussetzungen für die Bereitstellung beschreiben, ohne deren Quellnamen,
-Definitionen, Endpunktzeichenfolgen, Geheimnisse, Zertifikate, Schlüssel oder
-Binärdateien zu veröffentlichen. Das Inventar hilft DBWarp, die Migrationskomplexität zu
-bewerten und Arbeiten zu erkennen, die Pakete, Infrastruktur,
-Sicherheitsfreigaben oder unterstützte Konvertierung benötigen.
+Blueprints können nicht-tabellarische Datenbankobjekte und Bereitstellungsanforderungen beschreiben, ohne deren Quellnamen, Definitionen, Endpunkt-Strings, Geheimnisse, Zertifikate, Schlüssel oder Binärdateien zu veröffentlichen. Dieses Inventar hilft DBWarp, die Komplexität der Migration abzuschätzen und Aufgaben zu identifizieren, für die Pakete, Infrastruktur, Sicherheitsfreigaben oder eine unterstützte Konvertierung erforderlich sind.
 
-Ein Inventareintrag ist keine Fähigkeitszusage. Ein gemeldetes Objekt bedeutet
-nicht, dass DBWarp es automatisch neu erstellen oder übersetzen kann. Die
-Migrationsfähigkeit muss separat anhand der Routen- und Artefaktmatrix von
-DBWarp geprüft werden.
+Ein Inventar ist keine Aussage über eine Fähigkeit. Die Tatsache, dass ein Objekt erfasst wird, bedeutet nicht, dass DBWarp es automatisch neu erstellen oder übersetzen kann. Bitte überprüfen Sie mit DBWarp, welche Objekttypen unterstützt werden.
 
 ## Detailstufen
 
@@ -26,7 +18,7 @@ Planung:
 
 | Wert | Datenbankzugriffe | Ausgabe in der Blueprint-Datei | Zustimmung |
 |---|---|---|---|
-| `none` | Keine Artefaktkataloge oder Definitionen | Keine Artefaktzahlen und kein Graph | Keine zusätzliche Zustimmung |
+| `none` | Keine Artefaktinventarkataloge oder Definitionen (die reine Topologie-Zählabfrage wird weiterhin ausgeführt) | Explizites, nicht angefordertes v7-Inventar; keine Zahlen und kein Graph | Keine zusätzliche Zustimmung |
 | `summary` | Artefaktkataloge, aber keine Definitionen | Zahlen je Art und Klasse externer Voraussetzung | Standard; keine zusätzliche Zustimmung |
 | `graph` | Artefaktkataloge und Abhängigkeitsmetadaten, aber keine Definitionen | Zahlen sowie stabile anonyme Objektdatensätze und Kanten | Erfordert `--yes` |
 | `analyzed` | Artefaktkataloge, Abhängigkeiten und verfügbare Definitionen | Graph sowie begrenzte Sprachmerkmale und Komplexitätsklassen | Erfordert `--yes` |
@@ -56,7 +48,8 @@ Die Artefaktausgabe enthält nur begrenzte Metadaten aus geschlossenem Vokabular
   und `schema-A`; laufübergreifende Stabilität erfordert dieselbe geschützte
   `--anonymization-key-file`;
 - geschlossene Tokens für Objektart, Unterart, Ebene, Sichtbarkeit und Sicherheitsmodus;
-- Abhängigkeiten ausschließlich über anonyme Artefakt- oder Tabellen-IDs;
+- typisierte Beziehungen ausschließlich über anonyme Artefakt- oder Tabellen-IDs, mit geschlossenen Evidenz- und Auflösungsgrund-Tokens;
+- begrenzte, Engine-spezifische Funktionsanforderungen für die Migrationsplanung;
 - Zahlen und begrenzte Klassen statt frei formuliertem Text;
 - Standardkatalogbezeichnungen wie `pg_proc`, `information_schema.views` oder `sys.objects`;
 - Klassen externer Voraussetzungen, niemals deren Namen oder Material.
@@ -83,24 +76,77 @@ Der Block `[artifact_inventory]` ist bewusst selbstprüfend:
 
 | Feld | Bedeutung |
 |---|---|
-| `contract` | Unabhängig versionierter Vertrag, derzeit `dbwarp-blueprint-artifacts/v1` |
+| `contract` | Unabhängig versionierter Vertrag; v7 verwendet `dbwarp-blueprint-artifacts/v2`, ältere Blueprint-Schemas behalten v1 |
 | `detail` | Angeforderte Detailstufe |
+| `scope` | v7-Katalogumfang: `all-visible-schemas`, `selected-schemas`, `structured-source` oder `unknown` |
 | `visibility` | `full`, `privilege_filtered` oder `unknown` |
 | `inventory_complete` | Nur bei voller Sichtbarkeit, ohne unlesbare Kataloge und ohne deklarierte unmodellierte Familien wahr |
 | `dependencies_complete` | Nur wahr, wenn Abhängigkeitsquellen lesbar waren und die modellierten Familien erfasst werden können |
+| `requirements_complete` | V7-Aggregat: nur nach Prüfung von Engine-Version und Edition, vollständiger Abdeckung der Bewertungspopulation im ausgewählten Umfang und `requirement_status = complete | not_applicable` für jedes ausgegebene Artefakt wahr; Weglassen bedeutet falsch |
 | `analysis_complete` | Nur bei `analyzed` und vollständiger Analyse aller verfügbaren Definitionen wahr |
 | `catalogs_read` | Erfolgreich gelesene Standardkatalogfamilien |
-| `catalogs_unreadable` | Fehlgeschlagene oder nicht verfügbare Katalogfamilien |
-| `families_not_inventoried` | Bekannte Objektfamilien außerhalb des aktuellen Erfassungsvertrags |
+| `catalogs_unreadable` | Fehlgeschlagene oder nicht verfügbare Katalogfamilien; betroffene Vollständigkeitsangaben werden herabgestuft, ohne unabhängige Anforderungsnachweise pro Objekt zu löschen |
+| `catalogs_not_applicable` | Nachweislich nicht anwendbare Katalogfamilien; überschneidungsfrei mit den lesbaren und unlesbaren Mengen |
+| `families_not_inventoried` | Bekannte Objektfamilien, die in dieser Version nicht inventarisiert werden |
 
 Ein optionaler Katalogfehler entfernt Objekte nicht stillschweigend. Der Lauf
 meldet `DBP1410W`, zeichnet den betroffenen Katalog auf und setzt die passenden
 Vollständigkeitsangaben auf falsch. Ein Konto mit geringen Rechten kann daher
 ein nützliches Teilinventar erzeugen, ohne Abwesenheit als Beweis darzustellen.
 
+`object_count` zählt ausgegebene Artefaktdatensätze, nicht Zeilen eines einzelnen
+nativen Katalogs. Oracle-Pakete und Objekttypen werden als Spezifikation,
+Hauptteil und Mitgliedsdatensätze modelliert; der Hauptteil besitzt die
+kombinierte Sprachanalyse. Ein in mehreren Katalogen beobachtetes Objekt wird
+nur einmal gezählt. Trigger-Metadaten und -Quelltext werden beispielsweise vor
+der Anonymisierung anhand der nativen Objektidentität verbunden.
+
+## Vertrag für aggregierte Komplexität
+
+Schema v7 definiert für `graph` und `analyzed` einen rein aggregierten Datensatz
+`[artifact_inventory.complexity]`. Er verursacht weder zusätzliche
+Datenbankzugriffe noch zusätzliche Berechtigungen, sondern wird aus dem bereits
+genehmigten anonymen Graphen und Sprachzensus abgeleitet. Für `graph` und
+`analyzed` ist er erforderlich, bei `none` und `summary` fehlt er.
+
+Die Bewertung umfasst sieben abgeschlossene Dimensionen: Volumen, Kontrollfluss, Funktionsumfang, Verflechtung, Umgebungsabhängigkeit, Undurchsichtigkeit und Dialektkopplung. Die Ergebnisse werden in Form von Bereichen angegeben, nicht als numerische Werte. `overall_score` ist reserviert und wird nicht befüllt, da ein Wert zwischen 0 und 100 eine nicht unterstützte Genauigkeit implizieren würde.
+
+Jede Dimension enthält ein eindimensionales exaktes Histogramm der geeigneten
+Population. Umfang verwendet Größenklassen, die übrigen Dimensionen
+Zählklassen. Beide besitzen `not_applicable`- und `unknown`-Eimer; jedes
+Histogramm erfüllt `eligible = assessed + not_applicable + unknown`. Es gibt
+weder zusammengesetzte Bewertungen pro Objekt noch Kreuztabellen nach Objektart,
+Merkmal oder Schema. Positiv erkannte Engine-generierte und sekundäre Objekte
+werden von der Bewertung ausgeschlossen, bleiben aber im Inventar; temporäre
+Objekte und Objekte mit fehlenden Flags bleiben geeignet. Externe Binärartefakte
+wie am Standort installierte Plug-ins, CLR-Assemblies, Java und Bibliotheken bleiben echte
+Migrationsarbeit. Nur ein ausdrücklich gesetztes Engine-generiert-Flag schließt
+sie aus.
+
+`assessment_population_complete` gibt an, ob jedes geeignete Objekt bekannt ist.
+Es ist unabhängig von `inventory_complete`; Weglassen bedeutet falsch. Eine
+unvollständige Population erzwingt eine `unknown`-Gesamtklasse, sofern die
+bekannte Untergrenze nicht bereits `very-high` ist.
+
+Die Abdeckung wird je Dimension erfasst. `not_applicable` ist eine abgeschlossene
+Bewertung. Teilweise bewertet bedeutet, dass mindestens eine anwendbare
+Dimension bekannt und eine weitere unbekannt ist; unbewertet bedeutet, dass
+keine anwendbare Dimension bekannt ist. Unbekannte Evidenz gilt niemals als
+geringe Komplexität. Eine teilweise Dimension ist `unknown`, außer ihre bekannte
+Untergrenze ist bereits `very-high`; die Gesamtklasse wird nur ausgegeben, wenn
+Unter- und Obergrenze übereinstimmen. `graph` gibt für eine nicht leere
+Population nie ein Gesamturteil aus, weil Definitionen nicht gelesen wurden.
+Eine vollständige leere Population ist `not-applicable`.
+
+Verpackte Objekte tragen zum Histogramm der Undurchsichtigkeit zum Bucket `unknown` bei, auch wenn keine teilweise Sprachstatistik erstellt werden kann. Lesen Sie die Undurchsichtigkeitsbande zusammen mit ihrer Abdeckung, sodass eine kleine beobachtete Bande nicht ohne ihre unbekannte Population gelesen wird. Wenn die Bewertung selbst fehlschlägt, wird das vollständige Inventar mit einem kanonischen, vollständig unbekannten Aggregat beibehalten. Verpackte oder zurückgehaltene Definitionen, unvollständige Graphen, unvollständige Nachweise für Anforderungen, Grenzen mit ausgewähltem Umfang sowie nicht unterstützte Sprachen oder Dialekte bleiben explizite Einschränkungen. Die Einschränkungsbehauptungen werden, wenn möglich, aus den Artefakten und den statistischen Daten abgeleitet. `unsupported-dialect` bleibt eindeutig, da die Statistik einen Dialekt nennen und `unavailable` melden kann, aber keinen `unsupported`-Status hat; das bedeutet, dass die Definition gelesen wurde, aber der angegebene Analysator diesen Dialekt nicht unterstützt, nicht dass die Quelle zurückgehalten oder verpackt wurde.
+
+Der Datensatz enthält die einzelne Analyzer-Version sowie sortierte Mengen von Analysebereichen, Dialekten und Grammatikprofilen, die in der zulässigen Stichprobe vorhanden sind. Zwei Erfassungen sind nur dann vergleichbar, wenn diese Mengen, der Vertrag, der Gutachter, der Umfang und die Stichprobenrichtlinie übereinstimmen. Ein Bundle behält die Komplexität pro Quellsystem bei und aggregiert sie niemals über Engines oder Analyzer hinweg.
+
+Die Komplexitäts-Vertrags- und Bewertungsversionen sind unabhängig voneinander. Für genaue Felder und Invarianten, siehe die [Formatreferenz](FORMAT.md).
+
 ## Engine-Abdeckung
 
-Der v1-Collector modelliert folgende Familien:
+Der aktuelle Collector modelliert folgende Familien:
 
 | Engine | Modellierte Objektfamilien |
 |---|---|
@@ -111,6 +157,12 @@ Der v1-Collector modelliert folgende Familien:
 Jede Blueprint-Datei nennt bekannte unmodellierte Familien. Aus einer leeren Zahl
 darf nur dann auf Abwesenheit geschlossen werden, wenn `visibility`, die
 Vollständigkeitsfelder und die Liste unmodellierter Familien dies stützen.
+
+## Anforderungsnachweise
+
+Anforderungen an Artefakte sind Engine-spezifische Informationen, die aus begrenzten Katalogspalten oder dedizierten, engine-sensitiven Syntaxprüfungen stammen. Eine generische lexikalische Analyse erzeugt keine engine-spezifischen Anforderungen. Wenn ein analysiertes Sprachmerkmal denselben Fakt widerspiegelt, hat die Anforderung Vorrang und das Merkmal bleibt eine lexikalische Beobachtung. Eine fehlende Anforderung ist kein Beweis dafür, dass jedes Anforderungselement überprüft wurde.
+
+Jedes v7 graph/analyzed-Objekt speichert `requirement_status` als `complete`, `partial`, `unavailable` oder `not_applicable`. Nur `complete` macht eine leere Liste zu einem Beweis für null Anforderungen für dieses Objekt. `partial` protokolliert, dass ein bestimmtes Faktum oder ein bestimmter Produzent erfolgreich war, ohne vollständige Abdeckung; `unavailable` protokolliert, dass kein Produzent eine brauchbare Abdeckung hergestellt hat und daher keine bekannten Anforderungen oder externen Voraussetzungen belegen kann. Solche Beweise erfordern `partial`. Beide tragen zu unbekannten, anforderungen-bedingten Komplexitätsbeobachtungen bei, während vollständige Objekte weiterhin bewertet werden können. `not_applicable` verbietet die Aufzeichnung von Anforderungen und externen Voraussetzungen. Der inventarbezogene Wert `requirements_complete` ist nur dann wahr, nachdem die Engine-Version und -Edition geprüft wurden, eine vollständige Bewertung durchgeführt wurde und jedes ausgegebene Objekt vollständig oder nicht anwendbar ist. PostgreSQL, MySQL und SQL Server setzen das Gesamtergebnis erst, nachdem jedes anwendbare Artefakt-Katalog versucht wurde und die ausgewählte Population als vollständig bewiesen wurde. Ein verweigerter oder unlesbarer Katalog oder eine Auswahlgrenze, deren Population nicht bewiesen werden kann, lässt das Gesamtergebnis falsch, ohne vollständige, objektspezifische Beweise aus den gelesenen Katalogen zu löschen. Artefaktanforderungen werden für Oracle nicht gemeldet.
 
 ## Externe Voraussetzungen
 
@@ -137,36 +189,30 @@ werden und dürfen nicht stillschweigend ausgelassen werden.
 
 ## Zensus der Sprachmerkmale
 
-`analyzed` ergänzt Blöcke nach `dbwarp-language-feature-census/v1` für
-verfügbare SQL- und Prozedurdefinitionen. Der erste Analyzer ist `lexical-v1`
-und meldet `status = "partial"`; er ist weder Parser noch Compiler, semantischer
-Binder oder Erfolgsgarantie für eine Übersetzung.
+`analyzed` Details fügen `dbwarp-language-feature-census/v1` Blöcke hinzu. Das Schema v7 erzeugt `lexical-v2`, das nur den ausführbaren oder deklarativen Teil analysiert und `analysis_span = "executable-body"` erfasst. Es schließt die äußere Erstellungsstruktur, die Identität, die Signatur, die Rückgabedeklaration und die Moduloptionen aus. Wenn der Teil nicht sicher isoliert werden kann, zeichnet der Sammler einen unbekannten Bereich und keine verfügbaren Beweise auf; Objekte ohne Definitionsdimension verwenden `not-applicable`. Ein weggelassener Bereich wird als unbekannt interpretiert, anstatt aus der Engine abgeleitet zu werden. Der Analysator meldet `status = "partial"` für unterstützte Definitionen, da er kein Parser, Compiler, semantischer Binder oder eine Garantie für eine erfolgreiche Übersetzung ist. Fehlende oder nicht unterstützte Definitionselemente sind `unavailable`, während eine bewiesenermaßen nicht anwendbare Analyse `not_applicable` ist.
 
 Er speichert begrenzte Klassen für Definitionsgröße, Anweisungen, Tokens,
 Verschachtelung, zyklomatische Komplexität und undurchsichtige/dynamische
 Bereiche. Ein geschlossenes Vokabular beschreibt Kontrollfluss, Joins,
 Unterabfragen, CTEs, Aggregate, Fenster, DML, DDL, temporäre Objekte,
-dynamisches SQL, JSON, XML, räumliche und Vektortypen sowie Sicherheitsmodi.
+dynamisches SQL, JSON, XML, räumliche und Vektortypen, ausgelöste Fehler,
+Transaktionssteuerung, Ref-Cursor, verankerte Typen, Intervall-, Zeitzonen-,
+Boolean- und LOB-Nutzung sowie Sicherheitsmodi.
 Der Engine-Kontext enthält ein normalisiertes Grammatikprofil, MySQL-SQL-Modi
 und bei SQL Server Kompatibilität, `ANSI_NULLS` und `QUOTED_IDENTIFIER`.
 
-Der lexikalische Analyzer entfernt Kommentare, Literale und quotierte
-Bezeichner. Kontextregeln behandeln Trigger-Ereignisse, PostgreSQL
-`EXECUTE FUNCTION` und SQL-Server-Moduloptionen. Die Ergebnisse bleiben grobe
-Planungsnachweise. Ein zukünftiger grammatikgestützter Analyzer kann eine neue
-Analyzerversion verwenden, ohne den äußeren Artefaktvertrag zu ändern.
+Der lexikalische Analysator entfernt Kommentare, in Anführungszeichen gesetzte Literale und in Anführungszeichen gesetzte Bezeichner, bevor er zählt. Er verfügt über Kontextregeln für Trigger-Ereignisdeklarationen, PostgreSQL `EXECUTE FUNCTION` und SQL Server-Moduloptionen. Dennoch bleiben alle Ergebnisse grobe Planungsnachweise. Wrapped PL/SQL wird abgelehnt; verschleierte Bytes werden niemals zu plausiblen Messwerten des Programmkörpers.
 
 ## Empfohlener Prüfablauf
 
 1. Die standardmäßige Stufe `summary` mit einer Artefaktkatalogprüfung
    ausführen. Wenn die Richtlinie nur Tabellenkataloge erlaubt, stattdessen
-   `--artifact-detail none` verwenden und dieses Inventar auslassen.
+   `--artifact-detail none` verwenden; v7 zeichnet diese Entscheidung explizit
+   auf, statt den Inventarstatus auszulassen.
 2. Zahlen, externe Klassen, Sichtbarkeit, unlesbare Kataloge und unmodellierte Familien prüfen.
 3. `graph` nur freigeben, wenn anonyme Abhängigkeitstopologie akzeptabel ist.
 4. `analyzed` nur freigeben, wenn vorübergehende Definitionszugriffe akzeptabel sind.
 5. Das Auditprotokoll lokal als zugriffsgeschützten Nachweis aufbewahren. Nur weitergeben, wenn ein namentlich benannter Empfänger die Endpunkt-, Identitäts-, Pfad- und Degradierungsdetails über einen genehmigten sicheren Kanal benötigt.
-6. Inventar mit der DBWarp-Fähigkeitsmatrix vergleichen, bevor automatische Neuerstellung oder Übersetzung zugesagt wird.
+6. Nehmen Sie nicht an, dass ein inventarisiertes Objekt automatisch neu erstellt oder übersetzt werden kann; bestätigen Sie dies mit DBWarp.
 
-Die exakten Felder beschreibt die [Formatreferenz](FORMAT.md). Laufzeitliche
-Lese-/Schreibzugriffe, Warnungen und Vertrauensaussagen beschreibt die
-[Auditreferenz](AUDIT.md).
+Die genauen serialisierten Felder finden Sie in der [Formatreferenz](FORMAT.md). Laufzeit-Lese- und Schreibvorgänge, Warnungen und Vertrauensaussagen sind in der [Audit-Referenz](AUDIT.md) beschrieben.

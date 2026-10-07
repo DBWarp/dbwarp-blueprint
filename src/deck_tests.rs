@@ -2,8 +2,11 @@
 mod tests {
     use super::*;
     use crate::format::{
-        BlueprintColumn, BlueprintCompression, BlueprintFile, BlueprintIndex, BlueprintTable,
-        FkEdge, Totals, SCHEMA_VERSION,
+        ArtifactInventory, BlueprintColumn, BlueprintCompression, BlueprintFile, BlueprintIndex,
+        BlueprintTable, FkEdge, Totals, SCHEMA_VERSION,
+    };
+    use dbwarp_blueprint_core::{
+        assess_artifact_complexity, ArtifactComplexity, ArtifactRequirement, BlueprintArtifact,
     };
     use std::collections::BTreeMap;
 
@@ -113,6 +116,10 @@ mod tests {
                 "postgres-planner-estimate",
                 "postgres-local-relation-size",
             )),
+            structure_scope: None,
+            source_environment: None,
+            statistics_evidence: None,
+            activity_snapshot: None,
             totals: Totals {
                 table_count: 2,
                 row_count: 13_485_000,
@@ -126,6 +133,255 @@ mod tests {
 
     fn parse_blueprint(name: &str, src: &str) -> BlueprintFile {
         toml::from_str(src).unwrap_or_else(|e| panic!("{name} must parse as BlueprintFile: {e}"))
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ArtifactComplexityFixture {
+        inventory: ArtifactInventory,
+        expected: ArtifactComplexity,
+    }
+
+    fn complexity_blueprint(name: &str, base: &str, oracle: &str) -> BlueprintFile {
+        let mut blueprint = parse_blueprint(name, base);
+        blueprint.source_kind = "synthetic".to_string();
+        let mut fixture: ArtifactComplexityFixture = toml::from_str(oracle)
+            .unwrap_or_else(|error| panic!("{name} complexity oracle must parse: {error}"));
+        fixture.inventory.scope = "all-visible-schemas".to_string();
+        fixture.expected.scope = "all-visible-schemas".to_string();
+        let mut inventory = fixture.inventory;
+        let mut kind_counts = BTreeMap::<String, u64>::new();
+        inventory.artifacts = std::mem::take(&mut inventory.artifacts)
+            .into_values()
+            .map(|artifact| {
+                let count = kind_counts.entry(artifact.kind.clone()).or_default();
+                *count += 1;
+                (format!("{}-{count:03}", artifact.kind), artifact)
+            })
+            .collect();
+        inventory.complexity = Some(fixture.expected);
+        blueprint.artifact_inventory = Some(inventory);
+        let canonical = crate::format::emit_toml(&blueprint)
+            .unwrap_or_else(|error| panic!("{name} complexity Blueprint must validate: {error}"));
+        dbwarp_blueprint_core::parse_blueprint_toml(&canonical)
+            .unwrap_or_else(|error| panic!("{name} canonical Blueprint must parse: {error}"))
+    }
+
+    fn definition_free_artifact(
+        kind: &str,
+        subkind: &str,
+        tier: &str,
+        requirement: Option<&str>,
+    ) -> BlueprintArtifact {
+        let mut artifact = BlueprintArtifact {
+            kind: kind.to_string(),
+            subkind: subkind.to_string(),
+            tier: tier.to_string(),
+            definition_visibility: "not_applicable".to_string(),
+            requirement_status: if requirement.is_some() {
+                "complete".to_string()
+            } else {
+                "not_applicable".to_string()
+            },
+            ..BlueprintArtifact::default()
+        };
+        if let Some(token) = requirement {
+            artifact.requirements.push(ArtifactRequirement {
+                token: token.to_string(),
+                evidence: "catalog-confirmed".to_string(),
+                count_band: "1".to_string(),
+            });
+        }
+        artifact
+    }
+
+    fn graph_artifact(kind: &str, subkind: &str, tier: &str) -> BlueprintArtifact {
+        BlueprintArtifact {
+            kind: kind.to_string(),
+            subkind: subkind.to_string(),
+            tier: tier.to_string(),
+            definition_visibility: "not_read".to_string(),
+            requirement_status: "complete".to_string(),
+            ..BlueprintArtifact::default()
+        }
+    }
+
+    fn append_review_artifact(inventory: &mut ArtifactInventory, artifact: BlueprintArtifact) {
+        inventory.artifacts.insert(
+            format!("pending-{}", inventory.artifacts.len()),
+            artifact,
+        );
+    }
+
+    fn add_cross_category_objects(inventory: &mut ArtifactInventory) {
+        for artifact in [
+            definition_free_artifact("sequence", "integer_sequence", "declarative", None),
+            definition_free_artifact("type", "composite", "declarative", None),
+            definition_free_artifact(
+                "database_link",
+                "private",
+                "external",
+                Some("oracle.artifact.database-link"),
+            ),
+            definition_free_artifact(
+                "scheduled_job",
+                "enabled_agent_job",
+                "other",
+                Some("oracle.artifact.scheduler"),
+            ),
+            definition_free_artifact(
+                "extension",
+                "server_extension",
+                "external",
+                Some("external.custom-extension-unknown"),
+            ),
+            definition_free_artifact(
+                "certificate",
+                "database_certificate",
+                "security",
+                None,
+            ),
+        ] {
+            append_review_artifact(inventory, artifact);
+        }
+    }
+
+    fn finish_mixed_review_blueprint(mut blueprint: BlueprintFile) -> BlueprintFile {
+        let inventory = blueprint
+            .artifact_inventory
+            .as_mut()
+            .expect("mixed review case must carry an artifact inventory");
+        let mut ordinals = BTreeMap::<String, u64>::new();
+        let mut counts_by_kind = BTreeMap::<String, u64>::new();
+        inventory.artifacts = std::mem::take(&mut inventory.artifacts)
+            .into_values()
+            .map(|artifact| {
+                *counts_by_kind.entry(artifact.kind.clone()).or_default() += 1;
+                let ordinal = ordinals.entry(artifact.kind.clone()).or_default();
+                *ordinal += 1;
+                (format!("{}-{ordinal:03}", artifact.kind), artifact)
+            })
+            .collect();
+        inventory.counts_by_kind = counts_by_kind;
+        inventory.object_count = inventory.artifacts.len() as u64;
+        inventory.complexity = Some(
+            assess_artifact_complexity(inventory, true)
+                .expect("mixed review inventory must have a complexity assessment"),
+        );
+        let canonical = crate::format::emit_toml(&blueprint)
+            .expect("mixed review Blueprint must validate");
+        dbwarp_blueprint_core::parse_blueprint_toml(&canonical)
+            .expect("mixed review Blueprint must round-trip")
+    }
+
+    fn mixed_complexity_blueprint() -> BlueprintFile {
+        let mut blueprint = complexity_blueprint(
+            "postgresql-analyzed-mixed-very-high",
+            include_str!("../tests/fixtures/blueprint_format/pg_expected.toml"),
+            include_str!(
+                "../crates/dbwarp-blueprint-core/tests/fixtures/artifact_complexity/upper_tail.toml"
+            ),
+        );
+        let inventory = blueprint.artifact_inventory.as_mut().unwrap();
+        let executable_kinds = [
+            ("view", "ordinary", "declarative"),
+            ("materialized_view", "materialized", "declarative"),
+            ("function", "stored_function", "programmatic"),
+            ("function", "stored_function", "programmatic"),
+            ("procedure", "stored_procedure", "programmatic"),
+            ("package", "body", "programmatic"),
+            ("trigger", "table_trigger", "programmatic"),
+            ("trigger", "after_insert", "programmatic"),
+            ("rule", "rewrite_rule", "declarative"),
+            ("policy", "row_security", "declarative"),
+        ];
+        for (artifact, (kind, subkind, tier)) in inventory
+            .artifacts
+            .values_mut()
+            .zip(executable_kinds)
+        {
+            artifact.kind = kind.to_string();
+            artifact.subkind = subkind.to_string();
+            artifact.tier = tier.to_string();
+        }
+        add_cross_category_objects(inventory);
+        finish_mixed_review_blueprint(blueprint)
+    }
+
+    fn mixed_partial_blueprint() -> BlueprintFile {
+        let mut blueprint = complexity_blueprint(
+            "mysql-analyzed-mixed-partial",
+            include_str!("../tests/fixtures/blueprint_format/mysql_expected.toml"),
+            include_str!(
+                "../crates/dbwarp-blueprint-core/tests/fixtures/artifact_complexity/partial_coverage.toml"
+            ),
+        );
+        let inventory = blueprint.artifact_inventory.as_mut().unwrap();
+        let complete = inventory
+            .artifacts
+            .values()
+            .next()
+            .expect("partial review case has a complete artifact")
+            .clone();
+        if let Some(first) = inventory.artifacts.values_mut().next() {
+            first.kind = "view".to_string();
+            first.subkind = "ordinary".to_string();
+            first.tier = "declarative".to_string();
+        }
+        let mut trigger = complete;
+        trigger.kind = "trigger".to_string();
+        trigger.subkind = "table_trigger".to_string();
+        trigger.tier = "programmatic".to_string();
+        append_review_artifact(inventory, trigger);
+        add_cross_category_objects(inventory);
+        finish_mixed_review_blueprint(blueprint)
+    }
+
+    fn mixed_graph_blueprint() -> BlueprintFile {
+        let mut blueprint = complexity_blueprint(
+            "sqlserver-graph-mixed-unknown",
+            include_str!("../tests/fixtures/blueprint_format/mssql_expected.toml"),
+            include_str!(
+                "../crates/dbwarp-blueprint-core/tests/fixtures/artifact_complexity/graph_nonempty.toml"
+            ),
+        );
+        let inventory = blueprint.artifact_inventory.as_mut().unwrap();
+        append_review_artifact(
+            inventory,
+            graph_artifact("function", "scalar_function", "programmatic"),
+        );
+        append_review_artifact(
+            inventory,
+            graph_artifact("trigger", "table_trigger", "programmatic"),
+        );
+        add_cross_category_objects(inventory);
+        finish_mixed_review_blueprint(blueprint)
+    }
+
+    fn complexity_deck_cases() -> Vec<(&'static str, BlueprintFile)> {
+        vec![
+            (
+                "postgresql-analyzed-mixed-very-high",
+                mixed_complexity_blueprint(),
+            ),
+            (
+                "mysql-analyzed-mixed-partial",
+                mixed_partial_blueprint(),
+            ),
+            (
+                "sqlserver-graph-mixed-unknown",
+                mixed_graph_blueprint(),
+            ),
+            (
+                "mysql-analyzed-empty",
+                complexity_blueprint(
+                    "mysql-analyzed-empty",
+                    include_str!("../tests/fixtures/blueprint_format/mysql_expected.toml"),
+                    include_str!(
+                        "../crates/dbwarp-blueprint-core/tests/fixtures/artifact_complexity/empty_complete.toml"
+                    ),
+                ),
+            ),
+        ]
     }
 
     fn add_compression(sf: &mut BlueprintFile, table_id: &str, ratio3: f64, biased: bool) {
@@ -203,6 +459,117 @@ mod tests {
             "small schema => 6 slides incl. executive summary and ethos"
         );
         assert!(!s.contains("ppt/slides/slide7.xml"));
+        assert!(!s.contains("ARTIFACT COMPLEXITY"));
+    }
+
+    #[test]
+    fn artifact_complexity_gets_a_separate_coverage_qualified_slide() {
+        let write_dir = std::env::var_os("DBWARP_BLUEPRINT_WRITE_COMPLEXITY_SAMPLES")
+            .map(std::path::PathBuf::from);
+        if let Some(dir) = &write_dir {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+
+        for (name, blueprint) in complexity_deck_cases() {
+            let inventory = blueprint
+                .artifact_inventory
+                .as_ref()
+                .expect("complexity case must carry an artifact inventory");
+            let complexity = blueprint
+                .artifact_inventory
+                .as_ref()
+                .and_then(|inventory| inventory.complexity.as_ref())
+                .expect("complexity case must carry the assessment");
+            let parts = zip_parts(&build_pptx(&blueprint));
+            let artifact_slide = parts
+                .iter()
+                .filter(|(path, _)| path.starts_with("ppt/slides/slide"))
+                .map(|(_, bytes)| String::from_utf8(bytes.clone()).unwrap())
+                .find(|xml| xml.contains("NON-TABLE OBJECTS"))
+                .unwrap_or_else(|| panic!("{name} omitted the non-table object definitions"));
+            assert!(artifact_slide.contains("Query layers"));
+            assert!(artifact_slide.contains("Executable logic"));
+            assert!(artifact_slide.contains("External dependencies"));
+            let first_row_y = 2.04;
+            let count_shape = artifact_slide
+                .split("</p:sp>")
+                .find(|shape| {
+                    shape.contains(&geom(CONTENT_X + 0.16, first_row_y, 3.68, 0.62))
+                })
+                .expect("artifact measurement must use the compact first-row geometry");
+            let definition_shape = artifact_slide
+                .split("</p:sp>")
+                .find(|shape| {
+                    shape.contains(&geom(
+                        CONTENT_X + 4.0,
+                        first_row_y,
+                        CONTENT_W - 4.18,
+                        0.62,
+                    ))
+                })
+                .expect("artifact definition must use the full row height");
+            assert!(count_shape.contains("anchor=\"ctr\""));
+            assert!(count_shape.contains("algn=\"l\""));
+            assert!(count_shape.contains("<a:t> Query layers</a:t>"));
+            assert!(definition_shape.contains("anchor=\"ctr\""));
+            assert!(artifact_slide.contains(&format!(
+                "{} non-table objects inventoried",
+                inventory.object_count
+            )));
+            assert!(
+                max_bottom_emu(&artifact_slide) <= SLIDE_H,
+                "{name} non-table object slide exceeded slide height"
+            );
+            let (complexity_slide_path, complexity_slide) = parts
+                .iter()
+                .filter(|(path, _)| path.starts_with("ppt/slides/slide"))
+                .map(|(path, bytes)| (path, String::from_utf8(bytes.clone()).unwrap()))
+                .find(|(_, xml)| xml.contains("ARTIFACT COMPLEXITY"))
+                .unwrap_or_else(|| panic!("{name} omitted the artifact-complexity slide"));
+            assert!(complexity_slide.contains("Non-table migration assessment"));
+            assert!(complexity_slide.contains("Opacity"));
+            assert!(complexity_slide.contains("Coverage:"));
+            assert!(complexity_slide.contains(complexity_band_label(&complexity.overall_band)));
+            assert!(
+                max_bottom_emu(&complexity_slide) <= SLIDE_H,
+                "{name} complexity slide exceeded slide height"
+            );
+            let slide_number = complexity_slide_path
+                .trim_start_matches("ppt/slides/slide")
+                .trim_end_matches(".xml");
+            let complexity_notes = String::from_utf8(
+                parts[&format!("ppt/notesSlides/notesSlide{slide_number}.xml")].clone(),
+            )
+            .unwrap();
+            assert!(complexity_notes.contains("<a:t>Summary</a:t>"));
+            assert!(!complexity_notes.contains("Presenter cue"));
+            assert!(complexity_notes.contains("definition size, control-flow branching"));
+            match complexity.overall_band.as_str() {
+                "unknown" => assert!(complexity_notes
+                    .contains("The overall band is unknown because the evidence is incomplete")),
+                "not-applicable" => {
+                    assert!(complexity_notes.contains("proved the population complete"))
+                }
+                _ => assert!(
+                    complexity_notes.contains(complexity_band_label(&complexity.overall_band))
+                ),
+            }
+            assert!(!complexity_notes.contains("Definition volume:"));
+
+            if let Some(dir) = &write_dir {
+                let canonical = crate::format::emit_toml(&blueprint).unwrap();
+                std::fs::write(dir.join(format!("{name}.toml")), canonical).unwrap();
+                std::fs::write(dir.join(format!("{name}-en.pptx")), build_pptx(&blueprint))
+                    .unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn east_asian_decks_name_fonts_with_bold_glyph_coverage() {
+        assert_eq!(east_asian_typeface(Locale::Ja), "Yu Gothic");
+        assert_eq!(east_asian_typeface(Locale::Zh), "Microsoft YaHei");
+        assert_eq!(east_asian_typeface(Locale::En), "");
     }
 
     #[test]
@@ -237,6 +604,69 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn every_slide_carries_localized_speaker_notes_without_footer_noise() {
+        let parts = zip_parts(&build_pptx(&sample()));
+        assert!(parts.contains_key("ppt/notesMasters/notesMaster1.xml"));
+        assert!(parts.contains_key("ppt/notesMasters/_rels/notesMaster1.xml.rels"));
+
+        for slide_number in 1..=6 {
+            let notes_path = format!("ppt/notesSlides/notesSlide{slide_number}.xml");
+            let notes_rels_path =
+                format!("ppt/notesSlides/_rels/notesSlide{slide_number}.xml.rels");
+            let slide_rels_path = format!("ppt/slides/_rels/slide{slide_number}.xml.rels");
+            let notes = String::from_utf8(
+                parts
+                    .get(&notes_path)
+                    .unwrap_or_else(|| panic!("missing {notes_path}"))
+                    .clone(),
+            )
+            .unwrap();
+            let notes_rels = String::from_utf8(
+                parts
+                    .get(&notes_rels_path)
+                    .unwrap_or_else(|| panic!("missing {notes_rels_path}"))
+                    .clone(),
+            )
+            .unwrap();
+            let slide_rels = String::from_utf8(
+                parts
+                    .get(&slide_rels_path)
+                    .unwrap_or_else(|| panic!("missing {slide_rels_path}"))
+                    .clone(),
+            )
+            .unwrap();
+
+            assert!(notes.contains("Notes Placeholder 2"));
+            assert!(notes.contains("<a:t>"));
+            assert!(notes.contains("<a:t>Summary</a:t>"));
+            assert!(!notes.contains("Presenter cue"));
+            assert!(!notes.contains("<a:buChar"));
+            assert!(notes.contains("b=\"1\" i=\"0\"><a:solidFill><a:srgbClr val=\"0F766E\""));
+            assert!(!notes.contains("b=\"0\" i=\"1\"><a:solidFill>"));
+            assert!(!notes.contains("DBWarp.com"));
+            assert!(notes_rels.contains(&format!("Target=\"../slides/slide{slide_number}.xml\"")));
+            assert!(slide_rels.contains(&format!(
+                "Target=\"../notesSlides/notesSlide{slide_number}.xml\""
+            )));
+        }
+
+        let title_notes =
+            String::from_utf8(parts["ppt/notesSlides/notesSlide1.xml"].clone()).unwrap();
+        assert!(title_notes.contains("Source kind: production"));
+        assert!(title_notes.contains("Database engine: PostgreSQL 16.2"));
+        assert!(title_notes.contains("Table inventory: 2 tables"));
+        assert!(title_notes.contains("PostgreSQL 16.2"));
+        assert!(!title_notes.contains("Presenter cue"));
+
+        let executive_notes =
+            String::from_utf8(parts["ppt/notesSlides/notesSlide2.xml"].clone()).unwrap();
+        assert!(executive_notes.contains("Captured scale: 2 tables; 1 schema"));
+        assert!(executive_notes.contains("likely to dominate movement and validation work"));
+        assert!(executive_notes.contains("The largest table, table-001, holds 93%"));
+        assert!(!executive_notes.contains("Migration scale:"));
     }
 
     #[test]
@@ -286,12 +716,12 @@ mod tests {
     }
 
     #[test]
-    fn trust_slide_uses_house_style_punctuation() {
+    fn trust_slide_avoids_em_dash() {
         let parts = zip_parts(&build_pptx(&sample()));
         let slide = String::from_utf8(parts["ppt/slides/slide6.xml"].clone()).unwrap();
         assert!(slide.contains("<a:t>Verifiable by construction</a:t>"));
         assert!(slide.contains("No telemetry, license check, or upload path;"));
-        assert!(!slide.contains("upload path — the audit records"));
+        assert!(!slide.contains("upload path: the audit records"));
     }
 
     #[test]
@@ -426,7 +856,12 @@ mod tests {
             "1 tables",
             "1 rows",
             "1 schemas",
+            "1 columns",
+            "1 indexes",
+            "1 objects",
+            "1 eligible objects",
             "1 foreign-key links",
+            "1 references",
             "Largest 1 tables",
             "1 more tables",
             "1 refs",
@@ -434,9 +869,10 @@ mod tests {
 
         for blueprint in blueprints {
             let parts = zip_parts(&build_pptx(&blueprint));
-            for (name, bytes) in parts
-                .iter()
-                .filter(|(name, _)| name.starts_with("ppt/slides/slide"))
+            for (name, bytes) in parts.iter().filter(|(name, _)| {
+                name.starts_with("ppt/slides/slide")
+                    || name.starts_with("ppt/notesSlides/notesSlide")
+            })
             {
                 let xml = String::from_utf8(bytes.clone()).unwrap();
                 for fragment in bad_fragments {
@@ -450,7 +886,7 @@ mod tests {
     }
 
     #[test]
-    fn footer_matches_the_approved_house_geometry() {
+    fn footer_geometry_is_stable() {
         let parts = zip_parts(&build_pptx(&sample()));
         let title_slide = String::from_utf8(parts["ppt/slides/slide1.xml"].clone()).unwrap();
         let dark_slide = String::from_utf8(parts["ppt/slides/slide2.xml"].clone()).unwrap();
@@ -520,7 +956,7 @@ mod tests {
         );
         assert!(
             emu(FOOTER_PAGE_X) + emu(FOOTER_PAGE_W) / 2 == emu(13.33 / 2.0),
-            "page number belongs on the approved 13.33in design midpoint"
+            "page number belongs on the 13.33in design midpoint"
         );
         assert!(
             emu(FOOTER_URL_X) > SLIDE_W / 2,

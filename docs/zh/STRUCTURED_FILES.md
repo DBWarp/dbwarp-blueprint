@@ -20,7 +20,7 @@
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
@@ -45,18 +45,18 @@ Parquet 模式读取页脚和行组元数据。它会推导：
 
 ```bash
 dbwarp-blueprint \
-  --from-avro /data/customer-sample.avro \
+  --from-avro /data/events.avro \
   --out blueprint.toml \
   --audit-log audit.txt
 ```
 
-Avro 对象容器不会公开 Parquet 风格的页脚行数。因此，Avro 模式会遍历容器一次，以统计记录数、推导逻辑 `table_bytes`，并观测逐列 `len_avg`、`len_p95` 和 `null_fraction`。写入器模式提供逻辑类型元数据。`storage_bytes` 和 `ratio_storage` 描述 Avro 容器，而不是 DBWarp 传输估算。这适用于估算器和合成测试数据集规划。
+Avro 对象容器不会公开 Parquet 风格的页脚行数。因此，Avro 模式会遍历容器一次，以统计记录数、推导逻辑 `table_bytes`，并观测逐列 `len_avg`、`len_p95` 和 `null_fraction`。写入器模式提供逻辑类型元数据。`storage_bytes` 和 `ratio_storage` 描述 Avro 容器，而不是 DBWarp 传输估算。
 
 ## 逻辑类型保真度
 
-结构化文件采集会保留估算器所需的有界逻辑元数据：十进制精度和小数位数、日期和时间类型系列、时间戳精度及 UTC/本地语义、UUID、固定二进制宽度、UTF-8 字符串和原始字节。纯空字段保持为 `type = "null"`，而不会变成合成文本。
+结构化文件捕获保留了用于估算所需的数据，包括：十进制数 precision/scale、日期和时间类型、时间戳精度和 UTC/local 语义、UUID、固定大小的二进制数据、UTF-8 字符串以及原始字节。 仅包含 NULL 值的字段仍然保持 `type = "null"` 的状态，而不是被转换为合成文本。
 
-嵌套 Parquet 叶节点以及 Avro 数组、映射、记录或多类型联合无法表示为单个精确 SQL 标量。Blueprint 会记录标准化的 `json` 类型和 `source_semantics`，例如 `"repeated-leaf"`、`"nested-json"` 或 `"multi-type-union"`。下游生成器必须将这些值标识为有代表性的 JSON 压力，不得声称嵌套模式能够精确往返。
+嵌套的 Parquet 结构、Avro 数组、映射、记录或多类型联合，无法表示为单个精确的 SQL 标量值。Blueprint 会记录一个规范化的 `json` 类型，以及 `source_semantics` 这样的元素，例如 `"repeated-leaf"`、`"nested-json"` 或 `"multi-type-union"`。这些列以 JSON 格式存储；嵌套的结构不会被完全复制。
 
 源文件名主干、Parquet 路径、Avro 字段名和批处理 `logical_table` 标签不会写为 Blueprint 标识符。多文件数据集会输出由秘密密钥保护的 `table-NNN` 标识符，聚合对象字节数、分区数、行组数、编解码器、宽度、空值比例和兼容的压缩来源，并拒绝结构化逻辑列契约不同的文件。
 
@@ -66,7 +66,7 @@ Avro 对象容器不会公开 Parquet 风格的页脚行数。因此，Avro 模�
 
 ```bash
 dbwarp-blueprint \
-  --from-parquet /data/customer-sample.parquet \
+  --from-parquet /data/orders.parquet \
   --measure-compression --yes \
   --sample-rows 5000 \
   --out blueprint.toml \
@@ -84,17 +84,15 @@ dbwarp-blueprint \
 - 在生成的 TOML 中记录 `sample_encoding = "blueprint-compression-probe-v2"`；
 - 仅在内存中保存采样字节，绝不会将行值写入磁盘。
 
-`--measure-compression` 需要 `--yes`，因为它会读取解码后的客户值。它只持久化汇总的
-压缩、NULL 密度、基数／频率、长度和样式测量值，绝不持久化采样值。
+`--measure-compression` 需要 `--yes`，因为它读取解码后的数据值。它会持久化聚合压缩、空值密度、cardinality/frequency、长度和样式等测量值，而不是采样值。
 
-当前采样器使用确定性的前 N 条样本。这样可重现且开销低，但如果文件经过排序或聚集，则可能存在偏差。对于高风险估算，请优先选择有代表性的文件，或从不同分片生成多个 Blueprint 文件。未来版本可能会加入行组/块分层采样。
+当前的采样器使用一种确定性的前N个样本。 这种方法可重复且成本低，但如果文件已排序或聚类，则可能会产生偏差。 对于重要的估算，建议使用具有代表性的文件，或者从不同的分片生成多个 Blueprint 文件。
 
 ## 范围
 
 结构化文件 Blueprint 模式适用于：
 
 - 在 DBWarp 运行前估算 Parquet/Avro 导入大小；
-- 在不复制源名称或行值的情况下生成具有代表性的合成测试数据集；
-- 规划 Parquet/Avro -> DBWarp columnar -> 目标数据库流程。
+- 计划将数据从 Parquet/Avro 迁移到数据库。
 
 当真实源为受支持的数据库，即 PostgreSQL、MySQL 或 SQL Server 时，它不能替代实时数据库 Blueprint 采集。数据库目录包含通用文件元数据中不存在的索引、键、FK、统计信息新鲜度和引擎布局详细信息。

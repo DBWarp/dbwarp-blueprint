@@ -14,14 +14,16 @@ nie są w pełni widoczne w audycie aplikacji.
 
 ## Ruch wychodzący z sieci
 
-Tryb `--connect` na żywo otwiera jedną sesję sterownika bazy danych ze wskazanym
-punktem końcowym. Tryb wsadowy przetwarza źródła sekwencyjnie i otwiera jedną
+Tryb `--connect` na żywo dla PostgreSQL, MySQL i SQL Server otwiera jedną sesję
+sterownika bazy danych ze wskazanym punktem końcowym. Tryb wsadowy przetwarza źródła sekwencyjnie i otwiera jedną
 sesję dla każdego źródła bazodanowego. Rozwiązywanie nazw DNS może korzystać ze
 skonfigurowanego resolvera, a zintegrowane uwierzytelnianie Kerberos/SSPI może
 kontaktować się z KDC lub kontrolerem domeny. Operacje offline na plikach TOML,
 Parquet, Avro i pakietach nie otwierają połączeń sieciowych inicjowanych przez
 aplikację, choć ścieżka na sieciowym systemie plików nadal podlega stosowi
 pamięci masowej hosta.
+
+Wersja zapoznawcza Oracle, wymagająca potwierdzenia, uruchamia wyłącznie program SQL*Plus wskazany jawnie za pomocą `--oracle-sqlplus` (wraz z ograniczonym testem `-V`, jeśli jest dostępny) i używa go do sesji katalogu. Proces potomny otrzymuje pusty prywatny katalog jako `TNS_ADMIN`; jego dane uwierzytelniające są zapisywane na standardowe wejście i nigdy nie są umieszczane w argumentach procesu. Środowisko jest czyszczone przed uruchomieniem. Przekazywane są tylko obecne zmienne `PATH`, `SystemRoot`, `WINDIR`, `ORACLE_HOME`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `LIBPATH` i `SHLIB_PATH`; kolektor oddzielnie ustawia stałe ustawienia regionalne, strefę czasową i prywatne wartości `TNS_ADMIN`.
 
 Plik binarny nie zawiera telemetrii, sprawdzania licencji, aktualizacji wersji,
 wywołań API chmury ani ścieżki przesyłania danych.
@@ -37,7 +39,7 @@ Narzędzie odczytuje dane wejściowe wybrane przez aktywny tryb:
 |---|---|---|
 | `--user-file PATH` | Jeśli podano | Tylko nazwa użytkownika. Końcowe białe znaki są usuwane; pusty plik jest błędem. |
 | `--password-file PATH` | Jeśli podano | Odczytywany raz. Bufor `Secret` należący do DBWarp jest zerowany przy usunięciu; sterowniki mogą zachować własne kopie zgodnie z opisem w SECURITY.md. Odrzucany w systemach Unix, jeśli może go odczytać grupa lub inni. |
-| `--anonymization-key-file PATH` | Jeśli podano | Przechowywany przez klienta klucz HMAC o długości 32 bajtów lub 64 znaków szesnastkowych. Odrzucany w systemach Unix, jeśli może go odczytać grupa lub inni. Klucz nigdy nie jest emitowany. |
+| `--anonymization-key-file PATH` | Jeśli podano | Przechowywany przez użytkownika klucz HMAC o długości 32 bajtów lub 64 znaków szesnastkowych. Odrzucany w systemach Unix, jeśli może go odczytać grupa lub inni. Klucz nigdy nie jest emitowany. |
 | `--azure-token-file PATH` | Jeśli podano | Token Entra ID dla SQL Server. Odczytywany raz; bufor `Secret` należący do DBWarp jest zerowany przy usunięciu. Odrzucany w systemach Unix, jeśli może go odczytać grupa lub inni. |
 | `--tls-ca PATH` | Jeśli podano | Zaufany CA PEM odczytywany podczas łączenia. PostgreSQL/MySQL akceptują pakiet; SQL Server akceptuje dokładnie jeden certyfikat. Dostarczony plik zastępuje domyślne korzenie silnika. |
 | `--tls-cert PATH` | Jeśli podano | Certyfikat TLS klienta PostgreSQL/MySQL (PEM), odczytywany podczas łączenia. Odrzucany dla SQL Server z kodem `DBP1015E`. |
@@ -48,7 +50,7 @@ Narzędzie odczytuje dane wejściowe wybrane przez aktywny tryb:
 | `--batch-manifest PATH` | Jeśli podano | Manifest oraz każde wskazane przez niego lokalne wejście, poświadczenie, token i ścieżkę TLS. |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Jeśli podano | Plik TOML pakietu oraz względne pliki Blueprint wymagane do wyświetlania, rozpakowania lub pakowania. |
 | terminal/konsola sterująca (`/dev/tty` w systemach uniksowych) | Jeśli nie podano źródła hasła | Monit z wyłączonym echem. |
-| (tylko podczas budowania) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` w wydaniach vendored, `vendor/mysql_async`, `vendor-crates/*` w pakietach offline | Tylko gdy uruchomiono `./build.sh` | Toolchain, pochodzenie źródła i standardowe dane wejściowe Cargo |
+| (tylko podczas budowania) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` w wydaniach vendored, `vendor/*`, `vendor-crates/*` w pakietach offline | Tylko gdy uruchomiono `./build.sh` | Toolchain, pochodzenie źródła i standardowe dane wejściowe Cargo |
 
 Aplikacja nie ma jawnej ścieżki odczytu:
 - `~/.pgpass`, `~/.my.cnf`, `~/.aws/credentials`, `~/.azure/credentials`
@@ -177,6 +179,7 @@ artifact_inventory:
   external_prerequisites: 3
   inventory_complete: false
   dependencies_complete: false
+  requirements_complete: false
   analysis_complete: false
 
 database_operations_observed:
@@ -271,14 +274,7 @@ wiersza — nie ma czego zapewniać o poświadczeniu, którego nigdy nie pozyska
 Obecność lub brak tego wiersza wraz z `auth.password_source` wskazuje, czy dane
 uruchomienie wykonało obsługę poświadczeń.
 
-**Audyt jest emitowany na operacyjnych ścieżkach powodzenia i błędu**, również
-przy błędach parsowania wiersza poleceń po starcie. Wyjścia pomocy/wersji oraz
-błędy sprzed załadowania wbudowanego kontraktu lokalizacji nie tworzą pełnego
-audytu. Jeśli narzędzie zawiedzie w trakcie działania (odmowa uwierzytelnienia,
-błąd sieci), dziennik audytu nadal jest wypisywany na stderr (oraz do
-`--audit-log PATH`, jeśli podano) z wynikiem `outcome: error: <stage>`, dzięki
-czemu klient zawsze ma kryminalistyczny zapis tego, co próbowano wykonać przed
-awarią. Przykładowy wiersz wyniku awarii:
+**Audyt jest generowany zarówno w przypadku powodzenia, jak i niepowodzenia operacji**, w tym w przypadku błędów parsowania poleceń po uruchomieniu. Błędy Help/version oraz inne awarie, które występują przed załadowaniem wbudowanego modułu lokalizacji, nie generują pełnego audytu. Jeśli narzędzie ulegnie awarii w trakcie działania (np. odmowa autoryzacji, błąd sieci), dziennik audytu nadal jest wypisywany do stderr (i do `--audit-log PATH`, jeśli jest to określone) z informacją `outcome: error: <stage>`, dzięki czemu zawsze masz zapis tego, co zostało wykonane przed awarią. Przykład linii z informacją o awarii:
 
 ```
 outcome:             error: parsing --connect URI (value redacted to avoid logging embedded credentials)
@@ -301,16 +297,15 @@ możliwy do skanowania maszynowego.
 
 Zbieranie artefaktów jest niezależne od próbkowania wierszy poziomu 2:
 
-- `--artifact-detail none` pomija katalogi artefaktów i definicje.
+- `--artifact-detail none` pomija katalogi inwentarza artefaktów i definicje;
+  sonda topologii ograniczona do zliczania nadal działa.
 - `summary` odczytuje modelowane katalogi obiektów, ale nie tekst definicji.
 - `graph` odczytuje dodatkowo katalogi zależności, ale nie tekst definicji.
 - `analyzed` odczytuje dodatkowo dostępne definicje SQL/proceduralne do ograniczonej pamięci procesu na potrzeby analizy leksykalnej.
 
 Audyt rejestruje żądany poziom szczegółowości, widoczność, liczniki obiektów, zależności i wymagań zewnętrznych oraz wszystkie flagi kompletności. Każda operacja katalogowa występuje w `database_operations_observed`. Nieudany opcjonalny katalog emituje `DBP1410W`, pojawia się w `warnings` i zapobiega nieprawdziwej deklaracji kompletności.
 
-W trybie analizowanym definicje są przechowywane przez właściciela zerującego pamięć, czyszczone i redukowane do ograniczonych przedziałów i zamkniętych tokenów cech. Tekst definicji, nazwy obiektów źródłowych, zewnętrzne punkty końcowe, podmioty zabezpieczeń artefaktów, poświadczenia, materiał kluczy/certyfikatów, nazwy pakietów/bibliotek i pliki binarne nigdy nie są zapisywane w pliku Blueprint ani dzienniku audytu. Jedyne zachowane dokładne nazwy podmiotów to trzy tożsamości sesji SQL Server w wyraźnym bloku audytu `auth` opisanym powyżej; nigdy nie trafiają do Blueprint, prezentacji ani artefaktów publikacyjnych. Tryby graph i analyzed wymagają `--yes`, ponieważ anonimowa topologia może identyfikować aplikację.
-
-Audyt rozróżnia postawy prywatności jedną z tych deklaracji zaufania:
+W trybie analizy, definicje są otaczane przez element zerujący właściciela, czyszczone i redukowane do ograniczonych zakresów oraz zamkniętych znaczników cech. Tekst definicji, nazwy obiektów źródłowych, zewnętrzne punkty końcowe, uprawnienia artefaktów, poświadczenia, materiały kluczy/certyfikatów, nazwy pakietów/bibliotek oraz pliki binarne nigdy nie są zapisywane do Blueprint ani do dziennika audytu. Jedynymi dokładnymi nazwami użytkowników, które są zachowywane, są trzy SQL Server identyfikatory sesji w wyraźnie określonym bloku audytu `auth`; nigdy nie są one zapisywane do plików Blueprint, prezentacji ani pakietów. Tryby graficzny i analizy wymagają `--yes`, ponieważ anonimowa topologia nadal może identyfikować aplikację.
 
 - summary: tylko ograniczone liczniki, bez tożsamości obiektów i definicji;
 - graph: anonimowy graf zależności, bez definicji;
@@ -403,12 +398,7 @@ Jeżeli chcesz *udowodnić*, że narzędzie wykonuje wyłącznie udokumentowane 
    samego połączenia MySQL. Pełne omówienie znajduje się w sekcji **Kopie
    poświadczeń należące do sterownika** w SECURITY.md.
 3. **Budowanie ze źródeł**: `./build.sh`. Dla archiwum ze źródłami i
-   zależnościami uruchom `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`. CI wydania
-   wykonuje niezależną ponowną kompilację na tym samym runnerze, opróżniając
-   i ponownie wykorzystując ten sam katalog docelowy Cargo między kompilacjami,
-   a pierwszy plik wykonywalny zachowując osobno. Odrzuca każdą różnicę bajtów. Porównanie lokalne
-   ma znaczenie tylko przy tej samej rewizji źródła, celu, zestawie funkcji,
-   przypiętym toolchainie Rust, linkerze i flagach budowania.
+Uruchom `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`. Każda wersja jest budowana dwukrotnie, a niezgodność bajtów powoduje odrzucenie wersji. Lokalne porównanie ma sens tylko w przypadku tej samej wersji źródłowej, celu, funkcji, użytej wersji narzędzia Rust, linkera i flag kompilacji.
 4. **Porównanie z wydaniem**: w pasującym drzewie źródeł uruchom
    `./verify.sh /path/to/extracted/dbwarp-blueprint`. W sekcji **Odtwarzanie
    pliku binarnego wydania** w BUILD.md opisano wymagany cel, funkcje, toolchain,
@@ -424,7 +414,4 @@ Jeżeli chcesz *udowodnić*, że narzędzie wykonuje wyłącznie udokumentowane 
    kontrolera domeny. W trybie wsadowym uzgodnij jedną sesję bazy danych na każde
    źródło bazodanowe.
 
-Jeżeli cokolwiek nie odpowiada temu dokumentowi, zgłoś rozbieżność kanałem
-wskazanym w SECURITY.md i dołącz tylko najmniejszy bezpieczny ślad potrzebny do
-jej odtworzenia. Nie umieszczaj poświadczeń, identyfikatorów klienta ani
-wrażliwych danych wyjściowych sterownika w publicznym zgłoszeniu.
+Jeśli którekolwiek z tych elementów nie odpowiadają temu, co jest udokumentowane tutaj, zgłoś rozbieżność za pomocą kanału w SECURITY.md i dołącz najmniejszy, bezpieczny fragment informacji potrzebny do odtworzenia problemu. Nie umieszczaj poświadczeń, identyfikujących nazw, ani poufnych danych wyjściowych sterowników w publicznych zgłoszeniach.

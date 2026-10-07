@@ -1,6 +1,6 @@
 name: Release Builds
 
-# Manual dispatches default to Linux to limit CI cost. Select all platforms, or
+# Manual dispatches build Linux only by default. Select all platforms, or
 # push an exact release tag, when platform release artifacts are required.
 on:
   workflow_dispatch:
@@ -15,8 +15,7 @@ on:
           - all
   push:
     tags:
-      # v* only — a stray non-release tag (wip/test/checkpoint) must not
-      # launch the full multi-OS matrix.
+      # Only v* tags start a release build.
       - "v*"
 
 permissions:
@@ -32,9 +31,9 @@ env:
 
 jobs:
   validate:
-    name: test-and-contract-gates
+    name: tests-and-checks
     if: github.repository == 'DBWarp/dbwarp-blueprint'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -47,14 +46,36 @@ jobs:
           rustup toolchain install 1.94.0 --profile minimal --component rustfmt
           rustup default 1.94.0
 
-      - name: Validate source, tests, and customer documentation
+      # The advisory scan runs on manual dispatches only. A tag push or a
+      # rerun of an existing tag must not fail on an advisory published
+      # after that source was released.
+      - name: Install Rust advisory checker
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Install Linux integrated-auth test dependency
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libkrb5-dev pkg-config strace util-linux
+
+      - name: Validate source, tests, and documentation
         shell: bash
         run: |
           set -euo pipefail
           cargo fmt --all --check
           cargo test --locked --all-targets --no-fail-fast
+          cargo test --locked --features integrated-auth-gssapi \
+            integrated_auth_feature_accepts_sqlserver_without_a_secret
+          # The path dependency's own unit tests are not included above.
+          cargo test --locked --manifest-path crates/dbwarp-blueprint-core/Cargo.toml --target-dir target --all-features --no-fail-fast
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ./tools/check_rust_advisories.sh
+          fi
           python3 tools/generate_third_party_notices.py
           python3 tools/test_check_public_tree.py
+          python3 tools/test_check_linux_lazy_gssapi.py
           python3 tools/test_check_release_archive.py
           ./tools/check_blueprint_core_sync.sh
           python3 tools/check_public_tree.py
@@ -65,14 +86,19 @@ jobs:
               echo "release tag $GITHUB_REF_NAME does not match Cargo package version $expected_tag" >&2
               exit 1
             fi
+            notes_file="release-notes/${GITHUB_REF_NAME}.md"
+            if [ ! -f "$notes_file" ] || [ -L "$notes_file" ] || [ ! -s "$notes_file" ]; then
+              echo "release tag $GITHUB_REF_NAME requires reviewed source-controlled notes at $notes_file" >&2
+              exit 1
+            fi
           fi
 
   # Emits the build-matrix include list. A separate job keeps the matrix
-  # selection explicit and makes manual Linux-only dispatches inexpensive.
+  # selection explicit for manual Linux-only dispatches.
   plan:
     name: select-build-legs
     if: github.repository == 'DBWarp/dbwarp-blueprint'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
@@ -85,12 +111,12 @@ jobs:
           legs_file="$RUNNER_TEMP/legs.json"
           cat > "$legs_file" <<'EOF'
           [
-            {"name": "linux-x86_64", "os": "ubuntu-latest",
+            {"name": "linux-x86_64", "os": "ubuntu-24.04",
              "target": "x86_64-unknown-linux-gnu",
-             "ext": "", "archive_ext": "tar.gz", "features": ""},
+             "ext": "", "archive_ext": "tar.gz", "features": "integrated-auth-gssapi"},
             {"name": "linux-arm64", "os": "ubuntu-24.04-arm",
              "target": "aarch64-unknown-linux-gnu",
-             "ext": "", "archive_ext": "tar.gz", "features": ""},
+             "ext": "", "archive_ext": "tar.gz", "features": "integrated-auth-gssapi"},
             {"name": "macos-arm64", "os": "macos-14",
              "target": "aarch64-apple-darwin",
              "ext": "", "archive_ext": "tar.gz", "features": "",
@@ -131,6 +157,13 @@ jobs:
         run: |
           rustup toolchain install 1.94.0 --profile minimal --target "${{ matrix.target }}"
           rustup default 1.94.0
+
+      - name: Install Linux integrated-auth build dependency
+        if: startsWith(matrix.os, 'ubuntu')
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libkrb5-dev pkg-config
 
       - name: Build release binary
         shell: bash
@@ -180,6 +213,10 @@ jobs:
           else
             cargo build --release --locked --target "${{ matrix.target }}"
           fi
+          binary="$CARGO_TARGET_DIR/${{ matrix.target }}/release/dbwarp-blueprint${{ matrix.ext }}"
+          if [[ "${{ matrix.name }}" == linux-* ]]; then
+            python3 tools/check_linux_lazy_gssapi.py --binary "$binary"
+          fi
           cmp \
             "repro-first/dbwarp-blueprint${{ matrix.ext }}" \
             "$CARGO_TARGET_DIR/${{ matrix.target }}/release/dbwarp-blueprint${{ matrix.ext }}"
@@ -192,13 +229,13 @@ jobs:
           mkdir -p "$stage"
           cp "target-repro/${{ matrix.target }}/release/dbwarp-blueprint${{ matrix.ext }}" "$stage/"
           translation_notice="MACHINE_TRANSLATIONS.md"
-          if [ ! -f "$translation_notice" ]; then
-            translation_notice="public/MACHINE_TRANSLATIONS.md"
-          fi
           cp README.md SECURITY.md TLS.md AUTH.md FORMAT.md AUDIT.md BUILD.md DECK.md STATUS.md \
             CHANGELOG.md CONTRIBUTING.md SUPPORT.md \
             "$translation_notice" THIRD_PARTY_NOTICES.md LICENSE-APACHE LICENSE-MIT "$stage/"
           cp blueprint_format.py verify.sh "$stage/"
+          # README.md and docs/<locale>/README.md show the logo from .github/assets.
+          mkdir -p "$stage/.github/assets"
+          cp .github/assets/dbwarp-logo-light.png .github/assets/dbwarp-logo-dark.png "$stage/.github/assets/"
           mkdir -p "$stage/docs"
           cp \
             docs/ARTIFACT_INVENTORY.md \
@@ -218,14 +255,27 @@ jobs:
             mkdir -p "$stage/docs/$locale"
             cp "docs/$locale/"*.md "$stage/docs/$locale/"
           done
-          mkdir -p "$stage/sql/grants" "$stage/sql/revoke"
+          mkdir -p "$stage/sql/grants" "$stage/sql/revoke" "$stage/sql/capture"
           cp sql/blueprint.mysql.sql sql/blueprint.pg.sql sql/blueprint.sqlserver.sql "$stage/sql/"
-          cp sql/grants/README.md sql/grants/DATABASE_PERMISSIONS.md "$stage/sql/grants/"
-          for engine in mysql postgresql sqlserver-2019 sqlserver-2022; do
+          cp sql/oracle-accounts.sql "$stage/sql/"
+          cp sql/grants/README.md sql/grants/DATABASE_PERMISSIONS.md \
+            sql/grants/ORACLE_PREVIEW.md "$stage/sql/grants/"
+          for engine in mysql oracle-12c oracle-19c oracle-21c oracle-23ai postgresql sqlserver-2019 sqlserver-2022; do
             mkdir -p "$stage/sql/grants/$engine"
             cp "sql/grants/$engine/"*.sql "$stage/sql/grants/$engine/"
           done
-          cp sql/revoke/*.sql "$stage/sql/revoke/"
+          cp sql/revoke/mysql.sql sql/revoke/postgresql.sql \
+            sql/revoke/oracle-12c.sql sql/revoke/oracle-19c.sql \
+            sql/revoke/oracle-21c.sql sql/revoke/oracle-23ai.sql \
+            sql/revoke/sqlserver-2019.sql sql/revoke/sqlserver-2022.sql \
+            "$stage/sql/revoke/"
+          cp sql/capture/README.md sql/capture/capture.ps1 sql/capture/capture.sh \
+            sql/capture/run.sql sql/capture/sanitize.awk sql/capture/sanitize.ps1 \
+            "$stage/sql/capture/"
+          for family in oracle-12c oracle-19c oracle-21c oracle-26ai; do
+            mkdir -p "$stage/sql/capture/$family"
+            cp "sql/capture/$family/"*.sql "$stage/sql/capture/$family/"
+          done
           cp -R samples "$stage/"
           cp -R third-party-licenses "$stage/"
           mkdir -p "$stage/binaries"
@@ -236,6 +286,17 @@ jobs:
           cp vendor/mysql_async/LICENSE-APACHE vendor/mysql_async/LICENSE-MIT \
             vendor/mysql_async/MODIFICATIONS.md \
             "$stage/licenses/mysql_async/"
+          mkdir -p "$stage/licenses/libgssapi-sys"
+          cp vendor/libgssapi-sys/LICENSE-MIT vendor/libgssapi-sys/MODIFICATIONS.md \
+            "$stage/licenses/libgssapi-sys/"
+          mkdir -p "$stage/licenses/tiberius"
+          cp vendor/tiberius/LICENSE-APACHE.txt vendor/tiberius/LICENSE-MIT.txt \
+            vendor/tiberius/MODIFICATIONS.md \
+            "$stage/licenses/tiberius/"
+          mkdir -p "$stage/licenses/winauth"
+          cp vendor/winauth/LICENSE-APACHE vendor/winauth/LICENSE-MIT \
+            vendor/winauth/MODIFICATIONS.md \
+            "$stage/licenses/winauth/"
           python3 tools/generate_sbom.py \
             --output "$stage/SBOM.cdx.json" \
             --source-revision "$GITHUB_SHA" \
@@ -294,7 +355,7 @@ jobs:
     name: source-vendored
     needs: validate
     if: github.repository == 'DBWarp/dbwarp-blueprint'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -357,7 +418,7 @@ jobs:
 
   checksums:
     name: combined-checksums
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build, source-vendored]
     if: github.repository == 'DBWarp/dbwarp-blueprint'
     permissions:
@@ -383,7 +444,7 @@ jobs:
 
   release:
     name: github-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build, source-vendored]
     if: github.repository == 'DBWarp/dbwarp-blueprint' && startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -412,38 +473,11 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          notes_file="release-notes.md"
-          package_version="$(sed -n -E 's/^version = "([^"]+)"/\1/p' Cargo.toml | head -1)"
-          schema_version="$(sed -n -E 's/^pub const SCHEMA_VERSION: u32 = ([0-9]+);$/\1/p' crates/dbwarp-blueprint-core/src/format.rs)"
-          if [ -z "$package_version" ] || [ -z "$schema_version" ]; then
-            echo "could not derive release package or schema version" >&2
+          notes_file="release-notes/${TAG}.md"
+          if [ ! -f "$notes_file" ] || [ -L "$notes_file" ] || [ ! -s "$notes_file" ]; then
+            echo "release tag $TAG requires reviewed source-controlled notes at $notes_file" >&2
             exit 1
           fi
-          cat > "$notes_file" <<NOTES
-          dbwarp-blueprint ${package_version} release binaries.
-
-          Release highlights:
-          - Blueprint schema v${schema_version} is retained; compression sample encodings remain a separate compatibility boundary.
-          - Binary-payload measurement, precompressed-payload profiles, bounded compression probes, and statistics-freshness reporting are improved.
-          - Adaptive MySQL and SQL Server sampling retries respect the projected payload budget and record remaining prefix bias; MySQL truncation detection accounts for connection character-set conversion.
-          - Shared-core synthetic value-length, cardinality, distribution, and locality handling is improved.
-          - Source and operator bundles include CHANGELOG.md, SUPPORT.md and CONTRIBUTING.md alongside audit references and least-privilege scripts. See CHANGELOG.md for rollout caveats and version-specific changes.
-          - Complete human-facing catalogs remain embedded for English, German, French, Spanish, Polish, Japanese, and Simplified Chinese.
-          - English customer documentation is authoritative. Included machine-translated documents are supplemental, may lag English corrections, and may contain errors; they are not a release gate.
-          - Option names, accepted values, URI schemes, selectors, DBP codes, audit fields, anonymous identifiers, and emitted TOML/bundle schemas remain canonical English tokens.
-
-          Trust paths:
-          - Small source build: clone this repository, review the source, and build with Cargo.lock.
-          - Offline audit build: download dbwarp-blueprint-source-vendored.tar.gz, review the included vendor/mysql_async patch and vendor-crates/ dependency tree, and run ./build.sh inside the extracted tree.
-          - Convenience path: download a platform binary, verify its SHA256, and review the matching source tag.
-
-          Runtime security model:
-          - The binary sends no telemetry.
-          - Live modes initiate the configured database connection. The operating system and configured identity or TLS path may also contact the DNS resolver or KDC/domain controller as documented in AUDIT.md.
-          - The output Blueprint file is local until you choose to share it.
-
-          Download the archive for your platform, then verify it against SHA256SUMS.txt before running.
-          NOTES
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$notes_file"

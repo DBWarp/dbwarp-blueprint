@@ -6,9 +6,9 @@
 
 pub const PRECOMPRESSED_STYLE: &str = "precompressed";
 
-// These are Blueprint sampling-policy thresholds, not DBWarp transport
-// constants. A profile needs enough sampled material to be representative and
-// a clear byte majority so one attachment cannot label a mixed binary column.
+// Blueprint sampling-policy thresholds. A profile needs enough sampled
+// material to be representative and a clear byte majority so one attachment
+// cannot label a mixed binary column.
 const MIN_PROFILE_SAMPLE_BYTES: u64 = 16 * 1024;
 const MIN_PROFILE_VALUE_BYTES: usize = 4 * 1024;
 const PROFILE_DOMINANCE_NUMERATOR: u64 = 3;

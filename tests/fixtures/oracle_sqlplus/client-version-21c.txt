@@ -1,0 +1,3 @@
+SQL*Plus: Release 21.0.0.0.0 - Production
+Version 21.3.0.0.0
+_SQLPLUS_RELEASE=2103000000

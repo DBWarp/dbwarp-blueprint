@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-blueprint_format.py — normalize JSON output from sql/blueprint.{pg,mysql,sqlserver}.sql
+blueprint_format.py: normalize JSON output from sql/blueprint.{pg,mysql,sqlserver}.sql
 into the canonical dbwarp-blueprint TOML format.
 
-The Rust contract in crates/dbwarp-blueprint-core is authoritative. This
-stdlib-only fallback is held to byte-level fixtures exercised by the Rust test
-suite; update the core contract and those cross-language snapshots together.
+This stdlib-only script produces the same canonical format as the
+dbwarp-blueprint binary.
 
 Stdlib-only; no pip install required. Tested with Python 3.8+.
 
@@ -15,7 +14,7 @@ Usage:
 
 Trust contract:
     - Reads the JSON file you pass it (or stdin) and only the optional
-      customer-selected anonymization key file.
+      anonymization key file you supply.
     - Writes only to stdout.
     - No network, no environment variable reads, no /tmp scratch.
     - Identifier ordering uses domain-separated HMAC-SHA256. By default a
@@ -97,7 +96,10 @@ def main() -> int:
     except (OSError, ValueError) as error:
         sys.stderr.write(f"blueprint_format: {error}\n")
         return 2
-    sys.stdout.write(out)
+    # stdout is a text stream on Windows and translates ``\n`` to ``\r\n``.
+    # Blueprint TOML is a canonical byte format, so bypass text-mode newline
+    # conversion and write the UTF-8 bytes produced by the formatter.
+    sys.stdout.buffer.write(out.encode("utf-8"))
     return 0
 
 
@@ -182,7 +184,7 @@ def _schema_letter(idx: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Privacy rounding (matches the collector helpers around the canonical core)
+# Privacy rounding (same rounding as the dbwarp-blueprint binary)
 # ---------------------------------------------------------------------------
 
 def _round_to(n: int, bucket: int) -> int:
@@ -373,6 +375,29 @@ def _normalize_type(engine: str, raw: str) -> str:
     return "user-defined"
 
 
+def _default_numeric_model(column_type: str) -> str:
+    if (
+        column_type
+        in {
+            "smallint",
+            "integer",
+            "bigint",
+            "numeric",
+            "real",
+            "float",
+            "double",
+            "double precision",
+            "user-defined",
+            "unknown",
+        }
+        or column_type.startswith("numeric(")
+        or column_type.startswith("decimal(")
+        or column_type.startswith("array<")
+    ):
+        return "unknown"
+    return "not-applicable"
+
+
 def _normalize_index_method(engine: str, raw: str) -> str:
     method = raw.strip().lower()
     if engine == "postgresql" and method in {"btree", "hash", "gin", "gist", "spgist", "brin"}:
@@ -419,8 +444,8 @@ def build_blueprint(
     tables_in: List[Dict[str, Any]] = data.get("tables") or []
 
     # Secret-keyed ordering prevents an offline reader from testing candidate
-    # source names. It is stable only when the customer deliberately reuses a
-    # protected key file.
+    # source names. It is stable only when the same protected key is reused for
+    # approved comparisons.
     sorted_tables = sorted(
         tables_in,
         key=lambda t: _table_key(
@@ -549,7 +574,6 @@ def build_blueprint(
             "index_bytes": index_bytes,
             "schema": schema_to_id.get(str(t["schema_name"]), "schema-?"),
             "has_clustered_index": bool(t.get("has_clustered_index", False)),
-            "stats_freshness": "",  # SQL path does not classify freshness; binary path does.
             "cols": dict(cols_out),
             "idxs": dict(idxs_out),
         }
@@ -579,7 +603,7 @@ def build_blueprint(
                 identity = str(
                     fk.get("fk_id")
                     or fk.get("fk_name")
-                    or f"legacy-single-column-{fk_index}"
+                    or f"unnamed-fk-{fk_index}"
                 )
                 position = int(fk.get("position", fk_index + 1))
                 named_fk_groups.setdefault((to_id, identity), []).append(
@@ -610,7 +634,7 @@ def build_blueprint(
         fk_edges_by_from[k].sort(key=lambda e: (e["to"], e["cols"], e["to_cols"]))
 
     out = []
-    out.append("# dbwarp-blueprint v6\n")
+    out.append("# dbwarp-blueprint v7\n")
     out.append("# Anonymous database Blueprint. Source object names and row values are excluded.\n")
     out.append("# Review under your organization's data-classification policy before sharing.\n")
     out.append("# https://github.com/DBWarp/dbwarp-blueprint\n\n")
@@ -618,7 +642,7 @@ def build_blueprint(
         "# Producer: blueprint_format.py SQL fallback; anonymization key source: "
         f"{anonymization_key_source}\n\n"
     )
-    out.append("schema_version = 6\n")
+    out.append("schema_version = 7\n")
     out.append(f'generated_at = "{generated_at}"\n')
     out.append(f'engine = "{_toml_str_escape(engine)}"\n')
     out.append(f'engine_version = "{_toml_str_escape(engine_version)}"\n')
@@ -647,11 +671,12 @@ def build_blueprint(
         "sqlserver": "sqlserver-partition-pages",
     }[engine]
     out.append("[database_topology]\n")
-    out.append('contract = "dbwarp-blueprint-topology/v1"\n')
+    out.append('contract = "dbwarp-blueprint-topology/v2"\n')
     out.append('deployment = "unknown"\n')
     out.append('local_role = "unknown"\n')
     out.append('visibility = "unknown"\n')
     out.append("member_count = 0\n")
+    out.append('member_count_scope = "unknown"\n')
     out.append("identifiers_redacted = true\n\n")
     out.append("[dataset_scope]\n")
     out.append('contract = "dbwarp-blueprint-dataset-scope/v1"\n')
@@ -663,21 +688,105 @@ def build_blueprint(
     out.append(f'size_method = "{size_method}"\n')
     out.append('limitations = ["topology-unobserved", "topology-visibility-unknown"]\n\n')
 
+    structure_catalogs = {
+        "postgresql": [
+            "postgresql-columns",
+            "postgresql-foreign-keys",
+            "postgresql-indexes",
+            "postgresql-tables",
+        ],
+        "mysql": [
+            "mysql-information-schema-columns",
+            "mysql-information-schema-foreign-keys",
+            "mysql-information-schema-indexes",
+            "mysql-information-schema-tables",
+        ],
+        "sqlserver": [
+            "sqlserver-columns",
+            "sqlserver-foreign-keys",
+            "sqlserver-indexes",
+            "sqlserver-tables",
+        ],
+    }[engine]
+    quoted_catalogs = ", ".join(f'"{catalog}"' for catalog in structure_catalogs)
+    out.append("[structure_scope]\n")
+    out.append('contract = "dbwarp-blueprint-structure-scope/v1"\n')
+    out.append('visibility = "privilege-filtered"\n')
+    # The deliberately short SQL scripts inventory ordinary row-holding
+    # tables only. In particular, PostgreSQL partition roots/materialized
+    # views/foreign tables and SQL Server external tables are outside this
+    # reviewable fallback. Dependent families are therefore incomplete too;
+    # claiming them complete would make a valid v7 document misleading.
+    out.append('table_inventory_completeness = "incomplete"\n')
+    out.append('column_inventory_completeness = "incomplete"\n')
+    out.append('index_inventory_completeness = "incomplete"\n')
+    out.append('relationship_inventory_completeness = "incomplete"\n')
+    out.append(f"catalogs_read = [{quoted_catalogs}]\n")
+    out.append('limitations = ["metadata-visibility-privilege-filtered", "table-kinds-not-inventoried"]\n\n')
+
+    out.append("[source_environment]\n")
+    out.append('contract = "dbwarp-blueprint-source-environment/v1"\n')
+    out.append('evidence_origin = "none"\n')
+    out.append('hosting_model = "unknown"\n')
+    out.append('infrastructure_location = "unknown"\n')
+    out.append('capacity_scope = "unknown"\n')
+    out.append('capacity_visibility = "not-requested"\n')
+    out.append('cpu_capacity_band = "unknown"\n')
+    out.append('cpu_capacity_basis = "unknown"\n')
+    out.append('memory_capacity_band = "unknown"\n')
+    out.append('memory_capacity_basis = "unknown"\n')
+    out.append("collector_machine_excluded = true\n\n")
+
+    out.append("[statistics_evidence]\n")
+    out.append('contract = "dbwarp-blueprint-statistics-evidence/v1"\n')
+    out.append('visibility = "unknown"\n')
+    out.append(f"table_count = {totals_table_count}\n")
+    if totals_table_count:
+        out.append(f'counts_by_statistics_state = {{ unknown = {totals_table_count} }}\n')
+        out.append(f'counts_by_row_count_quality = {{ unknown = {totals_table_count} }}\n')
+        out.append(f'counts_by_size_quality = {{ unknown = {totals_table_count} }}\n')
+    out.append('limitations = ["statistics-provenance-unclassified"]\n\n')
+
+    out.append("[artifact_inventory]\n")
+    out.append('contract = "dbwarp-blueprint-artifacts/v2"\n')
+    out.append('detail = "none"\n')
+    out.append('scope = "unknown"\n')
+    out.append('visibility = "unknown"\n')
+    out.append('families_not_inventoried = ["non_table_objects"]\n\n')
+
     for tid, blueprint in table_blueprints:
         out.append(f"[tables.{tid}]\n")
         out.append(f"has_clustered_index = {_toml_bool(blueprint['has_clustered_index'])}\n")
         out.append(f"index_bytes = {blueprint['index_bytes']}\n")
+        out.append('object_kind = "ordinary-table"\n')
+        out.append('partitioning = "none"\n')
         out.append(f"rows = {blueprint['rows']}\n")
         out.append(f'schema = "{blueprint["schema"]}"\n')
-        if blueprint["stats_freshness"]:
-            out.append(f'stats_freshness = "{blueprint["stats_freshness"]}"\n')
+        out.append('segment_state = "unknown"\n')
+        out.append('storage_organization = "unknown"\n')
         out.append(f"table_bytes = {blueprint['table_bytes']}\n")
         out.append("\n")
+        out.append(f"[tables.{tid}.statistics]\n")
+        out.append(f'row_count_method = "{row_count_method}"\n')
+        out.append('row_count_quality = "unknown"\n')
+        out.append('statistics_state = "unknown"\n')
+        out.append('refresh_age_band = "unknown"\n')
+        out.append('modification_ratio_band = "unknown"\n')
+        out.append('sample_fraction_band = "unknown"\n')
+        out.append('statistics_scope = "unknown"\n')
+        out.append(f'size_method = "{size_method}"\n')
+        out.append('size_quality = "unknown"\n')
+        out.append('size_scope = "unknown"\n')
+        out.append('size_accounting = "unknown"\n')
+        out.append('size_visibility = "unknown"\n\n')
         for cid, c in sorted(blueprint["cols"].items()):
             out.append(f"[tables.{tid}.cols.{cid}]\n")
             out.append(f"len_avg = {c['len_avg']}\n")
             out.append(f"len_p95 = {c['len_p95']}\n")
             out.append(f"nullable = {_toml_bool(c['nullable'])}\n")
+            out.append(
+                f'numeric_model = "{_default_numeric_model(str(c["type"]))}"\n'
+            )
             out.append(f"ordinal = {c['ordinal']}\n")
             if c["style"]:
                 out.append(f'style = "{_toml_str_escape(c["style"])}"\n')

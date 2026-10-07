@@ -6,16 +6,11 @@
 
 Échecs courants de `dbwarp-blueprint` et actions à entreprendre.
 
-Les échecs relevant de l'opérateur commencent désormais par un code de message stable `DBPnnnnS`, par exemple `DBP1001E`.
-Utilisez ce code pour rechercher dans la documentation ou ouvrir un ticket de support. Consultez les [codes de message opérateur](MESSAGES.md).
+Les erreurs commencent par un code de message stable `DBPnnnnS`, par exemple `DBP1001E`. Utilisez le code lorsque vous recherchez de la documentation ou que vous signalez un problème. Consultez les [codes de messages pour les opérateurs](MESSAGES.md).
 
 ## La compilation depuis les sources se termine avec l'état 2 ou 3
 
-`build.sh` se termine avec l'état 2 lorsque le `rustc` installé ne correspond
-pas à la version fixée dans `rust-toolchain.toml` et que l'accès réseau n'a pas
-été explicitement approuvé. Installez cette version exacte de Rust ou, après
-avoir examiné la limite de téléchargement, autorisez le script à récupérer son
-programme d'amorçage figé et vérifié par somme de contrôle :
+`build.sh` se termine avec le code d'erreur 2 lorsque la version de `rustc` installée ne correspond pas à la version spécifiée dans `rust-toolchain.toml` et que l'accès réseau n'a pas été explicitement autorisé. Installez exactement cette version de Rust, ou, après avoir examiné les limites de téléchargement, autorisez le script à récupérer son bootstrap, dont la somme de contrôle est vérifiée :
 
 ```bash
 ALLOW_NETWORK=1 ./build.sh
@@ -102,15 +97,24 @@ de confiance du système d'exploitation lorsque `--tls-ca` est omis. Un fichier
 certification et remplace ces certificats racines. Le pilote vérifie le nom
 d'hôte de la connexion avec `verify-ca` comme avec `verify-full`.
 
-## Le Tier 2 nécessite un consentement
+## Consentement requis
 
-Symptôme :
+Symptôme lors d'une exécution sur une base de données active, lorsque vous ne
+répondez pas `y` ou `yes` à l'invite de confirmation :
 
 ```text
---measure-compression requires --yes
+DBP1701E aborted (no consent)
 ```
 
-Correction :
+Symptôme lorsqu'un échantillonnage de compression est demandé pour un fichier
+structuré sans `--yes` :
+
+```text
+DBP1006E ... --measure-compression requires --yes (consent flag)
+```
+
+Correction : examinez le récapitulatif préalable, puis répondez `yes` à
+l'invite, ou relancez avec `--yes` pour une exécution non interactive :
 
 ```bash
 --measure-compression --yes
@@ -147,11 +151,11 @@ Les sections de compression n'apparaissent que lorsque les deux options sont pr�
 --measure-compression --yes
 ```
 
-Les Blueprints catalogue uniquement sont valides, mais les estimations de compression en aval seront déduites.
+Les Blueprints basés uniquement sur le catalogue sont valides, mais les estimations de compression seront déduites des types de colonnes.
 
 ## Certains échantillons de compression sont marqués comme biaisés
 
-Certains moteurs ne permettent pas un échantillonnage uniforme des tables dans tous les cas, et les petites tables peuvent nécessiter un repli sur `LIMIT`. Le fichier Blueprint enregistre `sampled_with_bias` et `bias_reason` afin que l'estimateur et la personne chargée de la revue puissent en tenir compte.
+Certains moteurs ne fournissent pas d'échantillonnage uniforme des tables dans tous les cas, et les petites tables peuvent nécessiter un mécanisme de repli `LIMIT`. Le fichier Blueprint enregistre `sampled_with_bias` et `bias_reason` afin qu'un examinateur puisse en tenir compte.
 
 Les échantillons biaisés restent utiles ; ils sont simplement moins probants que les échantillons uniformes.
 
@@ -169,7 +173,6 @@ N'incluez pas d'options de base de données active avec `--from-toml`. L'outil r
 
 Un fichier Blueprint normal est compact. Il contient des métadonnées structurelles, des nombres arrondis, des index, la structure du graphe de clés étrangères et des résumés de compression facultatifs. Il ne doit contenir ni valeurs de ligne ni identifiants réels.
 
-Si vous avez besoin d'une base de données de benchmark représentative, transmettez le fichier `blueprint.toml` approuvé aux outils en aval, examinés séparément et autorisés pour cette mission.
 
 ## Prouver qu'aucun téléversement n'a eu lieu
 

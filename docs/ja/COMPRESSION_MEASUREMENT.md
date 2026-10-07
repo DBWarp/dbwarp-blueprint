@@ -24,27 +24,11 @@
 カーディナリティ／頻度、長さ、スタイルの測定値を導出し、サンプリング値と一時的な
 fingerprint を破棄します。
 
-選択された text/binary 列について、Tier 2 はその列だけをサンプリングする場合もあります。これにより、後続の計画ツールはテーブルレベルの平均だけに依存せず、列ごとのエントロピーに一致できます。
+選択されたtext/binary列について、Tier 2は、その列のみをサンプリングすることもあります。これにより、テーブル全体の平均値だけでなく、列ごとの圧縮率を把握できます。
 
-ライブデータベースの table 比率は、1,000 行ずつの制限されたグループ、
-列ごとの descriptor、固定幅の値長、列ごとに連続した payload から成る中立な
-シーケンスを使用します。これにより、database protocol や DBWarp wire format を再現せずに、
-bulk transport に共通する圧縮上重要な構造を測定します。列ごとの比率は
-`blueprint-compression-probe-v2` を維持し、tag 付きで長さを前置した値がより具体的な entropy 入力となります。
+ライブデータベースのテーブルの比率は、中立的な、境界が設定された1,000行のグループを使用し、各列に1つの記述子、固定幅の値の長さ、および列に連続したデータ構造を持ちます。これにより、圧縮に関連する構造を測定しますが、データベースや転送プロトコルに関する情報は一切含まれません。各列の比率は`blueprint-compression-probe-v2`を保持し、タグ付けされた長さがプレフィックスされた値は、より具体的なエントロピー入力となります。
 
-PostgreSQL の table block は現在 `blueprint-columnar-transfer-probe-v2` を使用します。
-行グループを 1 つの永続 zstd level-3 context に通し、各グループ後に flush します。
-MySQL と SQL Server は `blueprint-columnar-transfer-probe-v3` を使用し、同じ中立 byte と永続 context に加え、
-256 KiB の probe chunk 境界でも flush します。SQL Server の
-`nvarchar`、`nchar`、`ntext` サンプルは UTF-16LE の byte 分布として測定します。
-`varchar`、`char`、`text` はサンプルした narrow-byte 幅を保持し、
-Blueprint は source collation の catalog code page を `utf-8`、`windows-N`、`code-page-N` として記録します。
-これにより、承認済み consumer は値を拡幅せずに互換性のある native encoder を選択できます。
-database driver は依然としてデコード済み文字列を sampler に渡すため、legacy code page の byte 同一性は主張しません。
-table の `ratio_stddev` は外側の行グループ出力間で測定されます。列ごとの projection block は、
-独立したワンショット entropy 測定のままで `0.0` を出力します。
-`blueprint-columnar-transfer-probe-v1` 付きの旧 table 測定は、結合した frame 全体を 1 回のサイズ申告操作で処理していました。
-明示的な version により、その比率が現在の streaming policy で暗黙に再解釈されることを防ぎます。
+PostgreSQLのテーブルブロックは`blueprint-columnar-transfer-probe-v2`を使用し、行グループを1つの永続的なzstdレベル3コンテキストを通して処理し、各グループの後にフラッシュを行います。MySQLとSQL Serverは`blueprint-columnar-transfer-probe-v3`を使用します。これは、同じ中立的なバイトと永続的なコンテキストを使用しますが、256 KiBのプローブチャンク境界で追加のフラッシュを行います。SQL Serverの`nvarchar`、`nchar`、および`ntext`のサンプルは、UTF-16LEのバイト分布として測定されます。SQL Serverの`varchar`、`char`、および`text`は、サンプリングされた狭いバイト幅を保持します。Blueprintは、ソースの照合のカタログコードページを`utf-8`、`windows-N`、または`code-page-N`として記録します。データベースドライバは、デコードされた文字列をサンプラーに公開するため、レガシーコードページのバイト同一性は主張されません。テーブル`ratio_stddev`は、外部の行グループ出力全体で測定されます。列ごとの投影ブロックは、独立したワンショットのエントロピー測定として残り、`0.0`を出力します。以前のバージョンのBlueprintには`blueprint-columnar-transfer-probe-v1`が含まれている場合があります。異なるタグを持つ比率は比較できません。
 
 サンプリングされたバイトは、選択したデータベースセッションだけを通ってローカル
 プロセスへ移動します。ディスクへ書き込まれず、`blueprint.toml` や監査ログに含まれず、
@@ -95,9 +79,9 @@ style = "json"
 measured = true
 sample_rows = 1000
 sample_bytes = 65536
-sample_method = "column LIMIT N (engine-specific bounded sample)"
+sample_method = "LIMIT N (fallback after underfilled adaptive TABLESAMPLE; simple-query text fields; raw binary/vector decoded; server-side cell cap)"
 sampled_with_bias = true
-bias_reason = "unordered_limit_after_empty_TABLESAMPLE"
+bias_reason = "unordered_limit_after_underfilled_adaptive_TABLESAMPLE+server_side_cell_cap"
 ratio_zstd_3 = 12.35
 ratio_stddev = 0.2
 sample_encoding = "blueprint-compression-probe-v2"
@@ -113,7 +97,7 @@ ratio_stddev = 0.15
 sample_encoding = "blueprint-columnar-transfer-probe-v3"
 ```
 
-これらの値は、承認された後続ツールがネットワーク転送サイズを見積もり、同様の圧縮特性を持つ合成 text/binary データを生成するために役立ちます。
+これらの値は、ネットワーク転送サイズを推定するために使用されます。
 
 ## 重要である理由
 
@@ -130,14 +114,13 @@ sample_encoding = "blueprint-columnar-transfer-probe-v3"
 一部のエンジンは、完全に均一な table sampling を提供しません。MySQL はそのアクセスパスが
 利用可能な場合、制限されたサンプルを 4 つの numeric primary-key range に分散し、それ以外は
 `LIMIT N` にフォールバックします。どちらも統計的な無作為サンプルではないため、明示的にバイアスありと記録されます。
-その他の理想的でない engine fallback も `sampled_with_bias` と `bias_reason` で記録されます。
+最後以外の range window には排他的な上限があります。primary key が疎または偏っている領域では window が不足する場合が
+ありますが、次の window の行を再度読み取ることはありません。その他の理想的でない engine fallback も
+`sampled_with_bias` と `bias_reason` で記録されます。
 
-制限されたサンプルの layout が合成生成に影響する場合、Blueprint はそれをこれらのテキストフィールドと別に記録します。
-MySQL の numeric primary-key range sampling は
-`sample_layout = "primary-key-range-windows"` を出力し、各 window を完全な primary key でソートします。
-これにより consumer は `sample_method` や `bias_reason` を解析せずに、composite key のグループ化された局所性を保持できます。
+Blueprintは、限られた範囲のサンプルデータと、それに関連するテキストフィールドを別々に記録します。MySQLの数値主キー範囲サンプリングでは、`sample_layout = "primary-key-range-windows"`が出力され、各ウィンドウは完全な主キーでソートされます。
 
-バイアスのあるサンプルも有用ですが、下流ツールは信頼度を下げて扱う必要があります。監査には行サンプリングが有効だったことと、ローカルでエンコードした probe バイト数が記録されます。ドライバーが公開しないデータベースセッションのバイト数は `unknown` です。
+偏ったサンプルは依然として有用ですが、信頼性は低くなります。監査ログには、行サンプリングが有効になっていることと、ローカルでエンコードされたプローブバイト数が記録されています。データベースセッションのバイト合計は、ドライバーがそれらを提供しない場合、`unknown`として報告されます。
 
 ## 実用的なサンプリング設定
 
@@ -149,7 +132,7 @@ MySQL の numeric primary-key range sampling は
 --max-wall-secs 120
 ```
 
-読み取りレプリカまたはメンテナンス時間帯を使用できる場合の、より優れた estimator 入力:
+読み取りレプリカまたはメンテナンスウィンドウが利用可能な場合、より正確な測定が可能です。
 
 ```bash
 --measure-compression --yes \
@@ -172,13 +155,6 @@ MySQL の numeric primary-key range sampling は
 監査には設定されたペイロード上限、実行したクエリ、ローカルでエンコードした正確なプローブバイト合計が記録されます。
 データベースの実測通信量は報告しません。
 
-## 後続 consumer による使用方法
+## 測定値の解釈方法
 
-後続の consumer は、次の順序で圧縮エビデンスを使用する必要があります:
-
-1. 認識可能な列単位の圧縮ブロック。
-2. 認識可能なテーブル単位の圧縮ブロック。
-3. 測定済み比率が存在しない場合の type/style 既定値。
-
-`sample_encoding` フィールドは契約の一部です。同じ論理データでもサンプルエンコーディングが異なると圧縮率が変わり得るため、consumer は認識可能な encoding tag を持つ比率だけを使用する必要があります。
-特に、table-level columnar transfer-probe 比率と列ごとの v2 比率は相補的な測定であり、互いに代用してはなりません。
+`sample_encoding` フィールドは、契約の一部です。比率は、同じエンコーディングタグ内でのみ比較可能です。なぜなら、異なるサンプルエンコーディングは、同じ論理データに対して異なる圧縮率を生み出す可能性があるからです。特に、テーブルレベルの列指向転送プローブ比率と、列ごとのv2比率は、補完的な測定値であり、互いに置き換えることはできません。

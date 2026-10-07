@@ -84,7 +84,7 @@ Wszystkie katalogi są kompilowane w pliku binarnym. Podczas uruchamiania progra
 sprawdza, czy każde reklamowane ustawienie regionalne inne niż angielskie
 dokładnie obejmuje:
 
-- bieżące drzewo pomocy Clap na żywo;
+- każdy wpis pomocy;
 - każdy stabilny kod DBP i wszystkie trzy pola diagnostyczne;
 - każdy stabilny monit, komunikat postępu, ostrzeżenie i klucz prezentacji;
 - każdy wymagany symbol zastępczy i chroniony token operacyjny.

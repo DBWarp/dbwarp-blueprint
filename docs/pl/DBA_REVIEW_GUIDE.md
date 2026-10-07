@@ -26,7 +26,7 @@ Zalecane właściwości:
 - dostęp do odczytu ograniczony do ocenianej bazy danych;
 - hasło lub token przekazywane przez plik albo monit, bez osadzania w URI.
 
-Dokładne uprawnienia zależą od silnika i zasad klienta. Jeżeli konto nie może odczytać niektórych widoków katalogu lub próbkować niektórych tabel, narzędzie powinno zakończyć się z czytelnym błędem albo wygenerować ograniczony Blueprint; zachowaj dziennik audytu.
+Dokładne uprawnienia zależą od używanego silnika i polityki. Jeśli konto nie ma możliwości odczytu niektórych widoków katalogu lub pobrania próbek z niektórych tabel, narzędzie wyraźnie się nie powiedzie lub wygeneruje skrócony Blueprint; należy zachować dziennik audytu.
 
 Użyj uwzględniających wersję skryptów i zastrzeżeń opisanych w
 [`../../sql/grants/README.md`](../../sql/grants/README.md). Po zatwierdzonym
@@ -47,19 +47,44 @@ Odczytuje:
 - rodziny typów kolumn, możliwość występowania wartości NULL oraz zaokrąglone statystyki długości, jeśli są dostępne;
 - typ indeksu, unikatowość i zanonimizowane numery porządkowe kolumn;
 - strukturę grafu kluczy obcych, jeśli jest dostępny;
+- przybliżone przedziały pojemności źródła zwracane w miarę możliwości przez punkt końcowy bazy danych;
 - ograniczone liczniki obiektów innych niż tabele i wymagań zewnętrznych z
   katalogów obiektów przy domyślnym `--artifact-detail summary` (bez definicji);
-- opcjonalny pomiar RTT po stronie klienta, chyba że ustawiono `--no-rtt-probe`.
+- opcjonalne sondowanie RTT, chyba że ustawiono `--no-rtt-probe`.
 
 Nie odczytuje wartości wierszy.
 
+## Środowisko źródłowe
+
+Blok `[source_environment]` schematu v7 jest wyprowadzany wyłącznie z wartości
+zwracanych przez wybrane połączenie z bazą danych. Kolektor nigdy nie sprawdza
+własnego hosta i nie przedstawia tej stacji roboczej jako serwera bazy danych.
+
+PostgreSQL i MySQL udostępniają ustawienie bufora bazy danych przy standardowych minimalnych uprawnieniach, dlatego pamięć stanowi częściowy dowód z podstawą `database-buffer-cache`, a procesor pozostaje nieznany.
+
+SQL Server wymaga dostępu do zasobów środowiska źródłowego tylko w trybach `--artifact-detail graph` lub `analyzed`, czyli w wersjach rozszerzonych. Tryby podstawowy i standardowy nie wysyłają zapytania o dostępność zasobów systemu operacyjnego i rejestrują zakresy dostępnych zasobów jako `not-requested`.
+
+Ulepszony skrypt przyznaje wymagane uprawnienia na poziomie całego serwera, czyli `VIEW SERVER STATE` (2019) lub `VIEW SERVER PERFORMANCE STATE` (2022/2025), w oddzielnej partii, którą administrator bazy danych (DBA) może usunąć. Jeśli ulepsowany mechanizm przechwytywania nie może odczytać DMV, przechwytywanie kontynuuje i rejestruje katalog jako nieczytelny, zamiast pobierać wartości z lokalnej maszyny lub generować sztuczne dane dotyczące pojemności.
+
+Ta ścieżka przechwytywania nie kontaktuje się z żadnym API chmury, Kubernetes,
+hiperwizora ani systemu operacyjnego.
+
 ## Inwentarz artefaktów innych niż tabele
 
-Od schematu v4 Blueprinty inwentaryzują obiekty inne niż tabele niezależnie od próbkowania wierszy. Domyślne `--artifact-detail summary` odczytuje katalogi obiektów, ale nie definicje, i emituje tylko ograniczone liczniki oraz klasy zewnętrznych wymagań.
+Blueprints niezależnie od próbkowania wierszy, katalogują obiekty, które nie są tabelami. Domyślnie `--artifact-detail summary` odczytuje katalogi obiektów, ale nie definicje, i generuje tylko ograniczone liczby oraz klasy zależności zewnętrznych.
 
 `--artifact-detail graph --yes` dodaje anonimowe identyfikatory obiektów i krawędzie zależności. `--artifact-detail analyzed --yes` dodatkowo odczytuje dostępne definicje tymczasowo i emituje tylko ograniczone przedziały cech leksykalnych i złożoności. Tekst definicji, nazwy obiektów źródłowych, punkty końcowe, nazwy dostawców, podmioty zabezpieczeń, sekrety, klucze, certyfikaty, nazwy pakietów i pliki binarne nigdy nie są serializowane.
 
-Uprawnienia do katalogów wpływają na twierdzenia o braku. Sprawdź `visibility`, `inventory_complete`, `dependencies_complete`, `catalogs_unreadable` i `families_not_inventoried`; nie uznawaj zera za dowód, gdy te pola wskazują lukę. `DBP1410W` oznacza opcjonalny katalog artefaktów, którego nie udało się odczytać.
+Uprawnienia do katalogów wpływają na twierdzenia o braku. Sprawdź `visibility`,
+`inventory_complete`, `dependencies_complete`, `requirements_complete`,
+`catalogs_unreadable` i `families_not_inventoried`; nie uznawaj zera ani pustej
+listy wymagań za dowód, gdy te pola wskazują lukę. Przy szczegółowości
+graph/analyzed sprawdź też `requirement_status` każdego obiektu: tylko
+`complete` sprawia, że pusta lista dowodzi braku wymagań dla tego obiektu.
+`partial` zachowuje znane fakty bez twierdzenia o pełnym pokryciu;
+`unavailable` oznacza, że nie ustalono użytecznego pokrycia. W obu przypadkach
+ocena powiązań wynikająca z wymagań tego obiektu pozostaje nieznana. `DBP1410W`
+oznacza opcjonalny katalog artefaktów, którego nie udało się odczytać.
 
 Anonimowa topologia zależności nadal może identyfikować aplikację. Zatwierdź `graph` lub `analyzed` tylko wtedy, gdy to ryzyko jest akceptowalne. Zobacz [`ARTIFACT_INVENTORY.md`](ARTIFACT_INVENTORY.md).
 
@@ -71,11 +96,7 @@ Poziom 2 jest włączany wyłącznie przez jawną parę:
 --measure-compression --yes
 ```
 
-Poziom 2 dodatkowo odczytuje ograniczone próbki wierszy do pamięci procesu.
-Bajty próbki są kodowane w wewnętrznym buforze ramek wierszy i używane do
-wyprowadzenia zagregowanych pomiarów kompresji, udziału NULL,
-kardynalności/częstotliwości, długości i stylu, po czym wartości i tymczasowe
-odciski są odrzucane.
+Warstwa 2 dodatkowo odczytuje ograniczone próbki wierszy do pamięci procesu. Próbkowane bajty są kodowane do bufora w pamięci i wykorzystywane do obliczenia zagregowanych wartości kompresji, gęstości wartości null, cardinality/frequency, długości i stylu, zanim wartości i tymczasowe odciski cyfrowe zostaną usunięte.
 
 Bajty próbek:
 
@@ -85,7 +106,7 @@ Bajty próbek:
 - nie są wysyłane przez żadną sieć poza połączeniem z bazą danych;
 - nie są przechowywane po podsumowaniu próbki.
 
-Poziom 2 jest wartościowy, ponieważ wydajność DBWarp i koszt ruchu wychodzącego zależą od bajtów po kompresji, a nie od surowych bajtów tabeli.
+Warstwa 2 jest cenna, ponieważ czas transferu i koszty przesyłania danych zależą od skompresowanych bajtów, a nie od surowych bajtów tabeli.
 
 ## Pomiar RTT
 
@@ -137,7 +158,7 @@ albo przywracany jest poprzedni pakiet.
 
 Przed udostępnieniem `blueprint.toml` sprawdź:
 
-- nagłówek jest stałym nagłówkiem `dbwarp-blueprint v6`;
+- nagłówek jest stałym nagłówkiem `dbwarp-blueprint v7`;
 - identyfikatory tabel mają postać `table-001`;
 - identyfikatory kolumn mają postać `col-1`;
 - identyfikatory schematów mają postać `schema-A`;
@@ -151,18 +172,9 @@ Przed udostępnieniem `blueprint.toml` sprawdź:
   pochodzenia próbki, nigdy próbkowane wartości.
 - pola kompletności artefaktów ujawniają filtrowaną widoczność, nieczytelne katalogi i znane niezamodelowane rodziny.
 
-Domyślne zrównoważone dane wyjściowe MySQL zawierają dokładne zadeklarowane
-pojemności i długości prefiksów indeksów oraz względnie zaokrąglone próbki
-średniej/p95. Jawnie sprawdź trzy znaczniki wierności. Jeżeli użyto
-`--length-fidelity exact --yes`, zatwierdź również dokładne statystyki próbek.
-Wartości wierszy i rzeczywiste nazwy obiektów nadal nie mogą występować. Brak
-znaczników wierności oznacza dane starsze lub nieznane i nie może być uznawany
-za metadane gotowe do benchmarku.
+Domyślny, zbalansowany wynik MySQL zawiera dokładne zadeklarowane pojemności i długości prefiksów indeksów, a także względnie zaokrąglone średnie wartości i wartości p95. Proszę sprawdzić trzy wskaźniki jakości. Jeśli użyto `--length-fidelity exact --yes`, należy również zatwierdzić dokładne statystyki pobrane w próbkach. Wartości w wierszach i rzeczywiste nazwy obiektów muszą nadal być pomijane. Plik Blueprint bez wskaźników jakości został wygenerowany przez starszą wersję; należy go ponownie utworzyć.
 
-Znacznik nie stwierdza, że próbkowanie objęło każdą tabelę. Pakiet przekazywany
-do benchmarku musi również wykazać w manifeście estymatora brak niepustych,
-niepróbkowanych kolumn indeksowanych o zmiennej szerokości; jeśli ta bramka zawiedzie, zwiększ
-`--max-wall-secs` i ponownie wykonaj przechwycenie.
+Oznaczenie to nie stwierdza, że próbkowanie objęło wszystkie tabele. Jeśli zostanie zgłoszony błąd `DBP1406W`, należy zwiększyć wartość `--max-wall-secs` i ponownie wykonać próbkowanie.
 
 ## Bezpieczeństwo operacyjne
 

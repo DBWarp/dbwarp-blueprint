@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build.sh — build dbwarp-blueprint with a pinned Rust toolchain.
+# build.sh: build dbwarp-blueprint with a pinned Rust toolchain.
 #
 # Default path:
 #   - small git clone
@@ -173,7 +173,7 @@ if [[ "${CARGO_TARGET:-}" == *windows* ]]; then
   BIN="$BIN.exe"
 fi
 if [[ ! -x "$BIN" && ! -f "$BIN" ]]; then
-  echo "build.sh: expected binary at $BIN — not found" >&2
+  echo "build.sh: expected binary at $BIN: not found" >&2
   exit 4
 fi
 SHA="$(sha256_file "$BIN")"

@@ -6,15 +6,11 @@
 
 Häufige Fehler von `dbwarp-blueprint` und die nächsten Schritte.
 
-Fehler in der Verantwortung des Bedieners beginnen jetzt mit einem stabilen Meldungscode `DBPnnnnS`, beispielsweise `DBP1001E`. Verwenden Sie den Code bei der Suche in der Dokumentation oder beim Eröffnen eines Supporttickets. Siehe [Bedienermeldungscodes](MESSAGES.md).
+Fehler beginnen mit einem stabilen `DBPnnnnS`-Meldungscode, beispielsweise `DBP1001E`. Verwenden Sie den Code bei der Suche in der Dokumentation oder bei der Meldung eines Problems. Siehe [Operator-Meldungscodes](MESSAGES.md).
 
 ## Quellcode-Build endet mit Status 2 oder 3
 
-`build.sh` endet mit Status 2, wenn das installierte `rustc` nicht der in
-`rust-toolchain.toml` festgelegten Version entspricht und Netzwerkzugriff nicht
-ausdrücklich genehmigt wurde. Installieren Sie genau diese Rust-Version oder
-erlauben Sie dem Skript nach Prüfung der Download-Grenze, den festgelegten und
-per Prüfsumme verifizierten Bootstrap herunterzuladen:
+`build.sh` beendet sich mit dem Status 2, wenn die installierte `rustc`-Version nicht mit der in `rust-toolchain.toml` angegebenen Version übereinstimmt und der Netzwerkzugriff nicht explizit genehmigt wurde. Installieren Sie genau diese Rust-Version, oder erlauben Sie dem Skript, nach Überprüfung der Download-Grenzen seine festgelegte, checksum-überprüfte Bootstrap-Datei abzurufen:
 
 ```bash
 ALLOW_NETWORK=1 ./build.sh
@@ -98,15 +94,25 @@ Betriebssystems, wenn `--tls-ca` nicht angegeben ist. Eine bereitgestellte
 diese Stammzertifikate. Der Treiber prüft den Verbindungshostnamen sowohl bei
 `verify-ca` als auch bei `verify-full`.
 
-## Tier 2 erfordert Zustimmung
+## Zustimmung erforderlich
 
-Symptom:
+Symptom bei einem Lauf gegen eine Live-Datenbank, wenn die Bestätigungsfrage
+nicht mit `y` oder `yes` beantwortet wird:
 
 ```text
---measure-compression requires --yes
+DBP1701E aborted (no consent)
 ```
 
-Lösung:
+Symptom, wenn eine Komprimierungsstichprobe für eine strukturierte Datei ohne
+`--yes` angefordert wird:
+
+```text
+DBP1006E ... --measure-compression requires --yes (consent flag)
+```
+
+Lösung: Prüfen Sie die Vorabzusammenfassung und antworten Sie an der
+Eingabeaufforderung mit `yes`, oder führen Sie einen nicht interaktiven Lauf mit
+`--yes` erneut aus:
 
 ```bash
 --measure-compression --yes
@@ -143,11 +149,11 @@ Komprimierungsabschnitte erscheinen nur, wenn beide Optionen vorhanden sind:
 --measure-compression --yes
 ```
 
-Reine Katalogstrukturen sind gültig; nachgelagerte Komprimierungsschätzungen werden jedoch abgeleitet.
+Katalog-spezifische Blueprints sind gültig, aber die Kompressionsschätzungen werden aus den Spaltentypen abgeleitet.
 
 ## Einige Komprimierungsstichproben sind als verzerrt markiert
 
-Einige Engines unterstützen nicht in allen Fällen eine gleichmäßige Tabellenstichprobe, und kleine Tabellen können einen Fallback mit `LIMIT` erfordern. Die Blueprint-Datei zeichnet `sampled_with_bias` und `bias_reason` auf, damit Estimator und Prüfer dies berücksichtigen können.
+Einige Engines bieten keine einheitliche Tabellenstichprobenentnahme in allen Fällen, und kleine Tabellen benötigen möglicherweise eine `LIMIT`-Fallback-Lösung. Die Blueprint-Datei protokolliert `sampled_with_bias` und `bias_reason`, damit ein Prüfer dies berücksichtigen kann.
 
 Verzerrte Stichproben sind weiterhin nützlich; sie sind lediglich weniger aussagekräftig als gleichmäßige Stichproben.
 
@@ -165,7 +171,6 @@ Fügen Sie bei `--from-toml` keine Optionen für Live-Datenbanken hinzu. Das Wer
 
 Eine normale Blueprint-Datei ist kompakt. Sie enthält strukturelle Metadaten, gerundete Zählwerte, Indizes, die Struktur des Fremdschlüsselgraphen und optionale Komprimierungszusammenfassungen. Sie sollte keine Zeilenwerte oder Bezeichner enthalten.
 
-Wenn Sie eine repräsentative Benchmark-Datenbank benötigen, übergeben Sie die genehmigte `blueprint.toml` an die separat geprüften nachgelagerten Werkzeuge, die für diesen Auftrag autorisiert wurden.
 
 ## Nachweis erforderlich, dass kein Upload stattgefunden hat
 

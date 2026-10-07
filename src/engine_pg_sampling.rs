@@ -5,6 +5,45 @@ struct PendingCompressionSample {
     null_fractions: Vec<Option<f64>>,
     cardinalities: Vec<Option<format::BlueprintCardinality>>,
     payload_profiles: Vec<String>,
+    /// Exact visible table population only when the bounded statement proved
+    /// a complete read and no row-security policy was active.
+    complete_source_rows: Option<u64>,
+}
+
+enum PgCompressionSampleOutcome {
+    /// The query did not prove either a usable sample or a complete empty
+    /// table (for example, no projected columns).
+    Unavailable,
+    /// A successful bounded statement read the complete table and returned no
+    /// rows.  Keep this table-level fact even though there is no payload to
+    /// submit to the compression workers.
+    CompleteEmpty,
+    Pending(PendingCompressionSample),
+}
+
+fn pg_empty_sample_outcome(complete_row_read: bool) -> PgCompressionSampleOutcome {
+    if complete_row_read {
+        PgCompressionSampleOutcome::CompleteEmpty
+    } else {
+        PgCompressionSampleOutcome::Unavailable
+    }
+}
+
+fn pg_sample_qname(schema_name: &str, table_name: &str, has_subclasses: bool) -> String {
+    let relation = format!(
+        "\"{}\".\"{}\"",
+        schema_name.replace('"', "\"\""),
+        table_name.replace('"', "\"\"")
+    );
+    if has_subclasses {
+        format!("ONLY {relation}")
+    } else {
+        relation
+    }
+}
+
+fn pg_complete_row_read(returned_rows: usize, requested_rows: u64, row_security_active: bool) -> bool {
+    returned_rows < requested_rows as usize && !row_security_active
 }
 
 async fn sample_compression(
@@ -16,16 +55,16 @@ async fn sample_compression(
     length_fidelity: LengthFidelity,
     compression_pool: &CompressionWorkerPool,
     audit: &mut AuditLog,
-) -> Result<Option<PendingCompressionSample>> {
+) -> Result<PgCompressionSampleOutcome> {
     // Build qualified, quoted table name.
-    let qname = format!(
-        "\"{}\".\"{}\"",
-        table.schema_name.replace('"', "\"\""),
-        table.table_name.replace('"', "\"\"")
+    let qname = pg_sample_qname(
+        &table.schema_name,
+        &table.table_name,
+        table.has_subclasses,
     );
 
     if table_columns.is_empty() {
-        return Ok(None);
+        return Ok(PgCompressionSampleOutcome::Unavailable);
     }
     // Budget the projection in bytes. Text values reserve four bytes per
     // character for UTF-8; bytea values can use the full per-cell byte budget
@@ -59,32 +98,41 @@ async fn sample_compression(
                 ),
                 _ => format!("LEFT({name}::text, {cell_char_limit})"),
             };
-            [sampled_value, observed_length]
+            let sampled_length = match tag {
+                TypeTag::BinaryRaw => format!(
+                    "octet_length(substring({name} FROM 1 FOR {cell_byte_limit}))"
+                ),
+                TypeTag::VectorBinary => format!(
+                    "octet_length(substring(vector_send({name}) FROM 1 FOR {cell_byte_limit}))"
+                ),
+                _ => format!("octet_length(LEFT({name}::text, {cell_char_limit}))"),
+            };
+            [sampled_value, observed_length, sampled_length]
         })
         .collect::<Vec<_>>()
         .join(", ");
 
     // Map column ordinals to TypeTags from the catalog scan we already
-    // ran in run(). We require the columns in attnum order — the
-    // catalog query orders them that way — so position N in
+    // ran in run(). We require the columns in attnum order; the
+    // catalog query orders them that way, so position N in
     // `table_columns` corresponds to column N in the SELECT * result.
     let column_tags: Vec<TypeTag> = table_columns
         .iter()
         .map(|c| type_tag_for_pg_str(&c.type_str))
-        .collect();
+        .collect::<Vec<_>>();
 
     // Use an estimate-aware TABLESAMPLE percentage plus LIMIT. A fixed 0.1%
     // sample systematically underfills moderate tables (for example, 375k
     // rows yields only about 375 rows for a requested 1,000-row sample). Four
     // times the requested expected rows absorbs page-level variance while the
-    // LIMIT and resident-memory budget retain the existing safety bounds.
+    // LIMIT and resident-memory budget retain the safety bounds.
     //
     // We use the *simple query* protocol (not the extended `client.query`
     // path) so the server returns column values in TEXT format. The
     // extended-query path opportunistically uses BINARY format for types whose
     // `FromSql` implementation accepts it. Text format provides one stable,
     // driver-independent value representation for this measurement contract.
-    let sample_percent = pg_table_sample_percent(table.reltuples, bounded_rows);
+    let sample_percent = pg_table_sample_percent(table.reltuples.unwrap_or(0.0), bounded_rows);
     let sql = format!(
         "SELECT {projection} FROM {qname} TABLESAMPLE SYSTEM ({sample_percent:.6}) REPEATABLE (0) LIMIT {bounded_rows}"
     );
@@ -92,6 +140,7 @@ async fn sample_compression(
     let mut sampled_with_bias = true;
     let mut bias_reason = "server_side_cell_cap".to_string();
     let mut sample_method = pg_sample_method(false).to_string();
+    let mut complete_row_read = false;
     let mut primary_error = None;
     let mut messages = match client.simple_query(&sql).await {
         Ok(m) => {
@@ -119,7 +168,17 @@ async fn sample_compression(
             _ => None,
         })
         .collect();
-    if rows.len() < bounded_rows as usize {
+    if pg_sample_scanned_complete_table(sample_percent, primary_error.is_some()) {
+        if rows.len() < bounded_rows as usize {
+            // TABLESAMPLE SYSTEM(100) scans every page, so fewer rows than
+            // requested means the table itself is smaller - a complete
+            // census, not a degraded sample. Re-fetching via LIMIT would
+            // return identical rows and stamp a false underfill bias.
+            sample_method = pg_sample_method_complete_scan().to_string();
+            complete_row_read =
+                pg_complete_row_read(rows.len(), bounded_rows, table.row_security_active);
+        }
+    } else if rows.len() < bounded_rows as usize {
         let fallback = format!("SELECT {projection} FROM {qname} LIMIT {bounded_rows}");
         let fallback_started = Instant::now();
         match client.simple_query(&fallback).await {
@@ -142,6 +201,8 @@ async fn sample_compression(
                     "unordered_limit_after_underfilled_adaptive_TABLESAMPLE+server_side_cell_cap"
                         .to_string();
                 sample_method = "LIMIT N (fallback after underfilled adaptive TABLESAMPLE; simple-query text fields; raw binary/vector decoded; server-side cell cap)".to_string();
+                complete_row_read =
+                    pg_complete_row_read(rows.len(), bounded_rows, table.row_security_active);
             }
             Err(_) if !rows.is_empty() => {
                 sampled_with_bias = true;
@@ -167,18 +228,19 @@ async fn sample_compression(
         }
     }
     if rows.is_empty() {
-        return Ok(None);
+        return Ok(pg_empty_sample_outcome(complete_row_read));
     }
     // Encode rows using the transient compression-probe representation. Each column carries
     // its TEXT-format bytes (UTF-8 for everything tokio-postgres text-mode
     // returns) plus a type tag from the catalog scan. The tagged,
     // length-prefixed representation prevents
     // non-text columns from collapsing into ambiguous empty fields. The full
-    // encoding contract and regression tests live in `src/sample_encode.rs`.
+    // encoding is specified in `src/sample_encode.rs`.
     let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
     let mut row_ranges: Vec<(usize, usize)> = Vec::with_capacity(rows.len());
     let mut column_bufs: Vec<Vec<u8>> = Vec::new();
     let mut column_payload_lengths: Vec<Vec<u64>> = Vec::new();
+    let mut column_value_truncated: Vec<bool> = Vec::new();
     let mut cardinality_accumulators: Vec<sample_encode::CardinalityAccumulator> = Vec::new();
     let mut payload_profile_accumulators: Vec<
         dbwarp_blueprint_core::PayloadProfileAccumulator,
@@ -189,6 +251,7 @@ async fn sample_compression(
         if column_bufs.is_empty() {
             column_bufs = vec![Vec::new(); n_cols];
             column_payload_lengths = vec![Vec::new(); n_cols];
+            column_value_truncated = vec![false; n_cols];
             cardinality_accumulators =
                 vec![sample_encode::CardinalityAccumulator::default(); n_cols];
             payload_profile_accumulators =
@@ -197,13 +260,18 @@ async fn sample_compression(
         let mut sampled_payloads: Vec<Option<std::borrow::Cow<'_, [u8]>>> =
             Vec::with_capacity(n_cols);
         for col_idx in 0..n_cols {
-            let value_idx = col_idx.saturating_mul(2);
-            let length_idx = value_idx.saturating_add(1);
+            let value_idx = col_idx.saturating_mul(3);
+            let original_length_idx = value_idx.saturating_add(1);
+            let sampled_length_idx = value_idx.saturating_add(2);
             let cell_text: Option<&str> = r.get(value_idx);
-            if let Some(length) = r.get(length_idx) {
-                column_payload_lengths[col_idx].push(length.parse::<u64>().with_context(|| {
-                    format!("decoding sampled PostgreSQL column length from {qname}")
-                })?);
+            if let Some((original_length, sampled_length)) = pg_sample_lengths(
+                r.get(original_length_idx),
+                r.get(sampled_length_idx),
+            )
+            .with_context(|| format!("decoding sampled PostgreSQL column lengths from {qname}"))?
+            {
+                column_payload_lengths[col_idx].push(original_length);
+                column_value_truncated[col_idx] |= sampled_length < original_length;
             }
             match cell_text {
                 Some(s) => {
@@ -266,31 +334,44 @@ async fn sample_compression(
         row_ranges.push((row_start, buf.len()));
     }
     if buf.is_empty() {
-        return Ok(None);
+        return Ok(PgCompressionSampleOutcome::Unavailable);
     }
 
     let sample_bytes = buf.len() as u64;
     audit.record_encoded_sample_bytes(sample_bytes)?;
+    complete_row_read &= row_ranges.len() == rows.len();
 
-    let source_rows = table.reltuples.max(0.0).round() as u64;
+    // A bounded scan that proved complete is stronger than the planner's
+    // estimate (which may be stale or absent).  Preserve the visible row
+    // population for cardinality instead of mixing a fresh sample with an
+    // unrelated catalog estimate.
+    let source_rows = complete_row_read.then_some(row_ranges.len() as u64).or_else(|| {
+        pg_reltuples_row_estimate(table.reltuples)
+    });
     let column_lengths = column_payload_lengths
         .into_iter()
         .map(|lengths| sampled_column_length_stats(lengths, length_fidelity))
         .collect();
     let cardinalities = cardinality_accumulators
         .iter()
-        .map(|accumulator| {
-            accumulator.finish(
+        .enumerate()
+        .map(|(index, accumulator)| {
+            accumulator.finish_with_source_rows(
                 source_rows,
+                complete_row_read,
+                complete_row_read && !column_value_truncated[index],
                 sample_method.as_str(),
                 sampled_with_bias,
                 bias_reason.as_str(),
             )
         })
-        .collect();
+        .collect::<Vec<_>>();
     let null_fractions = cardinality_accumulators
         .iter()
-        .map(sample_encode::CardinalityAccumulator::null_fraction)
+        .zip(cardinalities.iter())
+        .map(|(accumulator, cardinality)| {
+            accumulator.emitted_null_fraction(cardinality.as_ref())
+        })
         .collect();
     let payload_profiles = payload_profile_accumulators
         .iter()
@@ -311,14 +392,29 @@ async fn sample_compression(
         .with_context(|| format!("submitting local compression work for {qname}"))?;
     audit.record_compression_job_submitted();
 
-    Ok(Some(PendingCompressionSample {
+    Ok(PgCompressionSampleOutcome::Pending(PendingCompressionSample {
         ticket,
         submitted_at,
         column_lengths,
         null_fractions,
         cardinalities,
         payload_profiles,
+        complete_source_rows: complete_row_read.then_some(encoded_sample_rows),
     }))
+}
+
+fn pg_sample_lengths(
+    original: Option<&str>,
+    sampled: Option<&str>,
+) -> Result<Option<(u64, u64)>> {
+    match (original, sampled) {
+        (None, None) => Ok(None),
+        (Some(original), Some(sampled)) => Ok(Some((
+            original.parse::<u64>().context("invalid original octet length")?,
+            sampled.parse::<u64>().context("invalid sampled octet length")?,
+        ))),
+        _ => bail!("original and sampled octet lengths disagree on NULL state"),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -342,10 +438,10 @@ async fn peek_column_style(
     table: &TableRow,
     col: &ColumnRow,
 ) -> Result<&'static str> {
-    let qname = format!(
-        "\"{}\".\"{}\"",
-        table.schema_name.replace('"', "\"\""),
-        table.table_name.replace('"', "\"\"")
+    let qname = pg_sample_qname(
+        &table.schema_name,
+        &table.table_name,
+        table.has_subclasses,
     );
     let qattname = format!("\"{}\"", col.attname.replace('"', "\"\""));
     let per_row_chars = (STYLE_PEEK_BYTES / 32 / 4).max(1);
@@ -431,6 +527,17 @@ fn pg_table_sample_percent(estimated_rows: f64, requested_rows: u64) -> f64 {
         .clamp(MIN_PERCENT, 100.0)
 }
 
+/// A 100% adaptive rate makes `TABLESAMPLE SYSTEM` scan every page, so a
+/// successful query that returns fewer rows than requested captured the
+/// complete table rather than a degraded sample.
+fn pg_sample_scanned_complete_table(sample_percent: f64, primary_query_failed: bool) -> bool {
+    sample_percent >= 100.0 && !primary_query_failed
+}
+
+fn pg_sample_method_complete_scan() -> &'static str {
+    "TABLESAMPLE SYSTEM REPEATABLE(0) LIMIT N (complete scan; table not larger than the requested sample; simple-query text fields; raw binary/vector decoded; server-side cell cap)"
+}
+
 // The exact adaptive rate is only a query input: persisting it would reveal
 // more precise source row estimates than the Blueprint's rounded row counts.
 fn pg_sample_method(fallback_failed: bool) -> &'static str {
@@ -474,6 +581,18 @@ mod sample_privacy_tests {
     }
 
     #[test]
+    fn inheritance_parents_are_sampled_without_descendant_rows() {
+        assert_eq!(
+            pg_sample_qname("app", "events", true),
+            "ONLY \"app\".\"events\""
+        );
+        assert_eq!(
+            pg_sample_qname("app", "events", false),
+            "\"app\".\"events\""
+        );
+    }
+
+    #[test]
     fn partial_sample_warning_is_coded_and_retained_in_the_audit() {
         let mut audit = AuditLog::new("tier-2", 128);
         record_pg_partial_sample_warning("table-001", 17, &mut audit);
@@ -481,6 +600,18 @@ mod sample_privacy_tests {
         assert!(output.contains("DBP1407W"));
         assert!(output.contains("table-001"));
         assert!(output.contains("17"));
+    }
+
+    #[test]
+    fn complete_empty_read_is_distinct_from_unavailable_sampling() {
+        assert!(matches!(
+            pg_empty_sample_outcome(true),
+            PgCompressionSampleOutcome::CompleteEmpty
+        ));
+        assert!(matches!(
+            pg_empty_sample_outcome(false),
+            PgCompressionSampleOutcome::Unavailable
+        ));
     }
 }
 

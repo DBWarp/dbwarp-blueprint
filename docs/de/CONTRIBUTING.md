@@ -46,33 +46,24 @@ cargo test --locked --all-targets
 python3 tools/check_public_tree.py
 ```
 
-Der gemeinsame Kern besitzt eine eigene Unit-Testsuite:
+Das Kernmodul verfügt über eigene Unit-Tests:
 
 ```bash
 cargo test --locked --manifest-path crates/dbwarp-blueprint-core/Cargo.toml --lib
 ```
 
-Erfolgreiche lokale Tests sind keine Qualifikation von Datenbankversionen oder
-Plattformen. Beschreiben Sie, was tatsächlich getestet wurde, und kennzeichnen
-Sie andere Konfigurationen ausdrücklich als ungetestet. Veröffentlichen Sie
-im Rahmen eines Patches keine Artefakte, aktualisieren Sie keine Release-Tags
-und ändern Sie keine Repository-Sicherheitseinstellungen ohne Zustimmung der
-Maintainer.
+Das Bestehen lokaler Tests beweist nicht, dass eine Änderung mit jeder Datenbankversion oder Plattform funktioniert. Beschreiben Sie, was tatsächlich getestet wurde, und lassen Sie andere Konfigurationen, die explizit nicht getestet wurden, ausdrücklich als solche gekennzeichnet.
 
 ## Arbeitsablauf für Maintainer
 
-Die kanonische Quelle besteht aus der englischen Rust-Hilfe und den Meldungs-/UI-Definitionen in [`src/i18n.rs`](https://github.com/DBWarp/dbwarp-blueprint/blob/main/src/i18n.rs). Wenn sich eine kundensichtbare Formulierung ändert:
+Die kanonische Quelle besteht aus der englischen Rust-Hilfe und den Meldungs-/UI-Definitionen in [`src/i18n.rs`](https://github.com/DBWarp/dbwarp-blueprint/blob/main/src/i18n.rs). Wenn sich eine für Benutzer sichtbare Formulierung ändert:
 
 1. aktualisieren Sie im selben Commit jeden Gebietsschemakatalog unter `locales/`;
 2. bewahren Sie alle Platzhalter und kanonischen betrieblichen Token exakt auf;
 3. führen Sie den fokussierten Test auf exakte Abdeckung aus;
+4. fügen Sie den relevanten Testfall hinzu oder aktualisieren Sie ihn in.
 4. fügen Sie den zugehörigen Fall an der Bedienergrenze in `tests/cli_errors.rs` hinzu oder aktualisieren Sie ihn, wenn sich ein Fehler oder eine Warnung ändert;
-5. führen Sie die vollständige Testsuite aus und prüfen Sie repräsentative Hilfe-/Präsentationsausgaben;
-6. holen Sie eine muttersprachliche technische Prüfung ein, bevor Sie neue Formulierungen als endgültig für einen Kundenvertrag, eine regulatorische Einreichung oder öffentliches Marketing behandeln.
-
-Dieser Arbeitsablauf zur exakten Abdeckung gilt für die in die Binärdatei
-eingebetteten Laufzeitkataloge. Übersetztes Markdown ist ergänzend; siehe
-[`docs/TRANSLATIONS.md`](../TRANSLATIONS.md).
+5. Führen Sie die vollständige Testsuite aus und prüfen Sie die repräsentative help/deck-Ausgabe.
 
 Fokussierte Validierung:
 

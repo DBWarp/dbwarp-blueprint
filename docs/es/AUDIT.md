@@ -15,7 +15,9 @@ auditoría de la aplicación.
 
 ## Salida de red
 
-El modo en vivo `--connect` abre una sesión del controlador de base de datos con el punto de conexión indicado. La resolución DNS puede utilizar el solucionador configurado, y la autenticación Kerberos/SSPI integrada puede contactar con un KDC o un controlador de dominio. El modo por lotes procesa sus orígenes secuencialmente y abre una sesión por cada origen de base de datos. Las operaciones sin conexión con TOML, Parquet, Avro y paquetes no abren ninguna conexión de red iniciada por la aplicación, aunque una ruta en un sistema de archivos de red sigue dependiendo de la pila de almacenamiento del host.
+El modo en vivo `--connect` para PostgreSQL, MySQL y SQL Server abre una sesión del controlador de base de datos con el punto de conexión indicado. El modo por lotes procesa sus orígenes secuencialmente y abre una sesión por cada origen de base de datos. La resolución DNS puede utilizar el solucionador configurado, y la autenticación Kerberos/SSPI integrada puede contactar con un KDC o un controlador de dominio. Las operaciones sin conexión con TOML, Parquet, Avro y paquetes no abren ninguna conexión de red iniciada por la aplicación, aunque una ruta en un sistema de archivos de red sigue dependiendo de la pila de almacenamiento del host.
+
+La vista previa de Oracle sujeta a confirmación inicia únicamente el ejecutable SQL*Plus indicado explícitamente mediante `--oracle-sqlplus` (incluida una prueba limitada `-V` cuando esté disponible) y lo utiliza para la sesión del catálogo. El proceso hijo recibe un directorio privado vacío como `TNS_ADMIN`; sus credenciales se escriben en la entrada estándar y nunca se colocan en los argumentos del proceso. El entorno se borra antes del inicio. Solo se reenvían `PATH`, `SystemRoot`, `WINDIR`, `ORACLE_HOME`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `LIBPATH` y `SHLIB_PATH` cuando están presentes; el recopilador establece por separado su configuración regional fija, la zona horaria y los valores privados de `TNS_ADMIN`.
 
 El binario no tiene telemetría, comprobación de licencias, actualización de versiones, llamadas a API de nube ni rutas de carga.
 
@@ -30,7 +32,7 @@ La herramienta lee las entradas seleccionadas por el modo activo:
 |---|---|---|
 | `--user-file PATH` | Si se proporciona | Solo el nombre de usuario. Se elimina el espacio en blanco final; un archivo vacío es un error. |
 | `--password-file PATH` | Si se proporciona | Se lee una vez. El búfer `Secret` propiedad de DBWarp se pone a cero al destruirse; los controladores pueden conservar sus propias copias como se documenta en SECURITY.md. Se rechaza si el grupo u otros pueden leerlo en Unix. |
-| `--anonymization-key-file PATH` | Si se proporciona | Clave HMAC custodiada por el cliente, de 32 bytes o 64 caracteres hexadecimales. Se rechaza si el grupo u otros pueden leerla en Unix. La clave nunca se emite. |
+| `--anonymization-key-file PATH` | Si se proporciona | Una clave HMAC de 32 bytes o 64 caracteres hexadecimales que usted custodia. Se rechaza si el grupo u otros pueden leerla en Unix. La clave nunca se emite. |
 | `--azure-token-file PATH` | Si se proporciona | Token de SQL Server Entra ID. Se lee una vez; el búfer `Secret` propiedad de DBWarp se pone a cero al destruirse. Se rechaza si el grupo u otros pueden leerlo en Unix. |
 | `--tls-ca PATH` | Si se proporciona | CA de confianza en formato PEM que se lee al establecer la conexión. PostgreSQL/MySQL aceptan un paquete; SQL Server acepta exactamente un certificado. El archivo proporcionado sustituye las raíces predeterminadas del motor. |
 | `--tls-cert PATH` | Si se proporciona | Certificado TLS de cliente para PostgreSQL/MySQL (PEM), leído al establecer la conexión. Se rechaza para SQL Server con `DBP1015E`. |
@@ -41,7 +43,7 @@ La herramienta lee las entradas seleccionadas por el modo activo:
 | `--batch-manifest PATH` | Si se proporciona | Manifiesto y todas las rutas locales de entrada, credenciales, tokens y TLS que referencia. |
 | `--bundle-list`, `--bundle-extract`, `--bundle-pack` | Si se proporciona | TOML del paquete y archivos Blueprint relativos necesarios para enumerar, extraer o empaquetar. |
 | terminal/consola de control (`/dev/tty` en sistemas tipo Unix) | Si no se proporciona ninguna fuente de contraseña | Solicitud con eco deshabilitado. |
-| (solo durante la compilación) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` en versiones con dependencias incluidas, `vendor/mysql_async`, `vendor-crates/*` en paquetes sin conexión | Solo cuando se ejecuta `./build.sh` | Entradas de toolchain, procedencia del código y compilación Cargo |
+| (solo durante la compilación) `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.dbwarp-source-revision` en versiones con dependencias incluidas, `vendor/*`, `vendor-crates/*` en paquetes sin conexión | Solo cuando se ejecuta `./build.sh` | Entradas de toolchain, procedencia del código y compilación Cargo |
 
 La aplicación no tiene una ruta explícita para leer:
 - `~/.pgpass`, `~/.my.cnf`, `~/.aws/credentials`, `~/.azure/credentials`
@@ -171,6 +173,7 @@ artifact_inventory:
   external_prerequisites: 3
   inventory_complete: false
   dependencies_complete: false
+  requirements_complete: false
   analysis_complete: false
 
 database_operations_observed:
@@ -269,15 +272,7 @@ Utilice la presencia o ausencia de la línea junto con
 `auth.password_source` para saber si se ejercitó el tratamiento de credenciales
 en una ejecución determinada.
 
-**La auditoría se emite en las rutas operativas de éxito y error**, incluidos
-los errores de análisis de la línea de comandos posteriores al inicio. Las
-salidas de ayuda/versión y los fallos anteriores a la carga del contrato de
-localización integrado no producen una auditoría completa. Si la herramienta
-falla a mitad de la ejecución (autenticación rechazada, error de red), el
-registro de auditoría se sigue escribiendo en stderr (y en `--audit-log PATH`
-si se indicó) con la forma `outcome: error: <stage>`, de modo que el cliente
-siempre disponga de un registro forense de lo que se intentó antes del fallo.
-Ejemplo de línea de resultado de error:
+**La auditoría se genera tanto en casos de éxito como de fallo**, incluyendo fallos en el análisis de comandos después del inicio. Los errores Help/version y los fallos que ocurren antes de que se pueda cargar el contrato de localización integrado no generan una auditoría completa. Si la herramienta falla a mitad de proceso (acceso denegado, error de red), el registro de auditoría aún se imprime en stderr (y en `--audit-log PATH` si se especifica) con `outcome: error: <stage>`, para que siempre tenga un registro de lo que se intentó antes del fallo. Ejemplo de línea de resultado de fallo:
 
 ```
 outcome:             error: parsing --connect URI (value redacted to avoid logging embedded credentials)
@@ -299,16 +294,15 @@ aplanan para mantener la auditoría acotada y apta para procesamiento automatiza
 
 La captura de artefactos es independiente del muestreo de filas de nivel 2:
 
-- `--artifact-detail none` omite catálogos de artefactos y definiciones.
+- `--artifact-detail none` omite los catálogos del inventario de artefactos y las
+  definiciones; la sonda de topología de solo recuento se sigue ejecutando.
 - `summary` lee catálogos de objetos modelados, pero no el texto de las definiciones.
 - `graph` también lee catálogos de dependencias, pero no el texto de las definiciones.
 - `analyzed` también lee definiciones SQL/procedimentales disponibles en memoria de proceso acotada para el análisis léxico.
 
 La auditoría registra el detalle solicitado, la visibilidad, los recuentos de objetos, dependencias y requisitos externos, y todos los indicadores de integridad. Cada operación de catálogo aparece en `database_operations_observed`. Un catálogo opcional fallido emite `DBP1410W`, aparece en `warnings` e impide una afirmación de integridad inexacta.
 
-En modo analizado, las definiciones se guardan en un propietario que las borra y se reducen a bandas acotadas y tokens de características cerrados. El texto de las definiciones, los nombres de objetos de origen, los puntos de conexión externos, las entidades de seguridad de artefactos, las credenciales, el material de claves/certificados, los nombres de paquetes/bibliotecas y los binarios nunca se escriben en el Blueprint ni en el registro de auditoría. Los únicos nombres exactos de entidades de seguridad que se conservan son las tres identidades de sesión de SQL Server del bloque de auditoría `auth` explícito anterior; nunca se escriben en el Blueprint, la presentación ni los artefactos publicados. Los modos graph y analyzed requieren `--yes`, porque la topología anónima puede identificar una aplicación.
-
-La auditoría distingue las posturas de privacidad con una de estas afirmaciones de confianza:
+En modo de análisis, las definiciones se envuelven en un propietario que las anula, se eliminan y se reducen a bandas limitadas y tokens de características cerradas. El texto de la definición, los nombres de los objetos de origen, los puntos finales externos, los principales de los artefactos, las credenciales, el material de clave/certificado, los nombres de los paquetes/bibliotecas y los binarios nunca se escriben en Blueprint ni en el registro de auditoría. Los únicos nombres de principales exactos que se conservan son las tres identidades de sesión SQL Server en el bloque de auditoría `auth` explícito; nunca se escriben en los archivos Blueprint, deck o bundle. Los modos de gráfico y análisis requieren `--yes` porque la topología anónima aún puede identificar una aplicación.
 
 - summary: solo recuentos acotados, sin identidades de objetos ni definiciones;
 - graph: grafo anónimo de dependencias, sin definiciones;
@@ -403,13 +397,7 @@ Si desea *demostrar* que la herramienta solo hace lo documentado:
    misma conexión MySQL. Consulte **Copias de credenciales propiedad del
    controlador** en SECURITY.md para ver la explicación completa.
 3. **Compilación desde el código fuente**: `./build.sh`. Con el archivo de código
-   fuente con dependencias, ejecute `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`. La
-   CI de publicación realiza una reconstrucción independiente en el mismo
-   runner, vaciando y reutilizando el mismo directorio de destino de Cargo
-   entre compilaciones y conservando el primer ejecutable por separado.
-   Rechaza cualquier diferencia de bytes. Una comparación local solo es significativa con la
-   misma revisión del código fuente, destino, funciones, cadena de herramientas
-   Rust fijada, enlazador y opciones de compilación.
+Ejecute `DBWARP_BLUEPRINT_OFFLINE=1 ./build.sh`. Cada versión se construye dos veces y una discrepancia de bytes hace que la versión falle. Una comparación local solo es significativa con la misma revisión de origen, destino, características, cadena de herramientas Rust fijada, enlazador y opciones de compilación.
 4. **Comparación con la versión**: desde la copia o el árbol coincidente del
    código fuente, ejecute `./verify.sh /path/to/extracted/dbwarp-blueprint`.
    Consulte **Reproducir un binario de versión** en BUILD.md para conocer el
@@ -427,8 +415,4 @@ Si desea *demostrar* que la herramienta solo hace lo documentado:
    modo por lotes, reconcilie una sesión de base de datos por cada origen de
    base de datos.
 
-Si alguno de estos resultados no coincide con lo documentado aquí, comunique
-la discrepancia a través del canal indicado en SECURITY.md e incluya solo el
-registro mínimo y seguro necesario para reproducirla. No publique credenciales,
-identificadores de clientes ni salida sensible del controlador en una
-incidencia pública.
+Si alguno de estos elementos no coincide con lo que se documenta aquí, informe de la discrepancia a través del canal indicado en SECURITY.md e incluya el rastro más pequeño y seguro necesario para reproducirlo. No incluya credenciales, nombres identificativos ni resultados sensibles del controlador en un problema público.
